@@ -137,7 +137,7 @@ async def test_refuses_alike_whatever_the_reason_and_logs_only_the_reason(
     assert response.content == REFUSED_BODY
     assert response.headers["WWW-Authenticate"] == "Bearer"
     assert [record.getMessage() for record in caplog.records] == [
-        "resume storage is not set up: the resume routes answer 503",  # logged as the service starts
+        "resume storage is not set up: the resume routes answer 503",  # logged at start
         f"sign-in refused: {reason}",
     ]
     # An empty value is in every text, so only values with something in them are looked for.
