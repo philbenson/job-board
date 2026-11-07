@@ -213,10 +213,16 @@ async def _rate_batch(
             if failure is not None:
                 await _mark(sessionmaker, person_id, found.sealed_key, failure)
             raise _Stopped(reason) from None
+        if rating == "cut-off":
+            # One line each, quoting nothing: the sign that MAX_TOKENS is too low.
+            log.warning(
+                "person %d, posting %d: reply cut off at the token limit", person_id, posting_id
+            )
         if not await _still_locked(lock):
             raise _Stopped("lost-the-lock")
-        await _record(sessionmaker, person_id, posting_id, rating)
-        if rating is None:
+        scored = rating if isinstance(rating, Rating) else None
+        await _record(sessionmaker, person_id, posting_id, scored)
+        if scored is None:
             tally.unreadable += 1
         else:
             tally.rated += 1

@@ -29,8 +29,14 @@ class Reply:
     body: dict[str, Any]
 
 
-def message(text: str) -> Reply:
-    """A finished reply whose one text block is ``text``."""
+def message(text: str | None, *, stop_reason: str = "end_turn") -> Reply:
+    """A reply that ends for ``stop_reason``, its text block ``text``, none when None.
+
+    Thinking is always on for this model and its text is asked to be left out,
+    so every reply opens with a thinking block holding only its signature.
+    """
+    thinking = {"type": "thinking", "thinking": "", "signature": "c2lnbmVk"}
+    content = [thinking] if text is None else [thinking, {"type": "text", "text": text}]
     return Reply(
         200,
         {
@@ -38,8 +44,8 @@ def message(text: str) -> Reply:
             "type": "message",
             "role": "assistant",
             "model": CHECK_MODEL,
-            "content": [{"type": "text", "text": text}],
-            "stop_reason": "end_turn",
+            "content": content,
+            "stop_reason": stop_reason,
             "stop_sequence": None,
             "usage": {"input_tokens": 10, "output_tokens": 10},
         },

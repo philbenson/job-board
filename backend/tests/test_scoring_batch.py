@@ -493,6 +493,33 @@ async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
     assert len(server.received) == 2
 
 
+async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_goes_on(
+    engine: AsyncEngine, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    person = await add_person(engine)
+    first, second, third = [
+        await add_posting(engine, seen=START - timedelta(days=age)) for age in range(3)
+    ]
+    cut_off = message('{"score": 4, "reason": "Cut short in the mid', stop_reason="max_tokens")
+    with canned_anthropic(rating(5, "Exact."), cut_off, rating(2, "A different field.")) as server:
+        result = await run(engine, person, real(server.url))
+
+    assert result == BatchResult(person, rated=2, unreadable=1, end="finished")
+    assert await scores_of(engine, person) == [
+        (first, "scored", 5),
+        (second, "unreadable", None),
+        (third, "scored", 2),
+    ]
+    assert len(server.received) == 3
+    ours = [record for record in caplog.records if record.name.startswith("job_board.scoring")]
+    assert [(record.levelno, record.getMessage()) for record in ours] == [
+        (logging.WARNING, f"person {person}, posting {second}: reply cut off at the token limit"),
+        (logging.INFO, f"person {person}: 2 rated, 1 unreadable, finished"),
+    ]
+    assert "Cut short" not in caplog.text
+
+
 @pytest.mark.parametrize(
     ("status", "failure"),
     [(401, "rejected"), (403, "not-permitted"), (402, "no-credit")],
@@ -691,7 +718,8 @@ async def test_sends_the_persons_key_the_model_the_cap_and_the_schema_to_anthrop
     [request] = server.received
     assert request.headers["authorization"] == f"Bearer {key}"
     assert request.body["model"] == CHECK_MODEL
-    assert request.body["max_tokens"] == 1024
+    assert request.body["max_tokens"] == 4096
+    assert request.body["output_config"]["effort"] == "low"
     assert request.body["output_config"]["format"]["type"] == "json_schema"
     assert "tools" not in request.body and "tool_choice" not in request.body
 

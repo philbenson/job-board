@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableLambda
 from langgraph.graph import StateGraph
 
 from job_board.scoring.graph import rate
-from job_board.scoring.model import Rating, RatingModel, anthropic_model
+from job_board.scoring.model import Rating, RatingModel, ReplyCutOff, anthropic_model
 from job_board.scoring.prompt import prompt_messages
 
 TITLES = ["Staff Engineer", "Platform Lead"]
@@ -80,7 +80,11 @@ async def test_rates_a_posting_with_the_model_it_is_given() -> None:
     ids=["unparseable", "refused", "not-a-rating", "nothing"],
 )
 async def test_gives_no_rating_for_a_reply_it_cannot_read(reply: object) -> None:
-    assert await rate(answering(reply), TITLES, POSTING) is None
+    assert await rate(answering(reply), TITLES, POSTING) == "unreadable"
+
+
+async def test_says_a_reply_cut_off_at_the_limit_was_cut_off() -> None:
+    assert await rate(answering(ReplyCutOff()), TITLES, POSTING) == "cut-off"
 
 
 def _status_error(status: int) -> anthropic.APIStatusError:
@@ -123,7 +127,7 @@ async def test_rates_through_the_real_model_and_reads_nothing_from_a_bad_reply()
         assert await rate(model, TITLES, POSTING) == Rating(
             score=5, reason="Exactly the title sought."
         )
-        assert await rate(model, TITLES, POSTING) is None
+        assert await rate(model, TITLES, POSTING) == "unreadable"
 
     first = server.received[0].body
     assert first["system"] == prompt_messages(TITLES, POSTING)[0].text

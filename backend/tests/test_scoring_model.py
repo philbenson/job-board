@@ -5,14 +5,14 @@ from typing import Any
 
 import pytest
 from canned_anthropic import canned_anthropic, message, rating
-from langchain_core.exceptions import OutputParserException
+from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.load import dumpd
-from langchain_core.runnables import RunnableBinding, RunnableSequence
+from langchain_core.runnables import RunnableBinding, RunnableParallel, RunnableSequence
 from pydantic import ValidationError
 
 from job_board.model_key.check import CHECK_MODEL
-from job_board.scoring.model import MAX_REASON_LENGTH, Rating, anthropic_model
+from job_board.scoring.model import MAX_REASON_LENGTH, Rating, ReplyCutOff, anthropic_model
 
 
 def fake_key() -> str:
@@ -69,7 +69,7 @@ def test_a_rating_keeps_a_reason_of_the_longest_length_trimmed() -> None:
     assert Rating.model_validate({"score": 3, "reason": f" {reason}\n"}).reason == reason
 
 
-async def test_the_real_model_sends_the_key_the_model_id_the_cap_and_the_schema_and_no_tools() -> (
+async def test_the_real_model_sends_the_key_the_model_id_the_effort_the_cap_and_the_schema() -> (
     None
 ):
     key = fake_key()
@@ -83,7 +83,9 @@ async def test_the_real_model_sends_the_key_the_model_id_the_cap_and_the_schema_
     assert "x-api-key" not in request.headers
     body: dict[str, Any] = request.body
     assert body["model"] == CHECK_MODEL
-    assert body["max_tokens"] == 1024
+    assert body["max_tokens"] == 4096
+    assert body["thinking"] == {"type": "adaptive", "display": "omitted"}
+    assert body["output_config"]["effort"] == "low"
     assert body["output_config"]["format"]["type"] == "json_schema"
     assert set(body["output_config"]["format"]["schema"]["properties"]) == {"score", "reason"}
     assert "tools" not in body
@@ -112,10 +114,49 @@ async def test_the_real_model_refuses_a_reply_that_is_not_a_valid_rating(reply: 
         await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
 
 
+async def test_the_real_model_lets_a_refusal_through_as_a_refusal() -> None:
+    refused = message(None, stop_reason="refusal")
+    with canned_anthropic(refused) as server, pytest.raises(ModelRefusalError):
+        await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+
+
+# The parser mends unclosed JSON, so the first of these would read as a rating
+# whose reason stops mid-word were the stop reason not checked.
+@pytest.mark.parametrize(
+    "text",
+    ['{"score": 4, "reason": "A close mat', '{"score": 4, "rea', None],
+    ids=["mid-reason", "mid-key", "no-text"],
+)
+async def test_the_real_model_tells_a_reply_cut_off_at_the_limit_from_an_unreadable_one(
+    text: str | None,
+) -> None:
+    cut_off = message(text, stop_reason="max_tokens")
+    with canned_anthropic(cut_off) as server, pytest.raises(ReplyCutOff) as raised:
+        await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+    assert str(raised.value) == ""  # it carries none of the reply
+    assert raised.value.__cause__ is None and raised.value.__context__ is None
+
+
+async def test_the_real_model_takes_a_whole_rating_that_stopped_at_the_limit() -> None:
+    whole = message('{"score": 4, "reason": "A close match."}', stop_reason="max_tokens")
+    with canned_anthropic(whole) as server:
+        result = await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+    assert result == Rating(score=4, reason="A close match.")
+
+
+async def test_the_real_model_refuses_a_whole_but_invalid_reply_at_the_limit_as_unreadable() -> (
+    None
+):
+    invalid = message('{"score": 9, "reason": "Off the scale."}', stop_reason="max_tokens")
+    with canned_anthropic(invalid) as server, pytest.raises(OutputParserException):
+        await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+
+
 def chat_model_of(model: object) -> BaseChatModel:
-    """The chat model inside the factory's model: its first step's bound runnable."""
+    """The chat model inside the factory's model: the runnable its first step binds as raw."""
     assert isinstance(model, RunnableSequence)
-    binding = model.first
+    assert isinstance(model.first, RunnableParallel)
+    binding = model.first.steps__["raw"]
     assert isinstance(binding, RunnableBinding)
     assert isinstance(binding.bound, BaseChatModel)
     return binding.bound
