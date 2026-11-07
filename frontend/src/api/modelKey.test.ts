@@ -15,6 +15,7 @@ const SAVED = {
   provider: 'anthropic',
   last_four: 'abcd',
   checked_at: '2026-11-07T12:00:00Z',
+  usable: true,
 } satisfies SavedModelKeyBody
 const NONE = { detail: 'no model key saved' } satisfies NoModelKeyBody
 const REJECTED = {
@@ -90,6 +91,14 @@ describe('readModelKey', () => {
     ['a 500', () => answerText(500, '{"detail": "down"}')],
     ['a 401', () => answerText(401, '{"detail": "sign-in required"}')],
     ['a 200 without the last four', () => answerText(200, '{"provider": "anthropic"}')],
+    [
+      'a 200 without whether the key is usable',
+      () =>
+        answerText(
+          200,
+          '{"provider": "anthropic", "last_four": "abcd", "checked_at": "2026-11-07T12:00:00Z"}',
+        ),
+    ],
     [
       'a 200 whose check time is not a time',
       () => answer(200, { ...SAVED, checked_at: 'yesterday' }),

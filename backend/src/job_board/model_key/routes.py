@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
 from job_board.model_key.check import KeyChecker, get_key_checker
-from job_board.model_key.sealing import seal
+from job_board.model_key.sealing import seal, sealed_with
 from job_board.models import ModelKey, Person
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person, get_settings
 from job_board.settings import Settings
@@ -62,6 +62,9 @@ class SavedModelKey(BaseModel):
     provider: Provider
     last_four: str
     checked_at: datetime
+    # False when the key was sealed under a service key this service no longer
+    # holds, so it cannot be opened and the person must enter it again.
+    usable: bool
 
 
 class ModelKeyRefused(BaseModel):
@@ -79,8 +82,14 @@ def well_formed(key: str) -> bool:
     return SHORTEST_KEY <= len(key) <= LONGEST_KEY and set(key) <= KEY_CHARACTERS
 
 
-def saved(row: ModelKey) -> SavedModelKey:
-    return SavedModelKey(provider="anthropic", last_four=row.last_four, checked_at=row.checked_at)
+def saved(row: ModelKey, settings: Settings) -> SavedModelKey:
+    service_key = settings.model_key_encryption_key.get_secret_value()
+    return SavedModelKey(
+        provider="anthropic",
+        last_four=row.last_four,
+        checked_at=row.checked_at,
+        usable=sealed_with(row.sealed_key, service_key=service_key),
+    )
 
 
 @router.get(
@@ -93,13 +102,14 @@ def saved(row: ModelKey) -> SavedModelKey:
 async def read_model_key(
     person: Annotated[Person, Depends(current_person)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SavedModelKey:
     row = await session.scalar(
         select(ModelKey).where(ModelKey.person_id == person.id, ModelKey.provider == "anthropic")
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no model key saved")
-    return saved(row)
+    return saved(row, settings)
 
 
 # The declared 422 replaces FastAPI's validation 422 in the API description. A
@@ -156,7 +166,7 @@ async def save_model_key(
     )
     row = upserted.one()  # an upsert always returns its row
     await session.commit()
-    return saved(row)
+    return saved(row, settings)
 
 
 @router.delete("/model-key", status_code=status.HTTP_204_NO_CONTENT, responses={**SIGN_IN_REQUIRED})

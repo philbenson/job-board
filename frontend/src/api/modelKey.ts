@@ -2,7 +2,10 @@ import type { paths } from './schema.ts'
 
 type ModelKeyRoute = paths['/model-key']
 
-/** A saved key as the backend shows it: provider, last four characters, check time. */
+/**
+ * A saved key as the backend shows it: provider, last four characters, check
+ * time, and whether the service can still open it.
+ */
 export type SavedModelKeyBody =
   ModelKeyRoute['get']['responses'][200]['content']['application/json']
 
@@ -128,7 +131,8 @@ function isSavedKey(body: unknown): body is SavedModelKeyBody {
     fields.provider === 'anthropic' &&
     typeof fields.last_four === 'string' &&
     typeof fields.checked_at === 'string' &&
-    !Number.isNaN(Date.parse(fields.checked_at))
+    !Number.isNaN(Date.parse(fields.checked_at)) &&
+    typeof fields.usable === 'boolean'
   )
 }
 

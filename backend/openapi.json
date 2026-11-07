@@ -309,13 +309,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Checked At"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
           }
         },
         "type": "object",
         "required": [
           "provider",
           "last_four",
-          "checked_at"
+          "checked_at",
+          "usable"
         ],
         "title": "SavedModelKey"
       }

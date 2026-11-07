@@ -44,12 +44,14 @@ const SAVED = {
   provider: 'anthropic',
   last_four: 'abcd',
   checked_at: '2026-11-07T12:00:00Z',
+  usable: true,
 } satisfies SavedModelKeyBody
 const SAVED_LINE = 'Anthropic key ending in abcd, checked Nov 7, 2026'
 const NEWLY_SAVED = {
   provider: 'anthropic',
   last_four: 'wxyz',
   checked_at: '2026-11-08T12:00:00Z',
+  usable: true,
 } satisfies SavedModelKeyBody
 const NEWLY_SAVED_LINE = 'Anthropic key ending in wxyz, checked Nov 8, 2026'
 const NONE = { detail: 'no model key saved' } satisfies NoModelKeyBody
@@ -138,6 +140,23 @@ describe('ModelKeyPanel', () => {
     expect(screen.getByRole('button', { name: 'Replace' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Anthropic API key')).not.toBeInTheDocument()
+  })
+
+  it('asks for a key saved under an old encryption key to be entered again, with the form open', async () => {
+    service({ get: () => answer(200, { ...SAVED, usable: false }) })
+
+    render(<ModelKeyPanel />)
+
+    expect(
+      await screen.findByText(
+        'Your saved key ending in abcd can no longer be used. Enter it again.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(SAVED_LINE)).not.toBeInTheDocument()
+    expect(keyInput()).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Replace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
   })
 
   it.each([

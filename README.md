@@ -30,7 +30,7 @@ Sign-in needs a [Clerk](https://clerk.com/) application; a development instance 
 
 Sign-up is by invitation: in the Clerk dashboard, set the application's sign-up mode to Invite-only, then invite each person who will use it by email. Left at Open, anyone who finds the page can make an account.
 
-The model key needs one more backend value, `MODEL_KEY_ENCRYPTION_KEY`, in `backend/.env`: 32 random bytes in URL-safe base64, which seals each person's key in the database. Make one with `python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Keep it safe and keep it fixed: if it is lost or changed, no saved key can be opened, and everyone has to enter theirs again.
+The model key needs one more backend value, `MODEL_KEY_ENCRYPTION_KEY`, in `backend/.env`: 32 random bytes in URL-safe base64, which seals each person's key in the database. Make one with `python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Keep it safe and keep it fixed: if it is lost or changed, no saved key can be opened, and the model key panel asks each person to enter theirs again.
 
 The service will not start without the four backend values, and names whichever is missing or malformed. The web app runs without its key, and says sign-in is not configured.
 

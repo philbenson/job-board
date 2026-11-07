@@ -127,6 +127,10 @@ export function ModelKeyPanel() {
     setReplacing(false)
   }
 
+  // A key the service can no longer open is as good as none: ask for it again.
+  const formOpen =
+    saved === 'none' || (typeof saved === 'object' && (replacing || !saved.usable))
+
   return (
     <section aria-label="Model key">
       {saved === 'loading' && <p>Loading your model key…</p>}
@@ -135,7 +139,7 @@ export function ModelKeyPanel() {
       {typeof saved === 'object' && (
         <>
           <p>{savedLine(saved)}</p>
-          {!replacing && (
+          {!formOpen && (
             <button
               type="button"
               disabled={busy !== null}
@@ -157,7 +161,7 @@ export function ModelKeyPanel() {
           </button>
         </>
       )}
-      {(saved === 'none' || (typeof saved === 'object' && replacing)) && (
+      {formOpen && (
         <form
           onSubmit={(event) => {
             void save(event)
@@ -179,6 +183,9 @@ export function ModelKeyPanel() {
 }
 
 function savedLine(saved: SavedModelKeyBody): string {
+  if (!saved.usable) {
+    return `Your saved key ending in ${saved.last_four} can no longer be used. Enter it again.`
+  }
   const checked = CHECKED_DATE.format(new Date(saved.checked_at))
   return `Anthropic key ending in ${saved.last_four}, checked ${checked}`
 }

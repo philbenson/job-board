@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import logging
+import os
 import secrets
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.app import create_app
 from job_board.database import get_session
 from job_board.model_key.check import CheckOutcome, get_key_checker
-from job_board.model_key.sealing import open_sealed
+from job_board.model_key.sealing import open_sealed, seal
 
 SERVICE_KEY = base64.urlsafe_b64decode(MODEL_KEY_ENCRYPTION_KEY)
 
@@ -127,8 +128,9 @@ async def test_saves_a_checked_key_sealed_to_its_owner_and_shows_only_its_last_f
 
     assert saved.status_code == 200
     assert saved.json() == read.json()
-    assert set(saved.json()) == {"provider", "last_four", "checked_at"}
+    assert set(saved.json()) == {"provider", "last_four", "checked_at", "usable"}
     assert saved.json()["provider"] == "anthropic"
+    assert saved.json()["usable"] is True
     assert saved.json()["last_four"] == key[-4:]
     assert datetime.fromisoformat(saved.json()["checked_at"]).tzinfo is not None
     assert service.checker.asked == [key]  # checked without its surrounding whitespace
@@ -136,6 +138,29 @@ async def test_saves_a_checked_key_sealed_to_its_owner_and_shows_only_its_last_f
     (row,) = stored_rows(migrated_database_url, person)
     assert key.encode() not in row.sealed_key
     assert open_sealed(row.sealed_key, row.person_id, "anthropic", service_key=SERVICE_KEY) == key
+
+
+async def test_reads_a_key_sealed_under_another_service_key_as_unusable(
+    service: Service, migrated_database_url: str
+) -> None:
+    person = new_person()
+    key = fake_key()
+    await service.client.put("/model-key", headers=person, json=save(key))
+    (row,) = stored_rows(migrated_database_url, person)
+    resealed = seal(key, row.person_id, "anthropic", service_key=os.urandom(32))
+    engine = create_engine(migrated_database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE model_keys SET sealed_key = :sealed WHERE person_id = :person"),
+            {"sealed": resealed, "person": row.person_id},
+        )
+    engine.dispose()
+
+    read = await service.client.get("/model-key", headers=person)
+
+    assert read.status_code == 200
+    assert read.json()["usable"] is False
+    assert read.json()["last_four"] == key[-4:]
 
 
 async def test_answers_404_when_no_key_is_saved(service: Service) -> None:
@@ -358,5 +383,5 @@ def test_the_description_declares_each_answer() -> None:
         "not-permitted",
         "unavailable",
     ]
-    assert schemas["SavedModelKey"]["required"] == ["provider", "last_four", "checked_at"]
+    assert schemas["SavedModelKey"]["required"] == ["provider", "last_four", "checked_at", "usable"]
     assert schemas["ModelKeyToSave"]["required"] == ["provider", "key"]

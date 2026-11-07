@@ -121,6 +121,8 @@ export interface components {
              * Format: date-time
              */
             checked_at: string;
+            /** Usable */
+            usable: boolean;
         };
     };
     responses: never;
