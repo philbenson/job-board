@@ -246,6 +246,7 @@
               "type": "string"
             },
             "type": "array",
+            "maxItems": 200,
             "title": "Titles"
           }
         },

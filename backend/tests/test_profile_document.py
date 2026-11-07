@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from job_board.profiles import MAX_TARGET_TITLES, Profile, TargetTitles
+from job_board.profiles import MAX_SENT_TITLES, MAX_TARGET_TITLES, Profile, TargetTitles
 
 
 def titles_of(sent: list[Any]) -> list[str]:
@@ -117,6 +117,21 @@ def test_refuses_more_than_twenty_after_repeats_are_dropped() -> None:
 
     assert error["msg"] == "You can list at most 20 target titles"
     assert error["loc"] == ("titles",)
+
+
+def test_refuses_a_list_past_its_raw_bound_before_checking_any_title() -> None:
+    with pytest.raises(ValidationError) as raised:
+        TargetTitles.model_validate({"titles": ["   "] * (MAX_SENT_TITLES + 1)})
+
+    # One refusal for the list, not one for each of its blank titles.
+    (error,) = raised.value.errors()
+    assert MAX_SENT_TITLES == 200
+    assert error["type"] == "too_long"
+    assert error["loc"] == ("titles",)
+
+
+def test_takes_a_list_at_its_raw_bound_whose_repeats_leave_one_title() -> None:
+    assert titles_of(["Designer"] * MAX_SENT_TITLES) == ["Designer"]
 
 
 @pytest.mark.parametrize(

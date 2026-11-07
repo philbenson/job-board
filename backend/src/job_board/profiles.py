@@ -28,6 +28,10 @@ from job_board.people import current_person
 
 MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a different search
 MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line
+# The most titles a request may carry, counted before any is checked, so a
+# huge list is refused at once. Repeats are dropped after this count, so it
+# sits well above the cap.
+MAX_SENT_TITLES = 200
 
 
 class Profile(BaseModel):
@@ -120,7 +124,11 @@ class TargetTitles(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    titles: Annotated[list[TargetTitle], AfterValidator(_distinct_and_capped)]
+    titles: Annotated[
+        list[TargetTitle],
+        Field(max_length=MAX_SENT_TITLES),
+        AfterValidator(_distinct_and_capped),
+    ]
 
 
 router = APIRouter()
