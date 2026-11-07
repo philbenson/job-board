@@ -40,7 +40,7 @@ npm ci
 npm run dev                           # serves the app and passes /api/… to the backend on port 8000
 ```
 
-The page then says "Service is up"; stop the backend and reload, and it says "Service is unavailable".
+The page then says "Service is up"; stop the backend and switch away from the tab and back, or reload, and it says "Service is unavailable".
 
 ## Testing it
 
