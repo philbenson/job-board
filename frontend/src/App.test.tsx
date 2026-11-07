@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,11 +30,47 @@ vi.mock('@clerk/react', () => ({
 
 const PUBLISHABLE_KEY = 'pk_test_placeholder'
 
+const SESSION_TOKEN = 'header.payload.signature'
+
+const CHECKING = 'Confirming your sign-in with the service…'
+const RECOGNISED = 'Signed in'
+const REFUSED = 'The service did not accept your sign-in'
+const UNAVAILABLE = 'Could not confirm your sign-in with the service'
+
 function serviceNeverAnswers() {
   vi.stubGlobal(
     'fetch',
     vi.fn(() => new Promise<Response>(() => {})),
   )
+}
+
+// The health check never answers; /api/me answers as the test says.
+function serviceAnswersMe(
+  me: (init?: RequestInit) => Promise<Response>,
+): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) =>
+    url === '/api/me' ? me(init) : new Promise<Response>(() => {}),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+function answer(status: number, body: string): Promise<Response> {
+  return Promise.resolve(
+    new Response(body, {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  )
+}
+
+// A request that never answers, and fails the way fetch does when aborted.
+function answerOnlyAbort(init?: RequestInit): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      reject(new DOMException('The request was aborted', 'AbortError'))
+    })
+  })
 }
 
 describe('App', () => {
@@ -45,6 +81,7 @@ describe('App', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -98,5 +135,85 @@ describe('App', () => {
     expect(
       screen.queryByRole('button', { name: 'Sign in' }),
     ).not.toBeInTheDocument()
+  })
+
+  describe('when signed in', () => {
+    beforeEach(() => {
+      clerk.signedIn = true
+      clerk.getToken.mockResolvedValue(SESSION_TOKEN)
+    })
+
+    it('says signed in once the service recognises the session token', async () => {
+      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+
+      expect(screen.getByText(CHECKING)).toBeInTheDocument()
+      expect(await screen.findByText(RECOGNISED)).toBeInTheDocument()
+      const meCall = fetchMock.mock.calls.find(([url]) => url === '/api/me')
+      const init = meCall?.[1] as RequestInit | undefined
+      expect(new Headers(init?.headers).get('Authorization')).toBe(
+        `Bearer ${SESSION_TOKEN}`,
+      )
+    })
+
+    it.each([
+      [
+        'the service refuses the token',
+        401,
+        '{"detail": "sign-in required"}',
+        REFUSED,
+      ],
+      [
+        'the service answers without an id',
+        200,
+        '{"detail": "ok"}',
+        UNAVAILABLE,
+      ],
+      ['the service fails', 503, '{"detail": "unavailable"}', UNAVAILABLE],
+    ])(
+      'never says signed in when %s',
+      async (_case, status, body, message) => {
+        serviceAnswersMe(() => answer(status, body))
+
+        render(<App publishableKey={PUBLISHABLE_KEY} />)
+
+        expect(await screen.findByText(message)).toBeInTheDocument()
+        expect(screen.queryByText(RECOGNISED)).not.toBeInTheDocument()
+      },
+    )
+
+    it('gives up after five seconds without an answer, never saying signed in', async () => {
+      vi.useFakeTimers()
+      serviceAnswersMe(answerOnlyAbort)
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+      await act(() => vi.advanceTimersByTimeAsync(4_999))
+      expect(screen.getByText(CHECKING)).toBeInTheDocument()
+      await act(() => vi.advanceTimersByTimeAsync(1))
+
+      expect(screen.getByText(UNAVAILABLE)).toBeInTheDocument()
+      expect(screen.queryByText(RECOGNISED)).not.toBeInTheDocument()
+    })
+
+    it('treats a missing session token as refused, without asking the service', async () => {
+      clerk.getToken.mockResolvedValue(null)
+      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+
+      expect(await screen.findByText(REFUSED)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.anything())
+    })
+
+    it('says it could not confirm the sign-in when the session token cannot be had', async () => {
+      clerk.getToken.mockRejectedValue(new Error('network'))
+      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+
+      expect(await screen.findByText(UNAVAILABLE)).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.anything())
+    })
   })
 })
