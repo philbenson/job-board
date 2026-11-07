@@ -47,3 +47,14 @@ def test_upgrades_to_head_back_to_base_and_to_head_again(
 
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
+
+
+def test_the_models_match_the_migrations_at_head(
+    database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    config = Config(ALEMBIC_INI)
+    command.upgrade(config, "head")
+    # Raises when autogenerate would write anything: a model changed without
+    # its migration, or a migration without its model.
+    command.check(config)

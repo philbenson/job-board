@@ -12,7 +12,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from job_board.settings import Settings
+from job_board.models import Base
+from job_board.settings import DatabaseSettings
 
 config = context.config
 
@@ -21,11 +22,11 @@ if config.config_file_name is not None:
     # migrations run inside a test process.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = None  # no models yet; autogenerate starts once there are tables
+target_metadata = Base.metadata  # autogenerate and `alembic check` compare against the models
 
 
 def database_url() -> str:
-    return Settings().database_url.get_secret_value()
+    return DatabaseSettings().database_url.get_secret_value()
 
 
 def run_migrations_offline() -> None:

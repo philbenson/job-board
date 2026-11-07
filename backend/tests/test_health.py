@@ -4,10 +4,10 @@ import time
 
 import httpx
 import pytest
+from settings_for_tests import make_settings
 
 from job_board import health
 from job_board.app import create_app
-from job_board.settings import Settings
 
 OK = {"status": "ok", "database": "ok"}
 UNAVAILABLE = {"status": "unavailable", "database": "unreachable"}
@@ -18,7 +18,7 @@ def unreachable_url(port: int) -> str:
 
 
 async def get_health(database_url: str) -> httpx.Response:
-    app = create_app(Settings(database_url=database_url, _env_file=None))
+    app = create_app(make_settings(database_url=database_url))
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
