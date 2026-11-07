@@ -484,7 +484,7 @@ async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
 
 @pytest.mark.parametrize(
     ("status", "failure"),
-    [(401, "rejected"), (403, "not-permitted"), (404, "not-permitted"), (402, "no-credit")],
+    [(401, "rejected"), (403, "not-permitted"), (402, "no-credit")],
 )
 async def test_marks_the_key_and_stops_when_anthropic_refuses_it(
     engine: AsyncEngine, status: int, failure: str
@@ -515,8 +515,9 @@ async def test_marks_the_key_and_stops_when_anthropic_refuses_it(
         (lambda: connection_error(anthropic.APIConnectionError), "connection-error"),
         (lambda: connection_error(anthropic.APITimeoutError), "timed-out"),
         (lambda: status_error(400), "refused-400"),
+        (lambda: status_error(404), "model-not-found"),
     ],
-    ids=["429", "500", "529", "408", "connection", "timeout", "400"],
+    ids=["429", "500", "529", "408", "connection", "timeout", "400", "404"],
 )
 async def test_stops_and_leaves_the_posting_for_the_next_run_when_the_request_fails(
     engine: AsyncEngine, error_of: Callable[[], Exception], reason: str
@@ -593,7 +594,9 @@ async def test_skips_a_key_not_sealed_with_this_service_key(
     )
     assert fake.keys == []
     assert await failure_of(engine, person) == (None, False)
-    assert any(f"person {person}:" in line and "skipped" in line for line in caplog.messages)
+    [line] = [record for record in caplog.records if f"person {person}:" in record.getMessage()]
+    assert "skipped" in line.getMessage()
+    assert line.levelno == logging.WARNING  # a service key that differs is the operator's to fix
 
 
 @pytest.mark.parametrize(
@@ -614,6 +617,46 @@ async def test_stops_on_a_key_that_will_not_open(
 
     assert result == BatchResult(person, rated=0, unreadable=0, end="stopped", reason="unopenable")
     assert fake.keys == []
+    assert await failure_of(engine, person) == (None, False)
+
+
+@pytest.mark.parametrize(
+    ("error_body", "reason"),
+    [
+        (
+            {"type": "invalid_request_error", "details": {"error_code": "spend_limit_reached"}},
+            "refused-400 (invalid_request_error, spend_limit_reached)",
+        ),
+        ({"type": "invalid_request_error"}, "refused-400 (invalid_request_error)"),
+        ({"type": "not a code: it says something"}, "refused-400"),
+        (
+            {"type": "invalid_request_error", "details": {"error_code": "Spend Limit!"}},
+            "refused-400 (invalid_request_error)",
+        ),
+    ],
+    ids=["type-and-code", "type", "free-text-type", "free-text-code"],
+)
+async def test_names_an_unlisted_refusal_by_its_codes_never_its_message(
+    engine: AsyncEngine,
+    caplog: pytest.LogCaptureFixture,
+    error_body: dict[str, Any],
+    reason: str,
+) -> None:
+    caplog.set_level(logging.INFO)
+    person = await add_person(engine)
+    await add_posting(engine)
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    body = {"type": "error", "error": {**error_body, "message": "a sentence that names things"}}
+    refusal = anthropic.BadRequestError(
+        "a sentence that names things",
+        response=httpx2.Response(400, request=request, json=body),
+        body=body,
+    )
+    result = await run(engine, person, Fake(refusal))
+
+    assert result == BatchResult(person, 0, 0, "stopped", reason)
+    assert f"person {person}: 0 rated, 0 unreadable, stopped: {reason}" in caplog.messages
+    assert "names things" not in caplog.text
     assert await failure_of(engine, person) == (None, False)
 
 
@@ -648,13 +691,20 @@ async def test_sends_the_persons_key_the_model_the_cap_and_the_schema_to_anthrop
         (message('{"score": 9, "reason": "Off the scale."}'), "finished", None, None),
         (error(401, "authentication_error"), "stopped", "rejected", "rejected"),
         (error(403, "permission_error"), "stopped", "not-permitted", "not-permitted"),
-        (error(404, "not_found_error"), "stopped", "not-permitted", "not-permitted"),
+        (error(404, "not_found_error"), "stopped", "model-not-found", None),
+        (
+            error(400, "invalid_request_error"),
+            "stopped",
+            "refused-400 (invalid_request_error)",
+            None,
+        ),
+        (error(413, "request_too_large"), "stopped", "refused-413 (request_too_large)", None),
         (error(402, "billing_error"), "stopped", "no-credit", "no-credit"),
         (error(429, "rate_limit_error"), "stopped", "rate-limited", None),
         (error(500, "api_error"), "stopped", "server-error", None),
         (error(529, "overloaded_error"), "stopped", "server-error", None),
     ],
-    ids=["unreadable", "401", "403", "404", "402", "429", "500", "529"],
+    ids=["unreadable", "401", "403", "404", "400", "413", "402", "429", "500", "529"],
 )
 async def test_handles_each_answer_from_the_real_client(
     engine: AsyncEngine, reply: Reply, end: str, reason: str | None, failure: str | None

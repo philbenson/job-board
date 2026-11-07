@@ -205,6 +205,84 @@ async def test_exits_zero_when_every_batch_finishes(
     assert f"person {one_person_one_posting}: 1 rated, 0 unreadable, finished" in caplog.messages
 
 
+async def add_sealed_elsewhere(module_database_url: str, count: int) -> None:
+    """``count`` more people with a title and a key sealed under another service key."""
+    engine = create_async_engine(module_database_url)
+    async with engine.begin() as connection:
+        for n in range(count):
+            person: int = (
+                await connection.execute(
+                    text("INSERT INTO people (clerk_user_id) VALUES (:user) RETURNING id"),
+                    {"user": f"user_elsewhere_{n}"},
+                )
+            ).scalar_one()
+            await connection.execute(
+                text(
+                    "INSERT INTO profiles (person_id, document) VALUES "
+                    """(:person, '{"target_titles": ["Staff Engineer"]}')"""
+                ),
+                {"person": person},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO model_keys (person_id, provider, sealed_key, last_four, "
+                    "checked_at) VALUES (:person, 'anthropic', :sealed, 'abcd', now())"
+                ),
+                {
+                    "person": person,
+                    "sealed": seal("sk-ant-api03-abcd", person, "anthropic", service_key=bytes(32)),
+                },
+            )
+    await engine.dispose()
+
+
+async def test_exits_one_when_no_key_opens_under_this_service_key(
+    scoring_environment: pytest.MonkeyPatch, module_database_url: str
+) -> None:
+    engine = create_async_engine(module_database_url)
+    async with engine.begin() as connection:
+        await connection.execute(text("TRUNCATE people, postings RESTART IDENTITY CASCADE"))
+        await connection.execute(
+            text(
+                "INSERT INTO postings (source, board, external_id, title, url, "
+                "source_updated_at, first_seen_at, last_seen_at) VALUES ('greenhouse', "
+                "'example', 1, 'Engineer', 'https://boards.example.com/1', now(), now(), now())"
+            )
+        )
+    await engine.dispose()
+    await add_sealed_elsewhere(module_database_url, 2)
+    assert await _main_off_the_loop(never_built) == EXIT_STOPPED
+
+
+async def test_exits_zero_when_some_keys_open_under_this_service_key(
+    scoring_environment: pytest.MonkeyPatch, one_person_one_posting: int, module_database_url: str
+) -> None:
+    await add_sealed_elsewhere(module_database_url, 1)
+    rating = Rating(score=3, reason="A partial match.")
+    assert await _main_off_the_loop(lambda key: answering(rating)) == 0
+
+
+async def test_exits_one_and_marks_no_key_when_anthropic_cannot_find_the_model(
+    scoring_environment: pytest.MonkeyPatch,
+    one_person_one_posting: int,
+    module_database_url: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    missing = anthropic.NotFoundError(
+        "no such model", response=httpx2.Response(404, request=request), body=None
+    )
+    assert await _main_off_the_loop(lambda key: answering(missing)) == EXIT_STOPPED
+    [line] = [r for r in caplog.records if f"person {one_person_one_posting}:" in r.getMessage()]
+    assert line.getMessage().endswith("stopped: model-not-found")
+    assert line.levelno == logging.WARNING
+    engine = create_async_engine(module_database_url)
+    async with engine.connect() as connection:
+        failure = (await connection.execute(text("SELECT failure FROM model_keys"))).scalar_one()
+    await engine.dispose()
+    assert failure is None
+
+
 async def test_exits_one_when_a_batch_stops_on_a_failure(
     scoring_environment: pytest.MonkeyPatch, one_person_one_posting: int
 ) -> None:

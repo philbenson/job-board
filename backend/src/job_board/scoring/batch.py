@@ -20,6 +20,7 @@ Invariants:
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -39,6 +40,10 @@ from job_board.scoring.posting_text import posting_text
 BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run costs them
 # The first key of every lock scoring takes, the person's id the second. Its bytes spell "SCOR".
 LOCK_CLASS = 0x53434F52
+# A key sealed under another service key: the operator's to fix, since no key here will open.
+NOT_SEALED_HERE = "not-sealed-with-this-service-key"
+# An error body's type or code is named in the log only when it looks like one; its message never.
+_CODE = re.compile(r"[a-z0-9_]{1,64}")
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +57,7 @@ class BatchResult:
     ``finished``: every posting found was rated. ``locked``: another run holds
     the person. ``skipped``: nothing to do with this key here, such as a key
     sealed under another service key. ``stopped``: a failure, named by
-    ``reason``, ended the batch early.
+    ``reason``, ended the batch early, and the run exits 1.
     """
 
     person_id: int
@@ -64,6 +69,10 @@ class BatchResult:
     @property
     def failed(self) -> bool:
         return self.end == "stopped"
+
+    @property
+    def sealed_elsewhere(self) -> bool:
+        return self.reason == NOT_SEALED_HERE
 
 
 @dataclass
@@ -90,8 +99,12 @@ def _why(error: anthropic.APIError) -> tuple[str, KeyFailure | None]:
     status = error.status_code
     if status == 401:
         return "rejected", "rejected"
-    if status in (403, 404):  # 404: the key's account cannot see this model
+    if status == 403:
         return "not-permitted", "not-permitted"
+    if status == 404:
+        # Most likely this app names a model Anthropic no longer serves, which is no
+        # fault of the key: the key is left as it is and the operator is told.
+        return "model-not-found", None
     if status == 402:  # the SDK has no class of its own for it
         return "no-credit", "no-credit"
     if status == 408:
@@ -100,7 +113,8 @@ def _why(error: anthropic.APIError) -> tuple[str, KeyFailure | None]:
         return "rate-limited", None
     if status >= 500:
         return "server-error", None
-    return f"refused-{status}", None
+    codes = [code for code in (error.type, error.error_code) if code and _CODE.fullmatch(code)]
+    return f"refused-{status}" + (f" ({', '.join(codes)})" if codes else ""), None
 
 
 async def _record(
@@ -176,13 +190,13 @@ async def _rate_batch(
         raise _Stopped("no-longer-eligible", end="skipped")
     if not sealed_with(found.sealed_key, service_key=service_key):
         # Sealed under another service key, or too short to name one: not ours to open.
-        raise _Stopped("not-sealed-with-this-service-key", end="skipped")
+        raise _Stopped(NOT_SEALED_HERE, end="skipped")
     if not postings:
         return
     try:
         key = open_sealed(found.sealed_key, person_id, PROVIDER, service_key=service_key)
     except SealedUnderAnotherKey:
-        raise _Stopped("not-sealed-with-this-service-key", end="skipped") from None
+        raise _Stopped(NOT_SEALED_HERE, end="skipped") from None
     except SealBroken:
         raise _Stopped("unopenable") from None
     model = model_factory(key)
@@ -211,7 +225,7 @@ async def _rate_batch(
 def _logged(result: BatchResult) -> BatchResult:
     end = result.end if result.reason is None else f"{result.end}: {result.reason}"
     log.log(
-        logging.WARNING if result.failed else logging.INFO,
+        logging.WARNING if result.failed or result.sealed_elsewhere else logging.INFO,
         "person %d: %d rated, %d unreadable, %s",
         result.person_id,
         result.rated,

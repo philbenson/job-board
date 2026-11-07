@@ -1,11 +1,12 @@
 """``python -m job_board.scoring``: one batch for each person to be scored.
 
 Exits 0 when every batch finished, or had nothing it could do (another run held
-the person, or the key was sealed under another service key); 1 when any batch
-stopped on a failure; 2 when it refused to start. It needs only DATABASE_URL and
-MODEL_KEY_ENCRYPTION_KEY, read from the environment or a .env file in the
-working directory, and refuses to start while LangSmith tracing is on or
-ANTHROPIC_CUSTOM_HEADERS is set.
+the person, or that one key was sealed under another service key); 1 when any
+batch stopped on a failure, or when no person's key was sealed under this
+service key, which is the operator's mistake rather than theirs; 2 when it
+refused to start. It needs only DATABASE_URL and MODEL_KEY_ENCRYPTION_KEY, read
+from the environment or a .env file in the working directory, and refuses to
+start while LangSmith tracing is on or ANTHROPIC_CUSTOM_HEADERS is set.
 """
 
 import asyncio
@@ -78,7 +79,12 @@ async def _score(settings: ScoringSettings, model_factory: ModelFactory) -> int:
         )
     finally:
         await engine.dispose()
-    return EXIT_STOPPED if any(result.failed for result in results) else EXIT_FINISHED
+    if any(result.failed for result in results):
+        return EXIT_STOPPED
+    if results and all(result.sealed_elsewhere for result in results):
+        log.error("no key opens under this MODEL_KEY_ENCRYPTION_KEY: is it the service's own?")
+        return EXIT_STOPPED
+    return EXIT_FINISHED
 
 
 def main(model_factory: ModelFactory = anthropic_model) -> int:

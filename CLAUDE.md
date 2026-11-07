@@ -15,7 +15,7 @@ Backend, from `backend/`:
 - `uv run python -m job_board.openapi_description` rewrites `backend/openapi.json` from the app's routes and models; a test fails while it is out of date
 - `DATABASE_URL` takes the form `postgresql://user:password@host:port/database`. The service reads it or `backend/.env`; the tests read it or `backend/.env.example`, never `.env`
 - The service also needs `CLERK_ISSUER`, `CLERK_JWT_KEY`, `CLERK_AUTHORIZED_PARTIES` and `MODEL_KEY_ENCRYPTION_KEY` (see `backend/.env.example`, which gives the command that makes the last) and refuses to start without them; migrations need only `DATABASE_URL`, and the tests build their own values with a key each run generates
-- `uv run python -m job_board.scoring` rates up to 25 unscored open postings for each person with a working key and a target title, on their own key, and exits: 0 finished, 1 a batch stopped on a failure, 2 refused to start. It needs only `DATABASE_URL` and `MODEL_KEY_ENCRYPTION_KEY`, and refuses to start while any of `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` or either with `_V2` is `true`, `1` or `yes`; the tests run with all four unset
+- `uv run python -m job_board.scoring` rates up to 25 unscored open postings for each person with a working key and a target title, on their own key, and exits: 0 finished, 1 a batch stopped on a failure or no key opened under this service key, 2 refused to start. It needs only `DATABASE_URL` and `MODEL_KEY_ENCRYPTION_KEY`, and refuses to start while any of `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` or either with `_V2` is `true`, `1` or `yes`, or while `ANTHROPIC_CUSTOM_HEADERS` is set; the tests run with all five unset
 
 Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer):
 
