@@ -12,7 +12,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from job_board.settings import Settings
+from job_board.settings import DatabaseSettings
 
 config = context.config
 
@@ -25,7 +25,7 @@ target_metadata = None  # no models yet; autogenerate starts once there are tabl
 
 
 def database_url() -> str:
-    return Settings().database_url.get_secret_value()
+    return DatabaseSettings().database_url.get_secret_value()
 
 
 def run_migrations_offline() -> None:
