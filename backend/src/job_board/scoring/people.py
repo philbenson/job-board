@@ -15,7 +15,7 @@ from sqlalchemy import Row, Select, and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.models import ModelKey, Person, Posting, ProfileRow, Score
-from job_board.profiles import Profile
+from job_board.profiles import stored_profile
 
 PROVIDER = "anthropic"
 
@@ -50,7 +50,7 @@ def _titles(person_id: int, document: dict[str, Any] | None) -> tuple[str, ...]:
     if document is None:
         return ()
     try:
-        return tuple(Profile.model_validate(document).target_titles)
+        return tuple(stored_profile(document).target_titles)
     except ValidationError:
         # The error would quote the document, so it names the person alone.
         log.warning("person %d: profile unreadable, not scored", person_id)

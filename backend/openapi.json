@@ -292,6 +292,492 @@
         ]
       }
     },
+    "/profile/title-range": {
+      "put": {
+        "summary": "Save Title Range",
+        "description": "Replaces the signed-in person's title range and answers the profile as stored.",
+        "operationId": "save_title_range_profile_title_range_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TitleRange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/places": {
+      "put": {
+        "summary": "Save Places",
+        "description": "Replaces where the signed-in person will work and answers the profile as stored.",
+        "operationId": "save_places_profile_places_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Places"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/pay": {
+      "put": {
+        "summary": "Save Pay",
+        "description": "Replaces the signed-in person's pay and answers the profile as stored.",
+        "operationId": "save_pay_profile_pay_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pay"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/skills": {
+      "put": {
+        "summary": "Save Skills",
+        "description": "Replaces the signed-in person's skills and answers the profile as stored.",
+        "operationId": "save_skills_profile_skills_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skills"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/gaps": {
+      "put": {
+        "summary": "Save Gaps",
+        "description": "Replaces the signed-in person's gaps and trade-offs and answers the profile as stored.",
+        "operationId": "save_gaps_profile_gaps_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Gaps"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/deal-breakers": {
+      "put": {
+        "summary": "Save Deal Breakers",
+        "description": "Replaces the signed-in person's deal-breakers and answers the profile as stored.",
+        "operationId": "save_deal_breakers_profile_deal_breakers_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DealBreakers"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/companies": {
+      "put": {
+        "summary": "Save Companies",
+        "description": "Replaces the companies the signed-in person watches and answers the profile as stored.",
+        "operationId": "save_companies_profile_companies_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Companies"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/pace": {
+      "put": {
+        "summary": "Save Pace",
+        "description": "Replaces the signed-in person's pace and answers the profile as stored.",
+        "operationId": "save_pace_profile_pace_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/own-rules": {
+      "put": {
+        "summary": "Save Own Rules",
+        "description": "Replaces the signed-in person's own rules and answers the profile as stored.",
+        "operationId": "save_own_rules_profile_own_rules_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnRules"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/resume": {
       "get": {
         "summary": "Read Resume",
@@ -466,6 +952,134 @@
   },
   "components": {
     "schemas": {
+      "Application": {
+        "properties": {
+          "company": {
+            "type": "string",
+            "title": "Company",
+            "description": "The company's name, up to 100 characters."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The title of the role applied for, up to 100 characters."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company",
+          "title"
+        ],
+        "title": "Application",
+        "description": "One job a person has applied to: the company and the title of the role."
+      },
+      "Companies": {
+        "properties": {
+          "watch": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Watch",
+            "description": "Companies whose postings they want to see, each up to 100 characters; at most 30."
+          },
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/Application"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Applied",
+            "description": "Jobs they have already applied to, so a posting for one is not suggested again; at most 50, the same company with another title being another job."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "watch",
+          "applied"
+        ],
+        "title": "Companies",
+        "description": "Companies a person keeps an eye on, and the jobs they have already applied to."
+      },
+      "DealBreakers": {
+        "properties": {
+          "industries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Industries",
+            "description": "Industries they will not work in, each up to 100 characters; at most 30."
+          },
+          "company_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "1-10",
+                "11-50",
+                "51-200",
+                "201-500",
+                "501-1000",
+                "1001-5000",
+                "5001-10000",
+                "10001+"
+              ]
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Company Sizes",
+            "description": "Company sizes, by number of employees, they will not work at."
+          },
+          "no_agencies": {
+            "type": "boolean",
+            "title": "No Agencies",
+            "description": "Whether a posting from a recruiting agency, not the employer, rules it out."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "industries",
+          "company_sizes",
+          "no_agencies"
+        ],
+        "title": "DealBreakers",
+        "description": "What rules a posting out for a person whatever else it offers."
+      },
+      "Gaps": {
+        "properties": {
+          "apply_with": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Apply With",
+            "description": "Requirements they lack but would still apply without, in their words, each up to 200 characters; at most 20."
+          },
+          "trade_offs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Trade Offs",
+            "description": "What they would give up for the right role, in their words, each up to 200 characters; at most 20."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "apply_with",
+          "trade_offs"
+        ],
+        "title": "Gaps",
+        "description": "Where a person falls short of a posting and still applies, and what they would give up."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -565,6 +1179,214 @@
         ],
         "title": "ModelKeyToSave"
       },
+      "Office": {
+        "properties": {
+          "city": {
+            "type": "string",
+            "title": "City",
+            "description": "The city's name as the person typed it, up to 100 characters."
+          },
+          "days_a_week": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Days A Week",
+            "description": "Days a week in the office, from 1 to 5; 5 means on site."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "city",
+          "days_a_week"
+        ],
+        "title": "Office",
+        "description": "A city a person would go into an office in, and how often."
+      },
+      "OwnRules": {
+        "properties": {
+          "rules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Rules",
+            "description": "Anything else a posting must or must not be, in their words, each up to 300 characters; at most 20."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rules"
+        ],
+        "title": "OwnRules",
+        "description": "Rules of a person's own, in their words, that no other section covers."
+      },
+      "Pace": {
+        "properties": {
+          "leads_per_day": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Leads Per Day",
+            "description": "Postings to show a day, from 1 to 50."
+          },
+          "brief_from_score": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brief From Score",
+            "description": "The lowest score, from 1 to 5, at which a posting gets a written brief; null for no briefs."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "leads_per_day",
+          "brief_from_score"
+        ],
+        "title": "Pace",
+        "description": "How many postings a person wants a day, and which deserve a written brief."
+      },
+      "Pay": {
+        "properties": {
+          "floor_usd": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Floor Usd",
+            "description": "The lowest annual base pay, in whole US dollars, they would take."
+          },
+          "ask_usd": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Ask Usd",
+            "description": "The annual base pay, in whole US dollars, they ask for; at least the floor."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "floor_usd",
+          "ask_usd"
+        ],
+        "title": "Pay",
+        "description": "What a person will be paid: annual base pay in whole US dollars, before bonus or equity."
+      },
+      "Places": {
+        "properties": {
+          "remote_ok": {
+            "type": "boolean",
+            "title": "Remote Ok",
+            "description": "Whether a fully remote role is fine."
+          },
+          "offices": {
+            "items": {
+              "$ref": "#/components/schemas/Office"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Offices",
+            "description": "Cities, as typed, where they would go into an office, and how many days a week; at most 20, one per city."
+          },
+          "states": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "AK",
+                "AL",
+                "AR",
+                "AZ",
+                "CA",
+                "CO",
+                "CT",
+                "DC",
+                "DE",
+                "FL",
+                "GA",
+                "HI",
+                "IA",
+                "ID",
+                "IL",
+                "IN",
+                "KS",
+                "KY",
+                "LA",
+                "MA",
+                "MD",
+                "ME",
+                "MI",
+                "MN",
+                "MO",
+                "MS",
+                "MT",
+                "NC",
+                "ND",
+                "NE",
+                "NH",
+                "NJ",
+                "NM",
+                "NV",
+                "NY",
+                "OH",
+                "OK",
+                "OR",
+                "PA",
+                "RI",
+                "SC",
+                "SD",
+                "TN",
+                "TX",
+                "UT",
+                "VA",
+                "VT",
+                "WA",
+                "WI",
+                "WV",
+                "WY"
+              ]
+            },
+            "type": "array",
+            "maxItems": 510,
+            "title": "States",
+            "description": "US states they can work from, as two-letter postal codes, DC included; any case is taken and stored in upper case."
+          },
+          "will_relocate": {
+            "type": "boolean",
+            "title": "Will Relocate",
+            "description": "Whether they would move for a role."
+          },
+          "relocate_for": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Relocate For",
+            "description": "Companies they would move for even though they would not move otherwise, each up to 100 characters; at most 20, and empty when they would move anyway."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "remote_ok",
+          "offices",
+          "states",
+          "will_relocate",
+          "relocate_for"
+        ],
+        "title": "Places",
+        "description": "Where a person will work: remote, offices in named cities, US states, and moving."
+      },
       "Profile": {
         "properties": {
           "target_titles": {
@@ -572,12 +1394,121 @@
               "type": "string"
             },
             "type": "array",
-            "title": "Target Titles"
+            "title": "Target Titles",
+            "description": "Job titles they are looking for, each up to 100 characters; at most 20."
+          },
+          "title_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TitleRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "places": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Places"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "pay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Skills"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "gaps": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gaps"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "deal_breakers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DealBreakers"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "companies": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Companies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "pace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pace"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "own_rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
           }
         },
         "type": "object",
         "required": [
-          "target_titles"
+          "target_titles",
+          "title_range",
+          "places",
+          "pay",
+          "skills",
+          "gaps",
+          "deal_breakers",
+          "companies",
+          "pace",
+          "own_rules"
         ],
         "title": "Profile",
         "description": "The whole profile, as stored and as answered."
@@ -694,6 +1625,50 @@
         ],
         "title": "SavedResume"
       },
+      "Skill": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The skill, as the person names it, up to 60 characters."
+          },
+          "years": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Years",
+            "description": "Whole years of using it, from 0 to 60; 0 means under a year."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "years"
+        ],
+        "title": "Skill",
+        "description": "One skill and how long the person has used it."
+      },
+      "Skills": {
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/Skill"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Skills",
+            "description": "Their skills, each named once; at most 100."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "skills"
+        ],
+        "title": "Skills",
+        "description": "The skills a person brings."
+      },
       "TargetTitles": {
         "properties": {
           "titles": {
@@ -702,7 +1677,8 @@
             },
             "type": "array",
             "maxItems": 200,
-            "title": "Titles"
+            "title": "Titles",
+            "description": "Job titles they are looking for, each up to 100 characters; at most 20."
           }
         },
         "additionalProperties": false,
@@ -712,6 +1688,32 @@
         ],
         "title": "TargetTitles",
         "description": "The body that replaces the target titles. An empty list means none chosen."
+      },
+      "TitleRange": {
+        "properties": {
+          "nearby_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Nearby Titles",
+            "description": "Job titles close to the target titles that are also worth seeing, each up to 100 characters; at most 20."
+          },
+          "lower_level_ok": {
+            "type": "boolean",
+            "title": "Lower Level Ok",
+            "description": "Whether a role one level below the target titles is fine."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nearby_titles",
+          "lower_level_ok"
+        ],
+        "title": "TitleRange",
+        "description": "How far from their target titles a person will look."
       },
       "ValidationError": {
         "properties": {

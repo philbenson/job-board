@@ -2,8 +2,13 @@
 
 The document grows by sections. Every section has a default, so a document
 written before a section existed still reads, and reading ignores keys it does
-not know, so a document written by newer code still reads in older code.
-Requests are strict instead: a body with a key it does not name is refused.
+not know, inside a section as at the top, so a document written by newer code
+still reads in older code. Requests are strict instead: a body with a key it
+does not name is refused.
+
+Invariant: a section nobody has saved reads as unanswered, null, never as an
+empty answer; a saved section is an answer even when its lists are empty. The
+target titles predate this and read as an empty list until saved.
 
 Invariant: a write changes only its own section, and only in the signed-in
 person's row. It sets that one key inside the stored document in the database,
@@ -11,12 +16,10 @@ in the same statement that adds the row when there is none, so a section
 written by another route, or by newer code, survives it untouched.
 """
 
-import unicodedata
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Text, func, literal, select
 from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,13 +27,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.database import get_session
 from job_board.models import Person, ProfileRow
 from job_board.people import SIGN_IN_REQUIRED, current_person
+from job_board.profile_sections import (
+    MAX_SENT_TITLES,
+    MAX_TARGET_TITLES,
+    MAX_TITLE_LENGTH,
+    TARGET_TITLES,
+    Companies,
+    DealBreakers,
+    Gaps,
+    OwnRules,
+    Pace,
+    Pay,
+    Places,
+    Skills,
+    TargetTitles,
+    TitleRange,
+)
 
-MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a different search
-MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line
-# The most titles a request may carry, counted before any is checked, so a
-# huge list is refused at once. Repeats are dropped after this count, so it
-# sits well above the cap.
-MAX_SENT_TITLES = 200
+__all__ = [
+    "MAX_SENT_TITLES",
+    "MAX_TARGET_TITLES",
+    "MAX_TITLE_LENGTH",
+    "Profile",
+    "TargetTitles",
+    "router",
+    "stored_profile",
+]
+
+UNANSWERED = "Null until the person saves this section."
 
 
 class Profile(BaseModel):
@@ -40,117 +64,27 @@ class Profile(BaseModel):
     # required there even though a stored document may lack it.
     model_config = ConfigDict(extra="ignore", json_schema_serialization_defaults_required=True)
 
-    target_titles: list[str] = Field(default_factory=list)
+    target_titles: list[str] = Field(default_factory=list, description=TARGET_TITLES)
+    title_range: TitleRange | None = Field(default=None, description=UNANSWERED)
+    places: Places | None = Field(default=None, description=UNANSWERED)
+    pay: Pay | None = Field(default=None, description=UNANSWERED)
+    skills: Skills | None = Field(default=None, description=UNANSWERED)
+    gaps: Gaps | None = Field(default=None, description=UNANSWERED)
+    deal_breakers: DealBreakers | None = Field(default=None, description=UNANSWERED)
+    companies: Companies | None = Field(default=None, description=UNANSWERED)
+    pace: Pace | None = Field(default=None, description=UNANSWERED)
+    own_rules: OwnRules | None = Field(default=None, description=UNANSWERED)
 
 
-# The embeddings and overrides (U+202A to U+202E) and the isolates (U+2066 to
-# U+2069), which reverse or reorder how the rest of a line shows.
-DIRECTION_CONTROLS = frozenset(map(chr, [*range(0x202A, 0x202F), *range(0x2066, 0x206A)]))
+def stored_profile(document: Any) -> Profile:
+    """The profile a stored document holds, ignoring every key this code does not know."""
+    # A section's own body refuses keys it does not name; reading overrides
+    # that at every depth, so a section saved by newer code still reads here.
+    return Profile.model_validate(document, extra="ignore")
 
 
-def _shows_something(character: str) -> bool:
-    # Format characters (Cf: zero-width spaces, joiners) and combining marks
-    # (Mn) show nothing on their own.
-    return not character.isspace() and unicodedata.category(character) not in {"Cf", "Mn"}
-
-
-def _trims_away(character: str) -> bool:
-    # Whitespace and the invisible format characters (Cf: zero-width spaces,
-    # joiners, byte order marks) at an end show nothing and join nothing.
-    # Direction controls stay, to be refused: dropping one would change how
-    # the rest of the title shows. Marks (Mn) stay too: a variation selector,
-    # U+FE0F, ends many emoji.
-    return character.isspace() or (
-        unicodedata.category(character) == "Cf" and character not in DIRECTION_CONTROLS
-    )
-
-
-def _trimmed(title: str) -> str:
-    start, end = 0, len(title)
-    while start < end and _trims_away(title[start]):
-        start += 1
-    while end > start and _trims_away(title[end - 1]):
-        end -= 1
-    return title[start:end]
-
-
-def _checked_title(title: str) -> str:
-    """The title trimmed and in its composed form, or the rule it breaks.
-
-    Whitespace and invisible format characters are trimmed from both ends, so
-    a title pasted with a zero-width space is the title the person sees. The
-    title is stored as the person sees it, so it is then normalised to NFC and
-    every rule measures that: an accented letter counts as one character
-    however it was typed. Each refusal's message is the rule alone, so the
-    person reads it as given.
-    """
-    shown = unicodedata.normalize("NFC", _trimmed(title))
-    # Half of a surrogate pair is no character at all: JSON can spell one, but
-    # no text encoding holds it, and the database would refuse the document.
-    if any(unicodedata.category(character) == "Cs" for character in shown):
-        raise PydanticCustomError("target_title_invalid_text", "A target title must be valid text")
-    if not any(_shows_something(character) for character in shown):
-        raise PydanticCustomError("target_title_blank", "A target title cannot be blank")
-    if len(shown) > MAX_TITLE_LENGTH:
-        raise PydanticCustomError(
-            "target_title_too_long",
-            f"A target title can be at most {MAX_TITLE_LENGTH} characters",
-        )
-    # Category Cc is the C0 and C1 controls and DEL: tabs, newlines, nulls and
-    # the like, which have no place inside a title and break how it shows.
-    if any(unicodedata.category(character) == "Cc" for character in shown):
-        raise PydanticCustomError(
-            "target_title_control_character",
-            "A target title cannot contain control characters",
-        )
-    # Other format characters stay: a zero-width joiner inside a title binds
-    # an emoji sequence.
-    if not DIRECTION_CONTROLS.isdisjoint(shown):
-        raise PydanticCustomError(
-            "target_title_direction_control",
-            "A target title cannot contain text direction controls",
-        )
-    return shown
-
-
-def _distinct_and_capped(titles: list[str]) -> list[str]:
-    """The titles without repeats, in the order given, or a refusal past the cap.
-
-    A repeat differs from an earlier title only in case or in how its letters
-    are composed, and is dropped rather than refused; the first spelling stays.
-    The cap counts what is left.
-    """
-    seen: set[str] = set()
-    distinct: list[str] = []
-    for title in titles:
-        # Each title is already composed; folding case can decompose a letter
-        # again, so the key is composed after folding.
-        key = unicodedata.normalize("NFC", title.casefold())
-        if key not in seen:
-            seen.add(key)
-            distinct.append(title)
-    if len(distinct) > MAX_TARGET_TITLES:
-        raise PydanticCustomError(
-            "target_titles_too_many",
-            f"You can list at most {MAX_TARGET_TITLES} target titles",
-        )
-    return distinct
-
-
-TargetTitle = Annotated[str, AfterValidator(_checked_title)]
-
-
-class TargetTitles(BaseModel):
-    """The body that replaces the target titles. An empty list means none chosen."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    titles: Annotated[
-        list[TargetTitle],
-        Field(max_length=MAX_SENT_TITLES),
-        AfterValidator(_distinct_and_capped),
-    ]
-
+SignedIn = Annotated[Person, Depends(current_person)]
+Database = Annotated[AsyncSession, Depends(get_session)]
 
 router = APIRouter()
 
@@ -162,26 +96,22 @@ router = APIRouter()
 
 
 @router.get("/profile", responses=SIGN_IN_REQUIRED)
-async def read_profile(
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> Profile:
+async def read_profile(person: SignedIn, session: Database) -> Profile:
     """The signed-in person's profile; an empty one, written nowhere, before their first save."""
     document = await session.scalar(
         select(ProfileRow.document).where(ProfileRow.person_id == person.id)
     )
-    return Profile() if document is None else Profile.model_validate(document)
+    return Profile() if document is None else stored_profile(document)
 
 
-@router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
-async def save_target_titles(
-    body: TargetTitles,
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+async def _save_section(
+    session: AsyncSession, person: Person, section: str, value: object
 ) -> Profile:
-    """Replaces the signed-in person's target titles and answers the profile as stored."""
-    section = "target_titles"  # the Profile field this route owns
-    new_row = insert(ProfileRow).values(person_id=person.id, document={section: body.titles})
+    """Sets one section of the person's stored document and answers the profile as stored.
+
+    ``section`` is the Profile field the caller owns and ``value`` its JSON form.
+    """
+    new_row = insert(ProfileRow).values(person_id=person.id, document={section: value})
     # One statement, so two saves at once cannot interleave a read and a write:
     # the row is added holding only this section, or the stored document gets
     # this one key set with jsonb_set and keeps every other key it holds.
@@ -197,5 +127,68 @@ async def save_target_titles(
         },
     ).returning(ProfileRow.document)
     document = await session.scalar(save)
+    # Read before committing: a stored section today's rules refuse fails the
+    # save here, and it is rolled back, so a failed answer means nothing changed.
+    profile = stored_profile(document)
     await session.commit()
-    return Profile.model_validate(document)
+    return profile
+
+
+@router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
+async def save_target_titles(body: TargetTitles, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's target titles and answers the profile as stored."""
+    return await _save_section(session, person, "target_titles", body.titles)
+
+
+@router.put("/profile/title-range", responses=SIGN_IN_REQUIRED)
+async def save_title_range(body: TitleRange, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's title range and answers the profile as stored."""
+    return await _save_section(session, person, "title_range", body.model_dump(mode="json"))
+
+
+@router.put("/profile/places", responses=SIGN_IN_REQUIRED)
+async def save_places(body: Places, person: SignedIn, session: Database) -> Profile:
+    """Replaces where the signed-in person will work and answers the profile as stored."""
+    return await _save_section(session, person, "places", body.model_dump(mode="json"))
+
+
+@router.put("/profile/pay", responses=SIGN_IN_REQUIRED)
+async def save_pay(body: Pay, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's pay and answers the profile as stored."""
+    return await _save_section(session, person, "pay", body.model_dump(mode="json"))
+
+
+@router.put("/profile/skills", responses=SIGN_IN_REQUIRED)
+async def save_skills(body: Skills, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's skills and answers the profile as stored."""
+    return await _save_section(session, person, "skills", body.model_dump(mode="json"))
+
+
+@router.put("/profile/gaps", responses=SIGN_IN_REQUIRED)
+async def save_gaps(body: Gaps, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's gaps and trade-offs and answers the profile as stored."""
+    return await _save_section(session, person, "gaps", body.model_dump(mode="json"))
+
+
+@router.put("/profile/deal-breakers", responses=SIGN_IN_REQUIRED)
+async def save_deal_breakers(body: DealBreakers, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's deal-breakers and answers the profile as stored."""
+    return await _save_section(session, person, "deal_breakers", body.model_dump(mode="json"))
+
+
+@router.put("/profile/companies", responses=SIGN_IN_REQUIRED)
+async def save_companies(body: Companies, person: SignedIn, session: Database) -> Profile:
+    """Replaces the companies the signed-in person watches and answers the profile as stored."""
+    return await _save_section(session, person, "companies", body.model_dump(mode="json"))
+
+
+@router.put("/profile/pace", responses=SIGN_IN_REQUIRED)
+async def save_pace(body: Pace, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's pace and answers the profile as stored."""
+    return await _save_section(session, person, "pace", body.model_dump(mode="json"))
+
+
+@router.put("/profile/own-rules", responses=SIGN_IN_REQUIRED)
+async def save_own_rules(body: OwnRules, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's own rules and answers the profile as stored."""
+    return await _save_section(session, person, "own_rules", body.model_dump(mode="json"))

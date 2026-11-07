@@ -1,70 +1,12 @@
 import asyncio
 import json
-import secrets
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
-from typing import Any
+from collections.abc import Iterator
 
-import httpx
 import pytest
-from session_tokens import claims, signed
+from profile_requests import NEW_PROFILE, REFUSED_BODY, Someone, client_for, run
 from settings_for_tests import make_settings
-from sqlalchemy import create_engine, text
 
 from job_board.app import create_app
-
-REFUSED_BODY = b'{"detail":"sign-in required"}'
-
-
-@asynccontextmanager
-async def client_for(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(make_settings(database_url=database_url))
-    async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            yield client
-
-
-def run(database_url: str, sql: str, **values: Any) -> list[Any]:
-    engine = create_engine(database_url)
-    with engine.begin() as connection:
-        result = connection.execute(text(sql), values)
-        rows = list(result) if result.returns_rows else []
-    engine.dispose()
-    return rows
-
-
-class Someone:
-    """A person with a session token, whose row and profile the test removes after."""
-
-    def __init__(self, database_url: str) -> None:
-        self.database_url = database_url
-        self.clerk_user_id = f"user_{secrets.token_hex(12)}"
-        self.headers = {"Authorization": f"Bearer {signed(claims(sub=self.clerk_user_id))}"}
-
-    def person_id(self) -> int:
-        (row,) = run(
-            self.database_url,
-            "SELECT id FROM people WHERE clerk_user_id = :user",
-            user=self.clerk_user_id,
-        )
-        person_id: int = row.id
-        return person_id
-
-    def stored(self) -> list[Any]:
-        return run(
-            self.database_url,
-            "SELECT document, created_at, updated_at FROM profiles WHERE person_id = :person",
-            person=self.person_id(),
-        )
-
-    def remove(self) -> None:
-        # The profile goes with the person.
-        run(
-            self.database_url,
-            "DELETE FROM people WHERE clerk_user_id = :user",
-            user=self.clerk_user_id,
-        )
 
 
 @pytest.fixture
@@ -95,7 +37,7 @@ async def test_reads_an_empty_profile_without_writing_one(
         response = await client.get("/profile", headers=someone.headers)
 
     assert response.status_code == 200
-    assert response.json() == {"target_titles": []}
+    assert response.json() == NEW_PROFILE
     assert someone.stored() == []
 
 
@@ -108,7 +50,14 @@ async def test_saves_the_titles_as_the_rules_leave_them_and_reads_them_back(
         read = await client.get("/profile", headers=someone.headers)
 
     assert saved.status_code == 200
-    assert saved.json() == read.json() == {"target_titles": ["Staff engineer", "Data analyst"]}
+    assert (
+        saved.json()
+        == read.json()
+        == {
+            **NEW_PROFILE,
+            "target_titles": ["Staff engineer", "Data analyst"],
+        }
+    )
     (row,) = someone.stored()
     assert row.document == {"target_titles": ["Staff engineer", "Data analyst"]}
 
@@ -132,7 +81,7 @@ async def test_saving_titles_changes_no_other_section_and_touches_the_update_tim
         )
 
     # The answer is the profile as this code knows it; the stored document keeps the rest.
-    assert saved.json() == {"target_titles": ["New title"]}
+    assert saved.json() == {**NEW_PROFILE, "target_titles": ["New title"]}
     (row,) = someone.stored()
     assert row.document == {"target_titles": ["New title"], "later": later_section}
     assert row.created_at.isoformat() == "2026-01-01T00:00:00+00:00"
@@ -158,9 +107,9 @@ async def test_each_person_reads_and_saves_only_their_own_profile(
         # that lost its filter answers them someone else's titles.
         none_yet = await client.get("/profile", headers=a_third_person.headers)
 
-    assert mine.json() == {"target_titles": ["Mine, again"]}
-    assert theirs.json() == {"target_titles": ["Theirs"]}
-    assert none_yet.json() == {"target_titles": []}
+    assert mine.json() == {**NEW_PROFILE, "target_titles": ["Mine, again"]}
+    assert theirs.json() == {**NEW_PROFILE, "target_titles": ["Theirs"]}
+    assert none_yet.json() == NEW_PROFILE
     assert [row.document for row in someone.stored()] == [{"target_titles": ["Mine, again"]}]
     assert [row.document for row in someone_else.stored()] == [{"target_titles": ["Theirs"]}]
     assert a_third_person.stored() == []
@@ -196,7 +145,7 @@ async def test_saving_an_empty_list_clears_the_titles(
             "/profile/target-titles", json={"titles": []}, headers=someone.headers
         )
 
-    assert cleared.json() == {"target_titles": []}
+    assert cleared.json() == NEW_PROFILE
     assert [row.document for row in someone.stored()] == [{"target_titles": []}]
 
 

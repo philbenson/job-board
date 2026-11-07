@@ -227,6 +227,17 @@ async def test_scores_only_people_with_a_working_key_and_a_title(engine: AsyncEn
         assert await eligible_people(session) == [first, second]
 
 
+async def test_scores_a_person_whose_section_holds_a_key_this_code_does_not_name(
+    engine: AsyncEngine,
+) -> None:
+    # A section saved by newer code may hold a key this code does not know;
+    # the titles still read, as the profile route reads them.
+    pay = {"floor_usd": 90000, "ask_usd": 120000, "currency": "USD"}
+    person = await add_person(engine, {"target_titles": ["Engineer"], "pay": pay})
+    async with make_sessionmaker(engine)() as session:
+        assert await eligible_people(session) == [person]
+
+
 async def test_scores_everyone_who_qualifies_in_order_of_id(engine: AsyncEngine) -> None:
     people = [await add_person(engine) for _ in range(3)]
     await add_person(engine, {})

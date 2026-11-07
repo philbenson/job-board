@@ -18,7 +18,7 @@ from langchain_core.runnables import Runnable
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from job_board.model_key.check import ANTHROPIC_API, CHECK_MODEL
-from job_board.profiles import DIRECTION_CONTROLS
+from job_board.profile_rules import DIRECTION_CONTROLS
 
 SCORING_MODEL = CHECK_MODEL  # the model a person's key was checked against
 MIN_SCORE = 1

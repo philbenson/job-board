@@ -4,10 +4,11 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, the posting fetcher, scoring, and resume upload:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the profile, saved through the service, the posting fetcher, scoring, and resume upload:
 
-- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
+- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile`, which reads the signed-in person's profile, with a `PUT` route under `/profile/` for each of its sections;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
+- the profile, in ten sections, each replaced whole through its own route: the job titles they are looking for; nearby titles and whether a role one level down is fine; where they will work; pay; skills and years of each; requirements they lack but would apply without, and what they would give up; deal-breakers among industries, company sizes and recruiting agencies; companies to watch and jobs already applied to; how many postings a day, and from what score a posting gets a written brief; and rules of their own. Every section but the titles reads as null until its first save, each has its own limits, and saving one leaves the rest as they were. Pay is annual base pay in whole US dollars, and places are US states, by postal code, and city names as the person typed them;
 - the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
 - the resume: `/resume`, where the signed-in person uploads one PDF of up to 5 MB, replacing any before it, reads its size and when it was uploaded, and removes it; the service keeps the file in an S3-compatible bucket, such as Cloudflare R2 or Amazon S3, with a row describing it in PostgreSQL, and the web app has a panel for all three;
 - scoring: a command that rates each open posting from 1 to 5, with a one-line reason, for each person with a working key and at least one target title, on that person's own key, up to 25 new postings per person each run, and exits; when Anthropic refuses a key, it stops using that key and the model key panel tells the person why, until they save a new one;
@@ -17,7 +18,7 @@ It is early. What exists today is the skeleton of the backend and the web app, s
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Running the fetcher and scoring on a schedule, showing the scores, and the rest of the profile come next.
+Running the fetcher and scoring on a schedule, showing the scores, and the screen to edit the rest of the profile come next.
 
 ## Running it
 
