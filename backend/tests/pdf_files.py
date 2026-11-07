@@ -82,6 +82,12 @@ def image_page() -> bytes:
     return _stream(b"q 612 0 0 792 0 0 cm /Im1 Do Q")
 
 
+def costly_page() -> bytes:
+    """A page's content stream of 640,000 text moves, under 5 MiB, that pypdf
+    spends seconds of processor time walking and finds no text in."""
+    return _stream(b"BT /F1 11 Tf 50 780 Td\n" + b"0 0 Td\n" * 640_000 + b"ET")
+
+
 def bomb_page() -> bytes:
     """A page's content stream that inflates past pypdf's cap."""
     return _stream(_bomb(), b"/Filter /FlateDecode ")

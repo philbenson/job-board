@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from pdf_files import bomb_page, encrypted, image_page, pdf, resume_lines
+from pdf_files import bomb_page, costly_page, encrypted, image_page, pdf, resume_lines
 
 from job_board.resumes.text_reading import LONGEST_ANSWER_BYTES, ResumeTextReader
 from job_board.resumes.text_rules import MAX_RESUME_TEXT_LENGTH, Reading, cleaned
@@ -155,6 +155,35 @@ async def test_a_reading_that_spins_is_stopped_by_its_processor_limit(
 
     assert reading == FAILED
     assert logged(caplog) == ["resume text reading ended by signal SIGXCPU"]
+
+
+async def test_the_reading_process_sets_its_own_processor_limit(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    file = pdf(costly_page())
+    assert len(file) <= MAX_RESUME_BYTES
+    reader = ResumeTextReader(cpu_seconds=1)
+
+    with caplog.at_level(logging.WARNING, logger=OURS):
+        reading = await reader.read(file)
+
+    assert reading == FAILED
+    assert logged(caplog) == ["resume text reading ended by signal SIGXCPU"]
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="macOS does not let a process set an address-space limit"
+)
+async def test_the_reading_process_sets_its_own_memory_limit(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reader = ResumeTextReader(address_space_bytes=32 * 1024 * 1024)  # below what pypdf needs
+
+    with caplog.at_level(logging.WARNING, logger=OURS):
+        reading = await reader.read(pdf(resume_lines()))
+
+    assert reading == FAILED
+    assert logged(caplog) == ["resume text reading exited with code 1"]
 
 
 @pytest.mark.skipif(
