@@ -6,10 +6,11 @@ import {
   type SaveRefusalBody,
   type TargetTitlesBody,
 } from './profile.ts'
+import { profileWith } from '../test/profileAnswers.ts'
 
 const TOKEN = 'header.payload.signature'
 
-const PROFILE = { target_titles: ['Designer', 'Writer'] } satisfies ProfileBody
+const PROFILE = profileWith(['Designer', 'Writer'])
 const TOO_LONG = {
   detail: [
     {
@@ -125,7 +126,7 @@ describe('saveTargetTitles', () => {
     let init: RequestInit | undefined
     const fetchMock = stubFetch(async (_url, given) => {
       init = given
-      return answer(200, { target_titles: ['Designer'] })
+      return answer(200, profileWith(['Designer']))
     })
 
     await expect(

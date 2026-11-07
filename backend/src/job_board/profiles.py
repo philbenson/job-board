@@ -2,8 +2,13 @@
 
 The document grows by sections. Every section has a default, so a document
 written before a section existed still reads, and reading ignores keys it does
-not know, so a document written by newer code still reads in older code.
-Requests are strict instead: a body with a key it does not name is refused.
+not know, inside a section as at the top, so a document written by newer code
+still reads in older code. Requests are strict instead: a body with a key it
+does not name is refused.
+
+Invariant: a section nobody has saved reads as unanswered, null, never as an
+empty answer; a saved section is an answer even when its lists are empty. The
+target titles predate this and read as an empty list until saved.
 
 Invariant: a write changes only its own section, and only in the signed-in
 person's row. It sets that one key inside the stored document in the database,
@@ -11,7 +16,7 @@ in the same statement that adds the row when there is none, so a section
 written by another route, or by newer code, survives it untouched.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,7 +31,10 @@ from job_board.profile_sections import (
     MAX_SENT_TITLES,
     MAX_TARGET_TITLES,
     MAX_TITLE_LENGTH,
+    Pay,
+    Places,
     TargetTitles,
+    TitleRange,
 )
 
 __all__ = [
@@ -38,6 +46,8 @@ __all__ = [
     "router",
 ]
 
+UNANSWERED = "Null until the person saves this section."
+
 
 class Profile(BaseModel):
     """The whole profile, as stored and as answered."""
@@ -47,7 +57,20 @@ class Profile(BaseModel):
     model_config = ConfigDict(extra="ignore", json_schema_serialization_defaults_required=True)
 
     target_titles: list[str] = Field(default_factory=list)
+    title_range: TitleRange | None = Field(default=None, description=UNANSWERED)
+    places: Places | None = Field(default=None, description=UNANSWERED)
+    pay: Pay | None = Field(default=None, description=UNANSWERED)
 
+
+def stored_profile(document: Any) -> Profile:
+    """The profile a stored document holds, ignoring every key this code does not know."""
+    # A section's own body refuses keys it does not name; reading overrides
+    # that at every depth, so a section saved by newer code still reads here.
+    return Profile.model_validate(document, extra="ignore")
+
+
+SignedIn = Annotated[Person, Depends(current_person)]
+Database = Annotated[AsyncSession, Depends(get_session)]
 
 router = APIRouter()
 
@@ -59,15 +82,12 @@ router = APIRouter()
 
 
 @router.get("/profile", responses=SIGN_IN_REQUIRED)
-async def read_profile(
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> Profile:
+async def read_profile(person: SignedIn, session: Database) -> Profile:
     """The signed-in person's profile; an empty one, written nowhere, before their first save."""
     document = await session.scalar(
         select(ProfileRow.document).where(ProfileRow.person_id == person.id)
     )
-    return Profile() if document is None else Profile.model_validate(document)
+    return Profile() if document is None else stored_profile(document)
 
 
 async def _save_section(
@@ -94,14 +114,28 @@ async def _save_section(
     ).returning(ProfileRow.document)
     document = await session.scalar(save)
     await session.commit()
-    return Profile.model_validate(document)
+    return stored_profile(document)
 
 
 @router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
-async def save_target_titles(
-    body: TargetTitles,
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> Profile:
+async def save_target_titles(body: TargetTitles, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's target titles and answers the profile as stored."""
     return await _save_section(session, person, "target_titles", body.titles)
+
+
+@router.put("/profile/title-range", responses=SIGN_IN_REQUIRED)
+async def save_title_range(body: TitleRange, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's title range and answers the profile as stored."""
+    return await _save_section(session, person, "title_range", body.model_dump(mode="json"))
+
+
+@router.put("/profile/places", responses=SIGN_IN_REQUIRED)
+async def save_places(body: Places, person: SignedIn, session: Database) -> Profile:
+    """Replaces where the signed-in person will work and answers the profile as stored."""
+    return await _save_section(session, person, "places", body.model_dump(mode="json"))
+
+
+@router.put("/profile/pay", responses=SIGN_IN_REQUIRED)
+async def save_pay(body: Pay, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's pay and answers the profile as stored."""
+    return await _save_section(session, person, "pay", body.model_dump(mode="json"))

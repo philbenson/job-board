@@ -291,6 +291,168 @@
           }
         ]
       }
+    },
+    "/profile/title-range": {
+      "put": {
+        "summary": "Save Title Range",
+        "description": "Replaces the signed-in person's title range and answers the profile as stored.",
+        "operationId": "save_title_range_profile_title_range_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TitleRange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/places": {
+      "put": {
+        "summary": "Save Places",
+        "description": "Replaces where the signed-in person will work and answers the profile as stored.",
+        "operationId": "save_places_profile_places_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Places"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/pay": {
+      "put": {
+        "summary": "Save Pay",
+        "description": "Replaces the signed-in person's pay and answers the profile as stored.",
+        "operationId": "save_pay_profile_pay_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pay"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -394,6 +556,108 @@
         ],
         "title": "ModelKeyToSave"
       },
+      "Office": {
+        "properties": {
+          "city": {
+            "type": "string",
+            "title": "City",
+            "description": "The city's name as the person typed it, up to 100 characters."
+          },
+          "days_a_week": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Days A Week",
+            "description": "Days a week in the office, from 1 to 5; 5 means on site."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "city",
+          "days_a_week"
+        ],
+        "title": "Office",
+        "description": "A city a person would go into an office in, and how often."
+      },
+      "Pay": {
+        "properties": {
+          "floor_usd": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Floor Usd",
+            "description": "The lowest annual base pay, in whole US dollars, they would take."
+          },
+          "ask_usd": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Ask Usd",
+            "description": "The annual base pay, in whole US dollars, they ask for; at least the floor."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "floor_usd",
+          "ask_usd"
+        ],
+        "title": "Pay",
+        "description": "What a person will be paid: annual base pay in whole US dollars, before bonus or equity."
+      },
+      "Places": {
+        "properties": {
+          "remote_ok": {
+            "type": "boolean",
+            "title": "Remote Ok",
+            "description": "Whether a fully remote role is fine."
+          },
+          "offices": {
+            "items": {
+              "$ref": "#/components/schemas/Office"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Offices",
+            "description": "Cities, as typed, where they would go into an office, and how many days a week; at most 20, one per city."
+          },
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 510,
+            "title": "States",
+            "description": "US states they would work in, as two-letter postal codes, DC included; any case is taken and stored in upper case."
+          },
+          "will_relocate": {
+            "type": "boolean",
+            "title": "Will Relocate",
+            "description": "Whether they would move for a role."
+          },
+          "relocate_for": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Relocate For",
+            "description": "Companies they would move for even though they would not move otherwise, each up to 100 characters; at most 20, and empty when they would move anyway."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "remote_ok",
+          "offices",
+          "states",
+          "will_relocate",
+          "relocate_for"
+        ],
+        "title": "Places",
+        "description": "Where a person will work: remote, offices in named cities, US states, and moving."
+      },
       "Profile": {
         "properties": {
           "target_titles": {
@@ -402,11 +666,47 @@
             },
             "type": "array",
             "title": "Target Titles"
+          },
+          "title_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TitleRange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "places": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Places"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "pay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pay"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
           }
         },
         "type": "object",
         "required": [
-          "target_titles"
+          "target_titles",
+          "title_range",
+          "places",
+          "pay"
         ],
         "title": "Profile",
         "description": "The whole profile, as stored and as answered."
@@ -472,6 +772,32 @@
         ],
         "title": "TargetTitles",
         "description": "The body that replaces the target titles. An empty list means none chosen."
+      },
+      "TitleRange": {
+        "properties": {
+          "nearby_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Nearby Titles",
+            "description": "Job titles close to the target titles that are also worth seeing, each up to 100 characters; at most 20."
+          },
+          "lower_level_ok": {
+            "type": "boolean",
+            "title": "Lower Level Ok",
+            "description": "Whether a role one level below the target titles is fine."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nearby_titles",
+          "lower_level_ok"
+        ],
+        "title": "TitleRange",
+        "description": "How far from their target titles a person will look."
       },
       "ValidationError": {
         "properties": {

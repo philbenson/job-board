@@ -97,6 +97,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile/title-range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Title Range
+         * @description Replaces the signed-in person's title range and answers the profile as stored.
+         */
+        put: operations["save_title_range_profile_title_range_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Places
+         * @description Replaces where the signed-in person will work and answers the profile as stored.
+         */
+        put: operations["save_places_profile_places_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Pay
+         * @description Replaces the signed-in person's pay and answers the profile as stored.
+         */
+        put: operations["save_pay_profile_pay_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -148,12 +208,81 @@ export interface components {
             key: string;
         };
         /**
+         * Office
+         * @description A city a person would go into an office in, and how often.
+         */
+        Office: {
+            /**
+             * City
+             * @description The city's name as the person typed it, up to 100 characters.
+             */
+            city: string;
+            /**
+             * Days A Week
+             * @description Days a week in the office, from 1 to 5; 5 means on site.
+             */
+            days_a_week: number;
+        };
+        /**
+         * Pay
+         * @description What a person will be paid: annual base pay in whole US dollars, before bonus or equity.
+         */
+        Pay: {
+            /**
+             * Floor Usd
+             * @description The lowest annual base pay, in whole US dollars, they would take.
+             */
+            floor_usd: number;
+            /**
+             * Ask Usd
+             * @description The annual base pay, in whole US dollars, they ask for; at least the floor.
+             */
+            ask_usd: number;
+        };
+        /**
+         * Places
+         * @description Where a person will work: remote, offices in named cities, US states, and moving.
+         */
+        Places: {
+            /**
+             * Remote Ok
+             * @description Whether a fully remote role is fine.
+             */
+            remote_ok: boolean;
+            /**
+             * Offices
+             * @description Cities, as typed, where they would go into an office, and how many days a week; at most 20, one per city.
+             */
+            offices: components["schemas"]["Office"][];
+            /**
+             * States
+             * @description US states they would work in, as two-letter postal codes, DC included; any case is taken and stored in upper case.
+             */
+            states: string[];
+            /**
+             * Will Relocate
+             * @description Whether they would move for a role.
+             */
+            will_relocate: boolean;
+            /**
+             * Relocate For
+             * @description Companies they would move for even though they would not move otherwise, each up to 100 characters; at most 20, and empty when they would move anyway.
+             */
+            relocate_for: string[];
+        };
+        /**
          * Profile
          * @description The whole profile, as stored and as answered.
          */
         Profile: {
             /** Target Titles */
             target_titles: string[];
+            /** @description Null until the person saves this section. */
+            title_range: components["schemas"]["TitleRange"] | null;
+            /** @description Null until the person saves this section. */
+            places: components["schemas"]["Places"] | null;
+            /** @description Null until the person saves this section. */
+            pay: components["schemas"]["Pay"] | null;
         };
         /** Refused */
         Refused: {
@@ -184,6 +313,22 @@ export interface components {
         TargetTitles: {
             /** Titles */
             titles: string[];
+        };
+        /**
+         * TitleRange
+         * @description How far from their target titles a person will look.
+         */
+        TitleRange: {
+            /**
+             * Nearby Titles
+             * @description Job titles close to the target titles that are also worth seeing, each up to 100 characters; at most 20.
+             */
+            nearby_titles: string[];
+            /**
+             * Lower Level Ok
+             * @description Whether a role one level below the target titles is fine.
+             */
+            lower_level_ok: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -429,6 +574,132 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TargetTitles"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_title_range_profile_title_range_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleRange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_places_profile_places_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Places"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_pay_profile_pay_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Pay"];
             };
         };
         responses: {
