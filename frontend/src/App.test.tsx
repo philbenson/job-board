@@ -153,7 +153,7 @@ describe('App', () => {
     ['says sign-in is loading while Clerk loads', 'loading', LOADING, FAILED],
     ['says sign-in could not load when Clerk fails', 'error', FAILED, LOADING],
   ] as const)(
-    '%s, offering no sign-in yet',
+    '%s, offering no sign-in',
     (_case, status, shown, notShown) => {
       serviceNeverAnswers()
       clerk.status = status
