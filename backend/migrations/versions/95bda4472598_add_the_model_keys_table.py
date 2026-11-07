@@ -5,7 +5,7 @@ open it, with its last four characters in the clear. One per person and
 provider; a person's keys go when the person does.
 
 Revision ID: 95bda4472598
-Revises: cfa93d75ce9f
+Revises: 9fe5638962f4
 Create Date: 2026-11-07 12:45:05.917837
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "95bda4472598"
-down_revision: str | Sequence[str] | None = "cfa93d75ce9f"
+down_revision: str | Sequence[str] | None = "9fe5638962f4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
