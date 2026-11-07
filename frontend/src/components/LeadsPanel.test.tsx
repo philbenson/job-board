@@ -20,11 +20,11 @@ const LOADING = 'Loading your leads…'
 const NOT_LOADED = 'Could not load your leads.'
 const NOT_REFRESHED = 'Could not refresh your leads.'
 const NONE_YET =
-  'No leads yet. Postings are scored on a schedule once your model key and at least one target title are saved.'
+  'No leads yet. Leads appear once your model key and at least one target title are saved and scoring next runs.'
 const TITLES_AS_THEY_WERE =
   'Each lead was rated against your target titles as they were when it was scored. A change to your titles applies to postings rated after it.'
 const NEWER_FIRST =
-  'Newer postings are rated first; older ones follow on later runs.'
+  'Newer postings are rated first; older ones follow on later runs while there is room.'
 
 const PLATFORM_LEAD = {
   posting_id: 7,
@@ -181,6 +181,28 @@ describe('LeadsPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows markup from a posting and its rating as text, never as HTML', async () => {
+    const markup = '<img src=x onerror=alert(1)>'
+    service(() =>
+      leads({
+        ...PLATFORM_LEAD,
+        title: `Title ${markup}`,
+        company: `Company ${markup}`,
+        location: `Location ${markup}`,
+        reason: `Reason ${markup}`,
+      }),
+    )
+
+    render(<LeadsPanel />)
+    const [item] = await shownLeads()
+    const lead = within(item as HTMLElement)
+
+    expect((item as HTMLElement).querySelector('img')).toBeNull()
+    expect(lead.getByRole('link', { name: `Title ${markup}` })).toBeInTheDocument()
+    expect(lead.getByText(`Company ${markup} · Location ${markup}`)).toBeInTheDocument()
+    expect(lead.getByText(`Reason ${markup}`)).toBeInTheDocument()
+  })
+
   it.each([
     ['a script address', 'javascript:alert(1)'],
     ['a data address', 'data:text/html,<p>hello</p>'],
@@ -335,6 +357,7 @@ describe('LeadsPanel', () => {
     render(<LeadsPanel />)
     expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
     showPage('hidden')
+    await settle()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     showPage('visible')
     await settle()

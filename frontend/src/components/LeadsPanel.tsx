@@ -123,8 +123,8 @@ export function LeadsPanel() {
       {loaded !== null &&
         (loaded.leads.length === 0 ? (
           <p>
-            No leads yet. Postings are scored on a schedule once your model key
-            and at least one target title are saved.
+            No leads yet. Leads appear once your model key and at least one
+            target title are saved and scoring next runs.
           </p>
         ) : (
           <LeadList leads={loaded.leads} total={loaded.total} />
@@ -145,7 +145,10 @@ function LeadList({ leads, total }: { leads: Lead[]; total: number }) {
       </p>
       {/* Scoring takes the newest unrated postings first, a capped number
           each run; the cap is left out so it can change without the page. */}
-      <p>Newer postings are rated first; older ones follow on later runs.</p>
+      <p>
+        Newer postings are rated first; older ones follow on later runs while
+        there is room.
+      </p>
       <ol aria-label="Your leads, best first">
         {leads.map((lead) => (
           <LeadItem key={lead.posting_id} lead={lead} />
