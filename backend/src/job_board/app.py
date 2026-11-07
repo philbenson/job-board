@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from job_board import health, me
 from job_board.database import make_sessionmaker
+from job_board.logging_setup import configure_logging
 from job_board.settings import Settings
 
 
@@ -18,6 +19,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     created at startup, disposed of at shutdown.
     """
     resolved = settings if settings is not None else Settings()
+    configure_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
