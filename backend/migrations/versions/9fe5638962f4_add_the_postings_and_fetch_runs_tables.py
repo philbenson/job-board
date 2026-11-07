@@ -7,7 +7,7 @@ it comes back. Each attempt to fetch a board, successful or not, is one row of
 fetch_runs.
 
 Revision ID: 9fe5638962f4
-Revises: d6537361a180
+Revises: cfa93d75ce9f
 Create Date: 2026-11-07 11:48:05.097612
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "9fe5638962f4"
-down_revision: str | Sequence[str] | None = "d6537361a180"
+down_revision: str | Sequence[str] | None = "cfa93d75ce9f"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
