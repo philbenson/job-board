@@ -21,7 +21,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 LARGEST_BODY_BYTES = 64 * 1024  # far above any body a route here takes
 TOO_LARGE = json.dumps({"detail": "The request body is too large"}).encode()
-# Routes that read and cap their own bodies, matched exactly: a resume upload
+# Routes that read and cap their own bodies, matched exactly on the path the
+# router matches, with any root path taken off: a resume upload
 # runs to 5 MiB, so buffering it here would read it before the sign-in check.
 READS_ITS_OWN_BODY = frozenset({("PUT", "/resume")})
 
@@ -31,7 +32,7 @@ class BodyLimit:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or (scope["method"], scope["path"]) in READS_ITS_OWN_BODY:
+        if scope["type"] != "http" or (scope["method"], route_path(scope)) in READS_ITS_OWN_BODY:
             await self.app(scope, receive, send)
             return
 
@@ -65,6 +66,24 @@ class BodyLimit:
             return await receive()  # after the body, only a disconnect is left to hear
 
         await self.app(scope, replay, send)
+
+
+def route_path(scope: Scope) -> str:
+    """The path the router matches: the scope's path with the root path taken off.
+
+    A copy of Starlette's get_route_path (starlette/_utils.py), which is private.
+    Served under a root path, the scope's path starts with it, and the router
+    matches what follows.
+    """
+    path: str = scope["path"]
+    root_path: str = scope.get("root_path", "")
+    if not root_path or not path.startswith(root_path):
+        return path
+    if path == root_path:
+        return ""
+    if path[len(root_path)] == "/":
+        return path[len(root_path) :]
+    return path
 
 
 async def refuse(send: Send) -> None:

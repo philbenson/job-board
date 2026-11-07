@@ -121,3 +121,17 @@ async def test_caps_every_other_method_and_path_beside_the_resume_upload() -> No
     assert (posted.status_code, posted.json()) == (413, TOO_LARGE)
     assert (slashed.status_code, slashed.json()) == (413, TOO_LARGE)
     assert received == []
+
+
+async def test_passes_the_resume_upload_through_unread_under_a_root_path() -> None:
+    # Served under a root path, as uvicorn's --root-path serves it, the scope's
+    # path carries the root path in front of the route's own.
+    app, received = resume_routes_app()
+    transport = httpx.ASGITransport(app=app, root_path="/jobs")
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        uploaded = await client.put("/jobs/resume", content=ONE_MEBIBYTE)
+        posted = await client.post("/jobs/resume", content=ONE_MEBIBYTE)
+
+    assert uploaded.status_code == 200
+    assert (posted.status_code, posted.json()) == (413, TOO_LARGE)
+    assert received == [("PUT", "/jobs/resume", len(ONE_MEBIBYTE))]
