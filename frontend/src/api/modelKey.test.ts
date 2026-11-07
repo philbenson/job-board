@@ -28,6 +28,11 @@ const UNREACHABLE = {
   reason: 'unavailable',
 } satisfies ModelKeyRefusedBody
 
+const TOO_MANY_CHECKS = {
+  detail: 'You have checked too many keys in the last hour. Try again later.',
+  reason: 'too-many-checks',
+} satisfies ModelKeyRefusedBody
+
 // A body the contract allows, typed so it changes when the backend's does.
 function answer(
   status: number,
@@ -141,6 +146,7 @@ describe('saveModelKey', () => {
   it.each([
     ['a 422', 422, REJECTED],
     ['a 503', 503, UNREACHABLE],
+    ['a 429', 429, TOO_MANY_CHECKS],
   ])('passes on the sentence of %s refusal', async (_case, status, body) => {
     serviceAnswers(() => answer(status, body))
     await expect(saveModelKey(TOKEN, KEY, signal())).resolves.toEqual({

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.app import create_app
 from job_board.database import get_session
 from job_board.model_key.check import CheckOutcome, get_key_checker
+from job_board.model_key.check_limits import CHECKS_PER_HOUR, CheckLimits
 from job_board.model_key.sealing import open_sealed, seal
 
 SERVICE_KEY = base64.urlsafe_b64decode(MODEL_KEY_ENCRYPTION_KEY)
@@ -32,6 +33,8 @@ UNAVAILABLE = (
     "if it keeps happening, check the key's limits in the Claude Console."
 )
 MALFORMED = "That does not look like an Anthropic API key."
+CHECK_RUNNING = "A check of your key is already running. Wait for it to finish."
+TOO_MANY_CHECKS = "You have checked too many keys in the last hour. Try again later."
 
 
 def fake_key() -> str:
@@ -46,11 +49,17 @@ class FakeChecker:
     asked: list[str] = field(default_factory=list)
     # Called while the check waits, to look at the request's database state.
     while_checking: Callable[[], None] | None = None
+    # When set, each check waits for it, so a test can act while one runs.
+    hold: asyncio.Event | None = None
+    started: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def __call__(self, key: str) -> CheckOutcome:
         self.asked.append(key)
         if self.while_checking is not None:
             self.while_checking()
+        self.started.set()
+        if self.hold is not None:
+            await self.hold.wait()
         return self.outcome
 
 
@@ -283,6 +292,68 @@ async def test_takes_a_key_of_exactly_the_longest_length(service: Service) -> No
     assert response.status_code == 200
 
 
+async def test_refuses_a_second_check_while_the_first_runs(service: Service) -> None:
+    person = new_person()
+    service.checker.hold = asyncio.Event()
+    first = asyncio.create_task(
+        service.client.put("/model-key", headers=person, json=save(fake_key()))
+    )
+    await service.checker.started.wait()
+
+    second_sent = asyncio.create_task(
+        service.client.put("/model-key", headers=person, json=save(fake_key()))
+    )
+    answered, _ = await asyncio.wait({second_sent}, timeout=2)
+    service.checker.hold.set()  # the first check ends whatever the second did
+    second = await second_sent
+
+    assert answered == {second_sent}  # answered while the first check still ran
+    assert second.status_code == 429
+    assert second.json() == {"detail": CHECK_RUNNING, "reason": "check-running"}
+    assert (await first).status_code == 200
+    assert len(service.checker.asked) == 1
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+async def test_refuses_an_eleventh_check_within_the_hour_and_not_one_an_hour_later(
+    service: Service,
+) -> None:
+    clock = Clock()
+    service.app.state.check_limits = CheckLimits(clock=clock)
+    person = new_person()
+    answers = []
+    for _ in range(CHECKS_PER_HOUR + 1):
+        answers.append(
+            await service.client.put("/model-key", headers=person, json=save(fake_key()))
+        )
+    clock.now += 3600
+    later = await service.client.put("/model-key", headers=person, json=save(fake_key()))
+
+    assert [answer.status_code for answer in answers] == [200] * CHECKS_PER_HOUR + [429]
+    assert answers[-1].json() == {"detail": TOO_MANY_CHECKS, "reason": "too-many-checks"}
+    assert later.status_code == 200
+    assert len(service.checker.asked) == CHECKS_PER_HOUR + 1
+
+
+async def test_a_malformed_key_does_not_count_as_a_check(service: Service) -> None:
+    clock = Clock()
+    service.app.state.check_limits = CheckLimits(clock=clock)
+    person = new_person()
+    for _ in range(CHECKS_PER_HOUR):
+        await service.client.put("/model-key", headers=person, json=save("not a key"))
+
+    response = await service.client.put("/model-key", headers=person, json=save(fake_key()))
+
+    assert response.status_code == 200
+
+
 async def test_waits_on_anthropic_with_no_database_transaction_or_connection_held(
     service: Service,
 ) -> None:
@@ -372,9 +443,9 @@ def test_the_description_declares_each_answer() -> None:
 
     assert set(route) == {"get", "put", "delete"}
     assert set(route["get"]["responses"]) == {"200", "401", "404"}
-    assert set(route["put"]["responses"]) == {"200", "401", "422", "503"}
+    assert set(route["put"]["responses"]) == {"200", "401", "422", "429", "503"}
     assert set(route["delete"]["responses"]) == {"204", "401"}
-    for status in ("422", "503"):
+    for status in ("422", "429", "503"):
         refusal = route["put"]["responses"][status]["content"]["application/json"]["schema"]
         assert refusal == {"$ref": "#/components/schemas/ModelKeyRefused"}
     assert schemas["ModelKeyRefused"]["properties"]["reason"]["enum"] == [
@@ -382,6 +453,8 @@ def test_the_description_declares_each_answer() -> None:
         "rejected",
         "not-permitted",
         "unavailable",
+        "check-running",
+        "too-many-checks",
     ]
     assert schemas["SavedModelKey"]["required"] == ["provider", "last_four", "checked_at", "usable"]
     assert schemas["ModelKeyToSave"]["required"] == ["provider", "key"]

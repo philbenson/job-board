@@ -228,6 +228,16 @@ describe('ModelKeyPanel', () => {
       'unavailable',
       "Anthropic did not confirm the key, so nothing was saved. Try again later; if it keeps happening, check the key's limits in the Claude Console.",
     ],
+    [
+      429,
+      'check-running',
+      'A check of your key is already running. Wait for it to finish.',
+    ],
+    [
+      429,
+      'too-many-checks',
+      'You have checked too many keys in the last hour. Try again later.',
+    ],
   ] as const)(
     'shows the backend sentence for a %i %s refusal',
     async (status, reason, detail) => {

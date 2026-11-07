@@ -31,6 +31,8 @@ export type ModelKeySave =
 export type ModelKeyRemoval = 'removed' | 'unavailable'
 
 const MODEL_KEY_URL = '/api/model-key'
+// The answers to a save that carry a sentence for the person.
+const REFUSAL_STATUSES = new Set([422, 429, 503])
 
 /**
  * The signed-in person's saved key: "none" for the backend's 404, and
@@ -60,7 +62,7 @@ export async function readModelKey(
 }
 
 /**
- * Sends a key to be checked and saved. The backend's 422 and 503 refusals
+ * Sends a key to be checked and saved. The backend's 422, 429 and 503 refusals
  * come back with their sentence; any other answer, a body outside the
  * contract, or a failed request is "unavailable". The key goes only into this
  * request's body. Never rejects; the caller sets the time limit.
@@ -85,7 +87,7 @@ export async function saveModelKey(
     if (response.status === 200) {
       return isSavedKey(body) ? { saved: body } : 'unavailable'
     }
-    if (response.status === 422 || response.status === 503) {
+    if (REFUSAL_STATUSES.has(response.status)) {
       // A 422 for a body the backend could not read at all is a list of
       // problems, not a refusal with a sentence, and reads as no answer.
       return isRefusal(body) ? { refused: body.detail } : 'unavailable'

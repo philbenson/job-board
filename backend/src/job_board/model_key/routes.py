@@ -15,7 +15,7 @@ earlier one in place.
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, SecretStr
 from sqlalchemy import delete, func, select
@@ -24,13 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
 from job_board.model_key.check import KeyChecker, get_key_checker
+from job_board.model_key.check_limits import CheckLimits
 from job_board.model_key.sealing import seal, sealed_with
 from job_board.models import ModelKey, Person
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person, get_settings
 from job_board.settings import Settings
 
 Provider = Literal["anthropic"]
-RefusalReason = Literal["malformed", "rejected", "not-permitted", "unavailable"]
+RefusalReason = Literal[
+    "malformed", "rejected", "not-permitted", "unavailable", "check-running", "too-many-checks"
+]
 
 LONGEST_KEY = 512
 # Well above four, so that showing a saved key's last four characters never shows
@@ -47,6 +50,14 @@ REFUSALS: dict[RefusalReason, tuple[int, str]] = {
         503,
         "Anthropic did not confirm the key, so nothing was saved. Try again later; "
         "if it keeps happening, check the key's limits in the Claude Console.",
+    ),
+    "check-running": (
+        429,
+        "A check of your key is already running. Wait for it to finish.",
+    ),
+    "too-many-checks": (
+        429,
+        "You have checked too many keys in the last hour. Try again later.",
     ),
 }
 
@@ -70,6 +81,11 @@ class SavedModelKey(BaseModel):
 class ModelKeyRefused(BaseModel):
     detail: str
     reason: RefusalReason
+
+
+def get_check_limits(request: Request) -> CheckLimits:
+    limits: CheckLimits = request.app.state.check_limits
+    return limits
 
 
 def refused(reason: RefusalReason) -> JSONResponse:
@@ -121,6 +137,7 @@ async def read_model_key(
     responses={
         **SIGN_IN_REQUIRED,
         422: {"model": ModelKeyRefused, "description": "A malformed key, or one Anthropic refused"},
+        429: {"model": ModelKeyRefused, "description": "Too many checks of this person's keys"},
         503: {"model": ModelKeyRefused, "description": "Anthropic did not confirm the key"},
     },
 )
@@ -130,13 +147,20 @@ async def save_model_key(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     check: Annotated[KeyChecker, Depends(get_key_checker)],
+    limits: Annotated[CheckLimits, Depends(get_check_limits)],
 ) -> SavedModelKey | JSONResponse:
     key = to_save.key.get_secret_value().strip()
     if not well_formed(key):
         return refused("malformed")
 
-    await session.commit()  # hold nothing open while Anthropic answers
-    outcome = await check(key)
+    limited = limits.admit(person.id)
+    if limited is not None:
+        return refused(limited)
+    try:
+        await session.commit()  # hold nothing open while Anthropic answers
+        outcome = await check(key)
+    finally:
+        limits.done(person.id)
     if outcome != "accepted":
         return refused(outcome)
 

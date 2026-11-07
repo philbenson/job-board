@@ -87,7 +87,7 @@ export interface components {
              * Reason
              * @enum {string}
              */
-            reason: "malformed" | "rejected" | "not-permitted" | "unavailable";
+            reason: "malformed" | "rejected" | "not-permitted" | "unavailable" | "check-running" | "too-many-checks";
         };
         /** ModelKeyToSave */
         ModelKeyToSave: {
@@ -262,6 +262,15 @@ export interface operations {
             };
             /** @description A malformed key, or one Anthropic refused */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelKeyRefused"];
+                };
+            };
+            /** @description Too many checks of this person's keys */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

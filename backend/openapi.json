@@ -152,6 +152,16 @@
               }
             }
           },
+          "429": {
+            "description": "Too many checks of this person's keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelKeyRefused"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Anthropic did not confirm the key",
             "content": {
@@ -248,7 +258,9 @@
               "malformed",
               "rejected",
               "not-permitted",
-              "unavailable"
+              "unavailable",
+              "check-running",
+              "too-many-checks"
             ],
             "title": "Reason"
           }
