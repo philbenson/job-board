@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -200,16 +200,42 @@ describe('ModelKeyPanel', () => {
     expect(button('Try again')).toBeInTheDocument()
   })
 
-  it('reads the key again on Try again', async () => {
+  it('reads the key again on Try again, holding the button meanwhile, then focuses Replace', async () => {
     let reads = 0
+    const reread = later()
     const fetchMock = service({
       get: () => {
         reads += 1
-        return reads === 1
-          ? answerText(500, '{"detail": "down"}')
-          : answer(200, SAVED)
+        return reads === 1 ? answerText(500, '{"detail": "down"}') : reread.reply()
       },
     })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+    const alert = screen.getByRole('alert')
+    const status = screen.getByRole('status')
+    expect(await screen.findByText(READ_FAILED)).toBe(alert)
+
+    await user.click(button('Try again'))
+
+    expect(status).toHaveTextContent(LOADING)
+    expect(alert).toHaveTextContent(/^$/)
+    expectHeld('Try again')
+    expect(button('Try again')).toHaveFocus()
+    await user.click(button('Try again'))
+    expect(callsWith(fetchMock, 'GET')).toHaveLength(2)
+
+    await act(async () => {
+      reread.give(new Response(JSON.stringify(SAVED), { status: 200 }))
+    })
+
+    expect(await screen.findByText(SAVED_LINE)).toBeInTheDocument()
+    expect(status).toHaveTextContent(/^$/)
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    expect(button('Replace')).toHaveFocus()
+  })
+
+  it('keeps Try again and its focus when the read fails again', async () => {
+    const fetchMock = service({ get: () => answerText(500, '{"detail": "down"}') })
     const user = userEvent.setup()
     render(<ModelKeyPanel />)
     const alert = screen.getByRole('alert')
@@ -217,10 +243,14 @@ describe('ModelKeyPanel', () => {
 
     await user.click(button('Try again'))
 
-    expect(await screen.findByText(SAVED_LINE)).toBeInTheDocument()
-    expect(alert).toHaveTextContent(/^$/)
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
-    expect(callsWith(fetchMock, 'GET')).toHaveLength(2)
+    await waitFor(() => {
+      expect(callsWith(fetchMock, 'GET')).toHaveLength(2)
+    })
+    await waitFor(() => {
+      expectFree('Try again')
+    })
+    expect(alert).toHaveTextContent(READ_FAILED)
+    expect(button('Try again')).toHaveFocus()
   })
 
   it('says the key could not be loaded when Clerk has no session token', async () => {
@@ -263,6 +293,7 @@ describe('ModelKeyPanel', () => {
     expect(await screen.findByText(NEWLY_SAVED_LINE)).toBeInTheDocument()
     expect(status).toHaveTextContent(/^$/)
     expect(typed).not.toBeInTheDocument()
+    expect(button('Replace')).toHaveFocus() // Save left the page with the form
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
   })

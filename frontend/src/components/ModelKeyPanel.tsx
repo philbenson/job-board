@@ -25,6 +25,7 @@ const READ_FAILED = 'Could not load your model key'
 const SAVE_FAILED = 'Could not save the key. Try again.'
 const REMOVE_FAILED = 'Could not remove the key. Try again.'
 
+const LOADING = 'Loading your model key…'
 const CHECKING = 'Checking the key with Anthropic…'
 const REMOVING = 'Removing the key…'
 const REMOVED = 'Key removed'
@@ -52,7 +53,7 @@ export function ModelKeyPanel() {
   const { getToken } = useAuth()
   const [saved, setSaved] = useState<Saved>('loading')
   const [replacing, setReplacing] = useState(false)
-  const [busy, setBusy] = useState<'checking' | 'removing' | null>(null)
+  const [busy, setBusy] = useState<'reading' | 'checking' | 'removing' | null>(null)
   const [status, setStatus] = useState('')
   const [problem, setProblem] = useState('')
   const keyInput = useRef<HTMLInputElement>(null)
@@ -92,14 +93,26 @@ export function ModelKeyPanel() {
     }
   }, [getToken, showRead])
 
-  const readAgain = (): void => {
+  // Try again stays on the page, held, while the read runs, so focus stays on
+  // it; once the read succeeds it goes, and focus goes to what replaced it.
+  const readAgain = async (): Promise<void> => {
     const signal = lifetime.current?.signal
-    if (signal === undefined) {
+    if (signal === undefined || busy !== null) {
       return
     }
-    setSaved('loading')
+    setBusy('reading')
+    setStatus(LOADING)
     setProblem('')
-    void readSaved(getToken, signal).then(showRead)
+    const read = await readSaved(getToken, signal)
+    if (read === 'aborted') {
+      return
+    }
+    setBusy(null)
+    setStatus('')
+    if (read !== 'unavailable') {
+      focusNext.current = read !== 'none' && read.saved.usable ? 'replace' : 'input'
+    }
+    showRead(read)
   }
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -129,9 +142,11 @@ export function ModelKeyPanel() {
       focusNext.current = 'input'
       return
     }
-    // The form leaves the page now, and the key in its input goes with it.
+    // The form leaves the page now, and the key in its input goes with it;
+    // focus goes from its Save button to Replace.
     setSaved(outcome.saved)
     setReplacing(false)
+    focusNext.current = 'replace'
   }
 
   const remove = async (): Promise<void> => {
@@ -193,7 +208,7 @@ export function ModelKeyPanel() {
 
   return (
     <section aria-label="Model key">
-      {saved === 'loading' && <p>Loading your model key…</p>}
+      {saved === 'loading' && <p>{LOADING}</p>}
       {saved === 'none' && <p>No key saved</p>}
       {typeof saved === 'object' && (
         <>
@@ -251,7 +266,13 @@ export function ModelKeyPanel() {
       <p role="status">{status}</p>
       <p role="alert">{problem}</p>
       {saved === 'unreadable' && (
-        <button type="button" onClick={readAgain}>
+        <button
+          type="button"
+          aria-disabled={held}
+          onClick={() => {
+            void readAgain()
+          }}
+        >
           Try again
         </button>
       )}
