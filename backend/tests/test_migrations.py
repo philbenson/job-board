@@ -7,6 +7,8 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+# Every table the migrations create, in name order; base holds alembic_version alone.
+HEAD_TABLES = ["alembic_version", "fetch_runs", "postings"]
 
 
 def query(database_url: str, sql: str) -> list[str]:
@@ -38,6 +40,7 @@ def test_upgrades_to_head_back_to_base_and_to_head_again(
 
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
+    assert public_tables(database_url) == HEAD_TABLES
 
     # Every downgrade undoes its upgrade: nothing is left behind at base, so a
     # second upgrade does not trip over a table the first one created.
@@ -47,3 +50,4 @@ def test_upgrades_to_head_back_to_base_and_to_head_again(
 
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
+    assert public_tables(database_url) == HEAD_TABLES
