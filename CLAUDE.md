@@ -20,6 +20,13 @@ Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer)
 - `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`, in that order, as CI runs them
 - `npm run dev` serves the app and passes `/api/…` to the backend on port 8000
 
+Fetcher, from `fetcher/` (Go 1.27.3 or newer):
+
+- `test -z "$(gofmt -l .)"`, `go vet ./...` and `go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...`
+- `go test -race ./...` (needs the database and uv: each test package creates its own database, migrates it with `uv run --locked alembic upgrade head` in `backend/`, and drops it; the server is `DATABASE_URL`'s, or else `backend/.env.example`'s)
+- `DATABASE_URL=… GREENHOUSE_BOARDS=<token>,<token> go run ./cmd/fetcher` reads those Greenhouse boards once into a migrated database; tests never ask Greenhouse, they serve `internal/greenhouse/testdata/board.json`
+- The fetcher never creates or alters a table: a schema change is a backend Alembic revision
+
 Public-content check, from the repository root:
 
 - `python3 -m unittest discover -s tools/tests`

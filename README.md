@@ -4,15 +4,16 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app:
+It is early. What exists today is the skeleton of the backend and the web app, and the posting fetcher:
 
 - a FastAPI service with one route, `GET /health`, which reports whether the database answers;
-- PostgreSQL for local development in Docker, with Alembic migrations (one empty first revision so far);
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of postings and of fetch runs);
+- a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
 - a React and TypeScript web app that shows whether the service answers;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Fetching postings, profiles and scoring come next.
+Fetching on a schedule, profiles and scoring come next.
 
 ## Running it
 
@@ -42,6 +43,15 @@ npm run dev                           # serves the app and passes /api/… to th
 
 The page then says "Service is up"; stop the backend and reload, and it says "Service is unavailable".
 
+The fetcher needs [Go](https://go.dev/dl/) 1.27.3 or newer. With the database migrated as above, it reads the Greenhouse boards you name, by their tokens, and exits (see [fetcher/README.md](fetcher/README.md)):
+
+```sh
+cd fetcher
+DATABASE_URL=postgresql://job_board:job_board@127.0.0.1:55432/job_board \
+GREENHOUSE_BOARDS=<token>,<another token> \
+go run ./cmd/fetcher
+```
+
 ## Testing it
 
 Backend, from `backend/`, with the database running:
@@ -64,6 +74,15 @@ npm test
 npm run build
 ```
 
+Fetcher, from `fetcher/`, with the database running and uv installed (each test package creates its own database and migrates it with the backend's migrations; the tests serve an invented board and never ask Greenhouse):
+
+```sh
+test -z "$(gofmt -l .)"
+go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
+go test -race ./...
+```
+
 From the repository root, the public-content check and its tests (see [tools/README.md](tools/README.md)):
 
 ```sh
@@ -82,5 +101,6 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 - **React and TypeScript, built with Vite**: typed components from the API's edge to the screen, with a dev server that reloads in place and passes API requests to the backend under its own origin, so the backend never has to allow requests from another one.
 - **oxlint**: a fast linter that understands TypeScript and React, and keeps up with the newest TypeScript compiler.
 - **Vitest with Testing Library**: tests share Vite's configuration and run in a simulated browser, and they check what a person sees on the page rather than how a component is written.
-- **GitHub Actions**: every push that changes a part runs the same checks as a developer does; the backend's run against a real PostgreSQL rather than a stand-in.
+- **Go with pgx for the fetcher**: the fetcher is a batch job a scheduler starts and stops, so it suits a single compiled binary that starts at once, with HTTP and JSON from the standard library; pgx speaks PostgreSQL's own protocol directly, so a board's postings go to the database as one batch inside one transaction.
+- **GitHub Actions**: every push that changes a part runs the same checks as a developer does; the backend's and the fetcher's run against a real PostgreSQL rather than a stand-in.
 - **The public-content check**: this repository is public, so git hooks on every commit and push, and a CI job over the whole history, read every file, path, commit and branch name for personal email addresses, phone numbers and private names, and print only redacted findings.
