@@ -3,6 +3,9 @@
 Both databases are read from PostgreSQL's own catalog, so the server renders
 each side's types, defaults and definitions in one canonical form and the
 comparison never depends on how SQLAlchemy or a migration spelled them.
+
+Only the public schema is read: a model placed in another schema fails the
+test, because its table is missing from what was read.
 """
 
 from per_run_database import per_run_database, server_url
@@ -107,6 +110,8 @@ def test_the_models_and_the_migrations_build_the_same_catalog(migrated_database_
         from_models = catalog(models_database_url)
     from_migrations = catalog(migrated_database_url)
 
-    assert from_models  # an empty read would make the comparison pass vacuously
+    # A table the read misses would be compared on neither side and pass unseen.
+    read = {table for table, kind, _ in from_models if kind == "column"}
+    assert read == set(Base.metadata.tables)
     found = differences(from_models, from_migrations)
     assert not found, "\n".join(found)
