@@ -104,4 +104,27 @@ describe('TextListEditor', () => {
     expect(shownRules()).toEqual(['No travel'])
     expect(input).toHaveValue('No nights')
   })
+
+  it('trims invisible format characters with the whitespace at both ends, as the backend does', async () => {
+    const user = userEvent.setup()
+    render(<Rules initial={[]} />)
+    const input = screen.getByRole('textbox', { name: 'Add a rule' })
+
+    // A zero-width space alone is blank.
+    fireEvent.change(input, { target: { value: ' ​ ' } })
+    await user.type(input, '{Enter}')
+    expect(shownRules()).toEqual([])
+    expect(input).toHaveValue('')
+
+    // A zero-width space and a byte order mark at the ends do not count
+    // towards the longest length.
+    fireEvent.change(input, { target: { value: `​${'x'.repeat(12)}﻿ ` } })
+    await user.type(input, '{Enter}')
+    expect(screen.getByRole('status')).toHaveTextContent(/^$/)
+
+    // A direction control stays, for the backend to refuse.
+    fireEvent.change(input, { target: { value: '⁦No nights' } })
+    await user.type(input, '{Enter}')
+    expect(shownRules()).toEqual(['x'.repeat(12), '⁦No nights'])
+  })
 })

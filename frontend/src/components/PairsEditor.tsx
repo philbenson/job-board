@@ -5,6 +5,13 @@ import { composed } from './profileText.ts'
 // Where focus goes after the last item is removed.
 const FIRST_INPUT = Symbol('the first input')
 
+// A row's own key: its exact fields. Two stored items can share `keyOf`
+// where this browser folds case further than the backend, which kept them
+// apart; a key they share would draw one row for both.
+function rowKey(item: unknown): string {
+  return JSON.stringify(item)
+}
+
 /** The second input: typed text, a typed whole number, or a choice. */
 export type SecondInput =
   | { kind: 'text'; label: string }
@@ -30,7 +37,7 @@ type PairsEditorProps<Item> = {
    * and the second as typed or chosen.
    */
   itemFrom: (first: string, second: string) => Made<Item>
-  /** The key two items share when they are one, as the backend's. */
+  /** The key two items share when they are one, as the backend's; for refusing a repeat. */
   keyOf: (item: Item) => string
   /** The item in a few words, for its Remove and for notices. */
   nameOf: (item: Item) => string
@@ -69,8 +76,8 @@ export function PairsEditor<Item>({
   const secondStart = second.kind === 'select' ? (second.options[0]?.[0] ?? '') : ''
   const [first, setFirst] = useState('')
   const [secondValue, setSecondValue] = useState(secondStart)
-  // After a Remove, the key of the item whose Remove takes focus once the
-  // list has redrawn, or the first input.
+  // After a Remove, the row key of the item whose Remove takes focus once
+  // the list has redrawn, or the first input.
   const focusNext = useRef<string | typeof FIRST_INPUT | null>(null)
   const removeButtons = useRef(new Map<string, HTMLButtonElement>())
   const firstInput = useRef<HTMLInputElement>(null)
@@ -93,7 +100,7 @@ export function PairsEditor<Item>({
     }
     const at = items.indexOf(item)
     const next = items[at + 1] ?? items[at - 1]
-    focusNext.current = next === undefined ? FIRST_INPUT : keyOf(next)
+    focusNext.current = next === undefined ? FIRST_INPUT : rowKey(next)
     onChange(items.filter((listed) => listed !== item))
   }
 
@@ -136,7 +143,7 @@ export function PairsEditor<Item>({
       {items.length > 0 && (
         <ul aria-label={listLabel}>
           {items.map((item) => {
-            const key = keyOf(item)
+            const key = rowKey(item)
             return (
               <li key={key}>
                 <span>{shownAs(item)}</span>{' '}

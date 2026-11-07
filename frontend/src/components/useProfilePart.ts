@@ -44,7 +44,7 @@ export type ProfilePart<Route extends SectionRoute> = {
    */
   send: (
     body: SectionBody<Route>,
-    named: Named,
+    named: Named<SectionBody<Route>>,
     stored: (section: StoredSection<Route>) => void,
   ) => void
 }
@@ -89,7 +89,7 @@ export function useProfilePart<Route extends SectionRoute>(
 
   function send(
     body: SectionBody<Route>,
-    named: Named,
+    named: Named<SectionBody<Route>>,
     stored: (section: StoredSection<Route>) => void,
   ): void {
     if (held) {

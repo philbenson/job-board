@@ -1,9 +1,38 @@
+// Whitespace and the invisible format characters, which show nothing at an
+// end.
+const TRIMS_AWAY = /^[\s\p{Cf}]$/u
+
+// The separators the backend's Python counts as whitespace and `\s` does not.
+const ALSO_WHITESPACE = new Set(['\u001C', '\u001D', '\u001E', '\u001F', '\u0085'])
+
+// The embeddings, overrides and isolates: format characters the backend
+// keeps at an end so as to refuse them, since dropping one would change how
+// the rest of the text shows.
+const DIRECTION_CONTROL = /^[‪-‮⁦-⁩]$/u
+
+function trimsAway(character: string): boolean {
+  return (
+    ALSO_WHITESPACE.has(character) ||
+    (TRIMS_AWAY.test(character) && !DIRECTION_CONTROL.test(character))
+  )
+}
+
 /**
- * The text as the backend stores it, trimmed and composed (NFC), so a letter
- * and its accent count as one character.
+ * The text as the backend stores it: trimmed of whitespace and invisible
+ * format characters at both ends, then composed (NFC), so a letter and its
+ * accent count as one character.
  */
 export function composed(text: string): string {
-  return text.trim().normalize('NFC')
+  const characters = [...text]
+  let start = 0
+  let end = characters.length
+  while (start < end && trimsAway(characters[start])) {
+    start += 1
+  }
+  while (end > start && trimsAway(characters[end - 1])) {
+    end -= 1
+  }
+  return characters.slice(start, end).join('').normalize('NFC')
 }
 
 /** The length the backend counts: code points, not UTF-16 units. */

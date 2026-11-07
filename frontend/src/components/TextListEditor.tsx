@@ -23,6 +23,8 @@ type TextListEditorProps = {
   maxLength: number
   /** What an empty list says; nothing when not given. */
   emptyText?: string
+  /** The id of a condition the input is read with, when the list has one. */
+  describedBy?: string
 }
 
 /**
@@ -46,6 +48,7 @@ export function TextListEditor({
   cap,
   maxLength,
   emptyText,
+  describedBy,
 }: TextListEditorProps) {
   const [draft, setDraft] = useState('')
   // After a Remove, the control that takes focus once the list has redrawn:
@@ -145,6 +148,7 @@ export function TextListEditor({
           value={draft}
           readOnly={held}
           aria-disabled={held}
+          aria-describedby={describedBy}
           onChange={(event) => {
             if (!held) {
               setDraft(event.target.value)

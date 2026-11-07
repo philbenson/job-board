@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { STATE_NAMES, type StateCode, type StoredSection } from '../api/profile.ts'
 import { ChoiceSet } from './ChoiceSet.tsx'
 import { PairsEditor } from './PairsEditor.tsx'
@@ -39,6 +39,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
   const [states, setStates] = useState<StateCode[]>(stored?.states ?? [])
   const [willRelocate, setWillRelocate] = useState(stored?.will_relocate ?? false)
   const [relocateFor, setRelocateFor] = useState(stored?.relocate_for ?? [])
+  const conditionId = useId()
 
   function show(section: Places): void {
     setRemoteOk(section.remote_ok)
@@ -119,7 +120,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
           part.edit(() => setWillRelocate(next))
         }}
       />
-      <p>Only if you would not move otherwise</p>
+      <p id={conditionId}>Only if you would not move otherwise</p>
       <TextListEditor
         items={relocateFor}
         onChange={(next) => {
@@ -133,6 +134,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
         pluralNoun="companies you would move for"
         cap={MAX_RELOCATE_FOR}
         maxLength={MAX_COMPANY_LENGTH}
+        describedBy={conditionId}
       />
     </ProfilePart>
   )

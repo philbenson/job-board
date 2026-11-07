@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProfileBody, SaveRefusalBody, SectionRoute } from '../api/profile.ts'
+import type { ProfileBody, SaveRefusalBody, SectionBody, SectionRoute } from '../api/profile.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
+import type { Named } from './profileRefusals.ts'
 import {
   answer,
   fullProfile,
@@ -451,16 +452,22 @@ describe('the profile parts', () => {
   it("names a job applied to by its company when a refusal points into it", async () => {
     stubProfileService(profileWith([]), {
       '/profile/companies': () =>
-        answer(422, refusal(['body', 'applied', 0, 'title'], 'A job title cannot be blank')),
+        answer(
+          422,
+          refusal(['body', 'applied', 0, 'title'], 'A job title cannot contain control characters'),
+        ),
     })
     render(<ProfilePanel />)
     await loaded()
 
-    await type('Companies', 'Company', 'Example Corp{Enter}')
+    await type('Companies', 'Company', 'Example Corp')
+    await type('Companies', 'Job title', 'Data Analyst{Enter}')
     await save('Companies')
 
     expect(
-      await part('Companies').findByText('A job title cannot be blank: Example Corp'),
+      await part('Companies').findByText(
+        'A job title cannot contain control characters: Example Corp',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -953,4 +960,28 @@ describe('the profile parts, past the first visit', () => {
     expect(notice).toHaveTextContent(/^$/)
     expect(saveLine).toHaveTextContent(/^$/)
   })
+
+  it('tells the relocation input its condition', async () => {
+    await panelOn(profileWith([]))
+
+    expect(
+      part('Places').getByRole('textbox', { name: 'Add a company you would move for' }),
+    ).toHaveAccessibleDescription('Only if you would not move otherwise')
+  })
+
+  it('refuses a job with a blank title at Add, naming its company', async () => {
+    await panelOn(profileWith([]))
+
+    await type('Companies', 'Company', 'Example Corp')
+    await type('Companies', 'Job title', ' {Enter}')
+
+    expect(noticeOf('Companies')).toHaveTextContent('A job title cannot be blank: Example Corp')
+    expect(part('Companies').queryByRole('list', { name: 'Your applications' })).toBeNull()
+    expect(part('Companies').getByRole('textbox', { name: 'Company' })).toHaveValue('Example Corp')
+  })
 })
+
+// A refusal is named only by a field of its part's body, so a misspelt
+// field fails the type check rather than naming nothing.
+// @ts-expect-error The companies body holds no relocate_for.
+void ({ relocate_for: [] } satisfies Named<SectionBody<'/profile/companies'>>)

@@ -1,8 +1,12 @@
+/** What a refusal pointing into one field names. */
+type Naming = string | readonly string[]
+
 /**
  * For each field of a body as sent, what a refusal pointing into it names: a
- * single field's label, or each item's name, in the order sent.
+ * single field's label, or each item's name, in the order sent. Keyed by the
+ * body's own fields, so a misspelt one fails the type check.
  */
-export type Named = Record<string, string | readonly string[]>
+export type Named<Body> = Partial<Record<keyof Body, Naming>>
 
 /**
  * The backend's rule, followed by the one thing it points at, when it points
@@ -13,7 +17,7 @@ export type Named = Record<string, string | readonly string[]>
 export function refusalSentence(
   message: string,
   at: readonly (string | number)[],
-  named: Named,
+  named: Partial<Record<string, Naming>>,
 ): string {
   const [field, index] = at
   // Its own keys only: the place comes from the answer, so it might name

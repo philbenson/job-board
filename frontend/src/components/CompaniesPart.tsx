@@ -78,8 +78,12 @@ export function CompaniesPart({ stored }: { stored: Companies | null }) {
         firstLabel="Company"
         second={{ kind: 'text', label: 'Job title' }}
         itemFrom={(company, typedTitle) => {
-          // A blank title is the backend's to refuse, which names the job.
           const title = composed(typedTitle)
+          // Refused here as the backend would refuse it, so no job is listed
+          // without its title.
+          if (title === '') {
+            return { notice: `A job title cannot be blank: ${company}` }
+          }
           if (lengthOf(company) > MAX_COMPANY_LENGTH) {
             return { notice: `A company can be at most ${MAX_COMPANY_LENGTH} characters: ${company}` }
           }

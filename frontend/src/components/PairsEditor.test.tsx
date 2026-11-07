@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { PairsEditor } from './PairsEditor.tsx'
 import { repeatKey, wholeNumberFrom } from './profileText.ts'
 
@@ -184,5 +184,32 @@ describe('PairsEditor', () => {
     expect(shown()).toEqual(['Boston, 1 days a week'])
     expect(city).toHaveValue('Chicago')
     expect(days).toHaveValue('5')
+  })
+
+  it('keeps two stored items its key joins as two rows, each its own Remove', async () => {
+    const user = userEvent.setup()
+    // React reports two rows sharing a key on the console.
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {})
+    onTestFinished(() => {
+      reported.mockRestore()
+    })
+    // Two cities the backend's fold keeps apart and this key joins, as a
+    // browser on a newer Unicode than the backend's can.
+    render(
+      <Offices
+        initial={[
+          { city: 'Chicago', days_a_week: 2 },
+          { city: 'Boston', days_a_week: 1 },
+          { city: 'BOSTON', days_a_week: 5 },
+        ]}
+      />,
+    )
+
+    screen.getByRole('button', { name: 'Remove Chicago' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(shown()).toEqual(['Boston, 1 days a week', 'BOSTON, 5 days a week'])
+    expect(screen.getByRole('button', { name: 'Remove Boston' })).toHaveFocus()
+    expect(reported).not.toHaveBeenCalled()
   })
 })
