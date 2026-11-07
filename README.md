@@ -4,18 +4,18 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, and the posting fetcher:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, and the posting fetcher:
 
-- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, and `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key;
+- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
 - the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
-- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of postings and of fetch runs);
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings and of fetch runs);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
-- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person and lets them save, replace or remove their model key;
+- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, and lets them list, add, remove and save their target titles;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Fetching on a schedule, profiles and scoring come next.
+Fetching on a schedule, the rest of the profile and scoring come next.
 
 ## Running it
 
@@ -114,6 +114,7 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 
 - **FastAPI**: request and response types are ordinary Python types, checked at the edge and published as an OpenAPI description, and the framework is async throughout.
 - **PostgreSQL with Alembic**: one dependable relational store, with every schema change a versioned migration that is reviewed and tested like code.
+- **The profile as one document per person**: the profile grows a section at a time, so each person's is one JSON document in PostgreSQL rather than a table per section, and a new section needs no migration. A save sets only its own section inside the stored document, in the statement that adds the row when there is none, so two saves of different sections never undo each other.
 - **Async SQLAlchemy on psycopg 3**: the service waits on the database without holding up other requests, through a query layer that stays readable as the schema grows.
 - **Clerk, with tokens checked in the service**: sign-in, accounts and their security are a product of their own, so Clerk runs them, and the service keeps only its own row per person. The service checks each session token itself, against the public key, the issuer and the permitted origins it was started with, so checking a request costs no call to Clerk and no wait on one.
 - **Each person's own model key, checked and sealed**: scoring runs on the person's own Anthropic key, so the service keeps it sealed with AES-256-GCM, bound to its owner and provider so a sealed key copied to another row will not open, and checks it before saving by reading the metadata of the model the app runs, which Anthropic answers only for a working key allowed that model and which generates nothing, so the check costs nothing.

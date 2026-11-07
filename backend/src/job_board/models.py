@@ -5,6 +5,7 @@ table changes here first and then in a new migration.
 """
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -19,7 +20,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Constraint names are derived, not left to the database, so a migration can
@@ -126,3 +129,20 @@ class FetchRun(Base):
     postings_new: Mapped[int] = mapped_column(Integer, server_default="0")
     postings_closed: Mapped[int] = mapped_column(Integer, server_default="0")
     failure: Mapped[str | None] = mapped_column(Text)  # a short code, never raw error text
+
+
+class ProfileRow(Base):
+    """A person's profile, one document per person, written a section at a time.
+
+    The document's shape is ``job_board.profiles.Profile``; the database holds
+    it whole so a new section needs no migration.
+    """
+
+    __tablename__ = "profiles"
+
+    person_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True
+    )
+    document: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
