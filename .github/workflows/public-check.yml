@@ -1,7 +1,8 @@
 name: public check
 
-# Every push proves that no tracked file, path, commit message or commit
-# identity carries a private name or personal contact details.
+# Every push proves that no tracked file, path, commit message, commit
+# identity or ref name, in any commit of the history, carries a private name or
+# personal contact details.
 on:
   push:
   workflow_dispatch:
@@ -15,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # --history reads every commit, not just the tip
+          fetch-depth: 0  # --history reads every commit, and --refs every branch and tag
 
       # The check is standard library only, so the runner's own python3 is enough.
       - name: Test the check
@@ -26,3 +27,6 @@ jobs:
 
       - name: Check history
         run: python3 tools/public_check.py --history
+
+      - name: Check ref names
+        run: python3 tools/public_check.py --refs

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Keep private names and personal contact details out of this public repository.
 
-Invariant: no tracked file, file path, commit message or commit identity names
-the private companion repository or carries a personal email address or phone
-number. The git hooks in .githooks run this on every local commit and the
-public-check workflow runs it on every push.
+Invariant: no tracked file, file path, commit message, commit identity or ref
+name names the private companion repository or carries a personal email
+address or phone number. The git hooks in .githooks run this on every local
+commit and push, before the remote has anything, and the public-check workflow
+runs it over the whole history on every push.
 
 It runs on the standard library of Python 3.9 or newer, because the hooks start
 whatever python3 is on the PATH and macOS still ships 3.9.
@@ -215,9 +216,10 @@ def scan_path(
     path: str,
     name_hashes: frozenset[str] = PRIVATE_NAME_HASHES,
     name_words: int = PRIVATE_NAME_WORDS,
+    kind: str = "path",
 ) -> list[Finding]:
-    """Findings in a file's path itself, printed with the findings masked."""
-    location = f"{mask(path, name_hashes, name_words)} (path)"
+    """Findings in a name itself, a file path or a ref, printed with the findings masked."""
+    location = f"{mask(path, name_hashes, name_words)} ({kind})"
     return [
         Finding(location, match.rule, match.redacted)
         for match in _matches(path, name_hashes, name_words)
@@ -242,6 +244,7 @@ class UsageError(Exception):
 class Tally:
     files: int = 0
     commits: int = 0
+    refs: int = 0
     skipped: int = 0
 
 
@@ -321,16 +324,19 @@ def check_message(path: str, tally: Tally) -> Iterator[Finding]:
     yield from scan_text(message_text(raw), "commit message")
 
 
-def check_history(tally: Tally) -> Iterator[Finding]:
-    """The message, author and committer of every commit reachable from HEAD."""
-    repository = _top_level()
-    has_head = subprocess.run(
-        ["git", "rev-parse", "--verify", "--quiet", "HEAD"], cwd=repository, capture_output=True
+def _commit_exists(repository: Path, revision: str) -> bool:
+    found = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}"],
+        cwd=repository,
+        capture_output=True,
     )
-    if has_head.returncode != 0:
-        return
+    return found.returncode == 0
+
+
+def _check_messages(repository: Path, revisions: list[str], tally: Tally) -> Iterator[Finding]:
+    """The message, author and committer of every commit in the revisions."""
     fields = ("%H", "%an <%ae>", "%cn <%ce>", "%B")
-    output = _git(repository, "log", "-z", "--format=" + "%x00".join(fields), "HEAD")
+    output = _git(repository, "log", "-z", "--format=" + "%x00".join(fields), *revisions)
     values = output.decode("utf-8", "replace").split("\x00")
     for index in range(0, len(values) - len(fields) + 1, len(fields)):
         commit, author, committer, message = values[index : index + len(fields)]
@@ -340,6 +346,142 @@ def check_history(tally: Tally) -> Iterator[Finding]:
             for finding in scan_text(identity, label):
                 yield Finding(f"{label} {role}", finding.rule, finding.redacted)
         yield from scan_text(message, f"{label} message")
+
+
+def _check_paths(repository: Path, revisions: list[str]) -> Iterator[Finding]:
+    """Every path any commit in the revisions adds or changes, each once.
+
+    Every path in a commit's tree was added by that commit or an ancestor, so
+    the paths each commit changes, renames counted as additions and merges
+    against each parent, cover every path the commits reach.
+    """
+    output = _git(
+        repository,
+        "log",
+        "-z",
+        "--format=",
+        "--name-only",
+        "--no-renames",
+        "-m",
+        "--root",
+        *revisions,
+    )
+    for path in sorted(set(_split_nul(output))):
+        yield from scan_path(path)
+
+
+def _check_blobs(repository: Path, revisions: list[str], tally: Tally) -> Iterator[Finding]:
+    """The content of every file version the revisions reach, each blob once.
+
+    git rev-list lists each object once, and git cat-file streams them, so the
+    memory held is one blob at a time, whatever the history's size.
+    """
+    listing = subprocess.Popen(
+        ["git", "rev-list", "--objects", "--filter=object:type=blob", *revisions],
+        cwd=repository,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    reader = subprocess.Popen(
+        ["git", "cat-file", "--batch=%(objectname) %(objecttype) %(objectsize) %(rest)"],
+        cwd=repository,
+        stdin=listing.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert listing.stdout is not None and reader.stdout is not None
+    listing.stdout.close()  # cat-file owns the pipe now
+    try:
+        while True:
+            header = reader.stdout.readline()
+            if not header:
+                break
+            parts = header.decode("utf-8", "surrogateescape").rstrip("\n").split(" ", 3)
+            if len(parts) < 3:
+                raise UsageError("git cat-file could not read an object")
+            name, kind, size = parts[0], parts[1], int(parts[2])
+            content = reader.stdout.read(size)
+            reader.stdout.read(1)  # the newline after each object
+            if kind != "blob":
+                continue  # rev-list's filter still lists the commits themselves
+            path = parts[3] if len(parts) > 3 else ""
+            tally.files += 1
+            text = decode_text(content)
+            if text is None:
+                tally.skipped += 1
+                continue
+            yield from scan_text(text, f"{mask(path)} (blob {name[:12]})")
+    finally:
+        reader.stdout.close()
+        failures = [
+            process.stderr.read().decode("utf-8", "replace").strip()
+            for process in (listing, reader)
+            if process.wait() != 0 and process.stderr is not None
+        ]
+        for process in (listing, reader):
+            if process.stderr is not None:
+                process.stderr.close()
+    if failures:
+        raise UsageError(f"git could not list the history's files: {mask(failures[0])}")
+
+
+def _check_commits(repository: Path, revisions: list[str], tally: Tally) -> Iterator[Finding]:
+    yield from _check_messages(repository, revisions, tally)
+    yield from _check_paths(repository, revisions)
+    yield from _check_blobs(repository, revisions, tally)
+
+
+def check_history(tally: Tally) -> Iterator[Finding]:
+    """Every commit reachable from HEAD: messages, identities, and every path and file version."""
+    repository = _top_level()
+    if not _commit_exists(repository, "HEAD"):
+        return
+    yield from _check_commits(repository, ["HEAD"], tally)
+
+
+def _is_no_commit(sha: str) -> bool:
+    return set(sha) == {"0"}
+
+
+def check_pushed(remote: str, lines: Iterable[str], tally: Tally) -> Iterator[Finding]:
+    """What a push would publish, as the pre-push hook describes it.
+
+    Each line is ``<local ref> <local sha> <remote ref> <remote sha>``. A
+    deletion publishes nothing and is skipped. Otherwise the remote ref name is
+    checked, and so is every commit the push sends that the remote is not known
+    to have: not reachable from the remote's tracking refs or from the remote's
+    current commit, when that commit is here.
+    """
+    repository = _top_level()
+    sending, known = [], []
+    for line in lines:
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 4:
+            raise UsageError(
+                "each line on standard input must be "
+                "'<local ref> <local sha> <remote ref> <remote sha>'"
+            )
+        _, local_sha, remote_ref, remote_sha = fields
+        if _is_no_commit(local_sha):
+            continue
+        tally.refs += 1
+        yield from scan_path(remote_ref, kind="ref")
+        sending.append(local_sha)
+        if not _is_no_commit(remote_sha) and _commit_exists(repository, remote_sha):
+            known.append(remote_sha)
+    if sending:
+        revisions = [*sending, "--not", f"--remotes={remote}", *known]
+        yield from _check_commits(repository, revisions, tally)
+
+
+def check_refs(tally: Tally) -> Iterator[Finding]:
+    """The name of every branch, tag and remote-tracking ref."""
+    repository = _top_level()
+    for ref in _git(repository, "for-each-ref", "--format=%(refname)").decode().splitlines():
+        tally.refs += 1
+        yield from scan_path(ref, kind="ref")
 
 
 def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -356,7 +498,17 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     mode.add_argument(
         "--tracked", action="store_true", help="every tracked file in the working tree"
     )
-    mode.add_argument("--history", action="store_true", help="every commit reachable from HEAD")
+    mode.add_argument(
+        "--history",
+        action="store_true",
+        help="every commit reachable from HEAD, with every path and file version it reaches",
+    )
+    mode.add_argument(
+        "--pushed",
+        metavar="REMOTE",
+        help="what a push sends (the pre-push hook), with git's ref lines on standard input",
+    )
+    mode.add_argument("--refs", action="store_true", help="every branch, tag and remote ref name")
     return parser.parse_args(argv)
 
 
@@ -367,6 +519,10 @@ def _findings(arguments: argparse.Namespace, tally: Tally) -> Iterable[Finding]:
         return check_message(arguments.message_file, tally)
     if arguments.tracked:
         return check_tracked(tally)
+    if arguments.pushed is not None:
+        return check_pushed(arguments.pushed, sys.stdin.read().splitlines(), tally)
+    if arguments.refs:
+        return check_refs(tally)
     return check_history(tally)
 
 
@@ -383,7 +539,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"public check: {error}", file=sys.stderr)
         return 2
     print(
-        f"public check: {tally.files} files, {tally.commits} commits, "
+        f"public check: {tally.files} files, {tally.commits} commits, {tally.refs} refs, "
         f"{count} findings, {tally.skipped} skipped as binary"
     )
     return 1 if count else 0

@@ -25,6 +25,7 @@ sys.path.insert(0, str(TOOLS))
 import public_check  # noqa: E402
 
 SCRIPT = TOOLS / "public_check.py"
+NO_COMMIT = "0" * 40
 
 MADE_UP_NAME = ("alpha", "bravo", "charlie")
 MADE_UP_HASHES = frozenset(
@@ -287,14 +288,24 @@ class RepositoryTestCase(unittest.TestCase):
         commit = self.git("commit-tree", tree, *parents, "-m", message, environment=environment)
         self.git("update-ref", "HEAD", commit)
 
-    def check(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def check(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, str(SCRIPT), *arguments],
             cwd=self.repository,
             env=self.environment,
+            input=stdin,
             capture_output=True,
             text=True,
         )
+
+    def head(self) -> str:
+        return self.git("rev-parse", "HEAD")
+
+    def add_and_commit(self, path: str, content: str | bytes, message: str) -> str:
+        self.write(path, content)
+        self.git("add", path)
+        self.commit(message)
+        return self.head()
 
 
 class StagedModeTest(RepositoryTestCase):
@@ -303,7 +314,7 @@ class StagedModeTest(RepositoryTestCase):
         self.git("add", "notes.md")
         result = self.check("--staged")
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("1 files, 0 commits, 0 findings, 0 skipped as binary", result.stdout)
+        self.assertIn("1 files, 0 commits, 0 refs, 0 findings, 0 skipped as binary", result.stdout)
 
     def test_reads_the_staged_content_not_the_working_tree(self) -> None:
         self.write("notes.md", joined("call 212", "-555-0234\n"))
@@ -334,7 +345,7 @@ class StagedModeTest(RepositoryTestCase):
         self.git("add", "image.bin", "latin.txt")
         result = self.check("--staged")
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("2 files, 0 commits, 0 findings, 2 skipped as binary", result.stdout)
+        self.assertIn("2 files, 0 commits, 0 refs, 0 findings, 2 skipped as binary", result.stdout)
 
 
 class MessageModeTest(RepositoryTestCase):
@@ -371,7 +382,7 @@ class TrackedModeTest(RepositoryTestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("dirty/notes.md:2: email-address: j***@m***", result.stdout)
         self.assertNotIn("untracked.md", result.stdout)
-        self.assertIn("2 files, 0 commits, 1 findings, 0 skipped as binary", result.stdout)
+        self.assertIn("2 files, 0 commits, 0 refs, 1 findings, 0 skipped as binary", result.stdout)
 
     def test_works_from_a_subfolder(self) -> None:
         self.write("sub/clean.md", "nothing here\n")
@@ -384,7 +395,7 @@ class TrackedModeTest(RepositoryTestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("1 files, 0 commits, 0 findings", result.stdout)
+        self.assertIn("1 files, 0 commits, 0 refs, 0 findings", result.stdout)
 
 
 class HistoryModeTest(RepositoryTestCase):
@@ -405,12 +416,106 @@ class HistoryModeTest(RepositoryTestCase):
             result.stdout, r"commit [0-9a-f]{12} author: email-address: j\*\*\*@m\*\*\*"
         )
         self.assertRegex(result.stdout, r"commit [0-9a-f]{12} message:1: phone-number: \*\*\*34")
-        self.assertIn("0 files, 3 commits, 2 findings", result.stdout)
+        self.assertIn("2 files, 3 commits, 0 refs, 2 findings", result.stdout)
+
+    def test_finds_a_file_added_in_one_commit_and_removed_in_the_next(self) -> None:
+        self.add_and_commit("a.md", "a\n", "first commit")
+        self.add_and_commit("fixture.txt", joined("call 212", "-555-0234\n"), "add a fixture")
+        self.add_and_commit("image.bin", b"\x00binary", "add an image")
+        self.git("rm", "--quiet", "fixture.txt")
+        self.commit("remove the fixture")
+        result = self.check("--history")
+        self.assertEqual(result.returncode, 1)
+        self.assertRegex(
+            result.stdout, r"fixture\.txt \(blob [0-9a-f]{12}\):1: phone-number: \*\*\*34"
+        )
+        self.assertIn("3 files, 4 commits, 0 refs, 1 findings, 1 skipped as binary", result.stdout)
+
+    def test_finds_a_path_that_no_longer_exists(self) -> None:
+        self.add_and_commit(joined("ask-jane", "@", "mail.invalid.md"), "nothing\n", "add a file")
+        self.git("mv", joined("ask-jane", "@", "mail.invalid.md"), "plain.md")
+        self.commit("rename the file")
+        result = self.check("--history")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("*** (path): email-address: a***@m***", result.stdout)
+        self.assertNotIn("jane", result.stdout)
 
     def test_an_empty_repository_has_no_history(self) -> None:
         result = self.check("--history")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("0 files, 0 commits, 0 findings", result.stdout)
+        self.assertIn("0 files, 0 commits, 0 refs, 0 findings", result.stdout)
+
+
+class PushModeTest(RepositoryTestCase):
+    """What the pre-push hook passes: the remote's name, then one line per ref."""
+
+    def push(self, *lines: str, remote: str = "origin") -> subprocess.CompletedProcess[str]:
+        return self.check("--pushed", remote, stdin="".join(line + "\n" for line in lines))
+
+    def test_checks_new_commits_with_their_files_and_identities(self) -> None:
+        on_remote = self.add_and_commit("a.md", "a\n", "first commit")
+        self.git("update-ref", "refs/remotes/origin/main", on_remote)
+        self.add_and_commit("fixture.txt", joined("call 212", "-555-0234\n"), "add a fixture")
+        self.git("rm", "--quiet", "fixture.txt")
+        self.commit("remove the fixture", GIT_AUTHOR_EMAIL=joined("jane", "@", "mail.invalid"))
+        result = self.push(f"refs/heads/main {self.head()} refs/heads/main {on_remote}")
+        self.assertEqual(result.returncode, 1)
+        self.assertRegex(result.stdout, r"fixture\.txt \(blob [0-9a-f]{12}\):1: phone-number")
+        self.assertRegex(result.stdout, r"commit [0-9a-f]{12} author: email-address: j\*\*\*@m")
+        self.assertIn("1 files, 2 commits, 1 refs, 2 findings", result.stdout)
+
+    def test_commits_the_remote_already_has_are_not_read_again(self) -> None:
+        self.add_and_commit("a.md", "a\n", joined("call 212", "-555-0234"))
+        self.git("update-ref", "refs/remotes/origin/main", self.head())
+        self.add_and_commit("b.md", "b\n", "second commit")
+        result = self.push(f"refs/heads/main {self.head()} refs/heads/main {NO_COMMIT}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 files, 1 commits, 1 refs, 0 findings", result.stdout)
+
+    def test_the_remote_commit_bounds_a_remote_with_no_tracking_refs(self) -> None:
+        known = self.add_and_commit("a.md", "a\n", joined("call 212", "-555-0234"))
+        self.add_and_commit("b.md", "b\n", "second commit")
+        result = self.push(
+            f"refs/heads/main {self.head()} refs/heads/main {known}", remote="elsewhere"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 files, 1 commits, 1 refs, 0 findings", result.stdout)
+
+    def test_an_unknown_remote_commit_reads_everything_new(self) -> None:
+        self.add_and_commit("a.md", "a\n", joined("call 212", "-555-0234"))
+        unknown = "1" * 40
+        result = self.push(f"refs/heads/main {self.head()} refs/heads/main {unknown}")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("1 files, 1 commits, 1 refs, 1 findings", result.stdout)
+
+    def test_checks_the_remote_ref_name(self) -> None:
+        self.add_and_commit("a.md", "a\n", "first commit")
+        ref = joined("refs/heads/ask-jane", "@", "mail.invalid")
+        result = self.push(f"refs/heads/main {self.head()} {ref} {NO_COMMIT}")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("refs/heads/*** (ref): email-address: a***@m***", result.stdout)
+        self.assertNotIn("jane", result.stdout)
+
+    def test_a_deletion_sends_nothing_to_check(self) -> None:
+        self.add_and_commit("a.md", "a\n", joined("call 212", "-555-0234"))
+        result = self.push(f"(delete) {NO_COMMIT} refs/heads/old {self.head()}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("0 files, 0 commits, 0 refs, 0 findings", result.stdout)
+
+    def test_a_malformed_line_is_a_usage_error(self) -> None:
+        self.assertEqual(self.push("refs/heads/main only-two").returncode, 2)
+
+
+class RefsModeTest(RepositoryTestCase):
+    def test_checks_every_branch_and_tag_name(self) -> None:
+        self.add_and_commit("a.md", "a\n", "first commit")
+        self.git("branch", "clean-branch")
+        self.git("update-ref", joined("refs/tags/ask-jane", "@", "mail.invalid"), "HEAD")
+        result = self.check("--refs")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("refs/tags/*** (ref): email-address: a***@m***", result.stdout)
+        self.assertNotIn("jane", result.stdout)
+        self.assertIn("0 files, 0 commits, 3 refs, 1 findings", result.stdout)
 
 
 class UsageTest(RepositoryTestCase):
@@ -454,11 +559,12 @@ class HooksTest(RepositoryTestCase):
         (self.repository / "tools").mkdir()
         shutil.copy2(SCRIPT, self.repository / "tools" / "public_check.py")
 
-    def hook(self, name: str, *arguments: str) -> int:
+    def hook(self, name: str, *arguments: str, stdin: str = "") -> int:
         return subprocess.run(
             [str(self.repository / ".githooks" / name), *arguments],
             cwd=self.repository,
             env=self.environment,
+            input=stdin,
             capture_output=True,
             text=True,
         ).returncode
@@ -477,6 +583,14 @@ class HooksTest(RepositoryTestCase):
         self.assertEqual(self.hook("commit-msg", "clean.txt"), 0)
         self.assertEqual(self.hook("commit-msg", "dirty.txt"), 1)
 
+    def test_pre_push_judges_what_is_pushed(self) -> None:
+        self.add_and_commit("notes.md", "nothing here\n", "first commit")
+        line = f"refs/heads/main {self.head()} refs/heads/main {NO_COMMIT}\n"
+        self.assertEqual(self.hook("pre-push", "origin", "unused-url", stdin=line), 0)
+        self.add_and_commit("notes.md", joined("call 212", "-555-0234\n"), "second commit")
+        line = f"refs/heads/main {self.head()} refs/heads/main {NO_COMMIT}\n"
+        self.assertEqual(self.hook("pre-push", "origin", "unused-url", stdin=line), 1)
+
     def test_hooks_are_executable_in_git(self) -> None:
         listing = subprocess.run(
             ["git", "ls-files", "--stage", ".githooks"],
@@ -487,7 +601,12 @@ class HooksTest(RepositoryTestCase):
         ).stdout
         modes = {line.split()[-1]: line.split()[0] for line in listing.splitlines()}
         self.assertEqual(
-            modes, {".githooks/commit-msg": "100755", ".githooks/pre-commit": "100755"}
+            modes,
+            {
+                ".githooks/commit-msg": "100755",
+                ".githooks/pre-commit": "100755",
+                ".githooks/pre-push": "100755",
+            },
         )
 
 
