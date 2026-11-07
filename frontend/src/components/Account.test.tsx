@@ -29,7 +29,7 @@ describe('Account', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the target titles beside the sign-in check when signed in', () => {
+  it('shows the target titles and the leads beside the sign-in check when signed in', () => {
     clerk.signedIn = true
 
     render(<Account />)
@@ -38,11 +38,14 @@ describe('Account', () => {
       screen.getByRole('heading', { level: 2, name: 'Your profile' }),
     ).toBeInTheDocument()
     expect(
+      screen.getByRole('heading', { level: 2, name: 'Your leads' }),
+    ).toBeInTheDocument()
+    expect(
       screen.getByText('Confirming your sign-in with the service…'),
     ).toBeInTheDocument()
   })
 
-  it('shows the resume after the target titles when signed in', () => {
+  it('shows the resume after the target titles and the leads after the resume when signed in', () => {
     clerk.signedIn = true
 
     render(<Account />)
@@ -50,15 +53,16 @@ describe('Account', () => {
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings.slice(-2)).toEqual(['Your profile', 'Resume'])
+    expect(headings.slice(-3)).toEqual(['Your profile', 'Resume', 'Your leads'])
   })
 
-  it('shows no target titles when signed out', () => {
+  it('shows no target titles and no leads when signed out', () => {
     clerk.signedIn = false
 
     render(<Account />)
 
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Your profile' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Your leads' })).not.toBeInTheDocument()
   })
 })
