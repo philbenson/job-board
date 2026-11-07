@@ -17,10 +17,10 @@ export function ServiceStatus() {
   const [shown, setShown] = useState<Shown>('checking')
 
   useEffect(() => {
-    let controller = new AbortController()
+    let controller: AbortController | undefined
 
     function check() {
-      controller.abort()
+      controller?.abort()
       controller = new AbortController()
       void fetchHealth(controller.signal).then((health) => {
         // An aborted check has been replaced by a newer one, or belongs to an
@@ -46,7 +46,7 @@ export function ServiceStatus() {
     document.addEventListener('visibilitychange', checkWhenVisible)
     return () => {
       document.removeEventListener('visibilitychange', checkWhenVisible)
-      controller.abort()
+      controller?.abort()
     }
   }, [])
 
