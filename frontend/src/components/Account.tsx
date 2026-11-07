@@ -8,6 +8,7 @@ import {
 import { AccountPanel } from './AccountPanel.tsx'
 import { ModelKeyPanel } from './ModelKeyPanel.tsx'
 import { ProfilePanel } from './ProfilePanel.tsx'
+import { ResumePanel } from './ResumePanel.tsx'
 
 /**
  * Clerk's sign-in button when signed out; its user button, what the backend
@@ -34,6 +35,7 @@ export function Account() {
         <AccountPanel />
         <ModelKeyPanel />
         <ProfilePanel />
+        <ResumePanel />
       </Show>
     </section>
   )
