@@ -46,6 +46,33 @@ def test_takes_a_title_of_one_hundred_characters() -> None:
     assert titles_of(["x" * 100]) == ["x" * 100]
 
 
+def test_keeps_each_title_in_its_composed_form() -> None:
+    assert titles_of(["Cafe\u0301 manager"]) == ["Caf\u00e9 manager"]
+
+
+def test_composed_and_decomposed_forms_of_one_title_keep_one() -> None:
+    assert titles_of(["Caf\u00e9 manager", "cafe\u0301 MANAGER"]) == ["Caf\u00e9 manager"]
+    assert titles_of(["Cafe\u0301 manager", "caf\u00e9 manager"]) == ["Caf\u00e9 manager"]
+
+
+def test_a_title_differing_only_in_case_once_composed_is_a_repeat() -> None:
+    # Folding the case of these two composed letters gives two sequences that
+    # compose to one letter, iota with dialytika and tonos.
+    assert titles_of(["\u0390", "\u03aa\u0301"]) == ["\u0390"]
+
+
+def test_counts_the_length_of_the_composed_form() -> None:
+    # A hundred accented letters, each sent as a letter and a combining accent.
+    assert titles_of(["e\u0301" * 100]) == ["\u00e9" * 100]
+
+
+def test_keeps_a_zero_width_joiner_inside_a_title() -> None:
+    # The joiner binds the two emoji into one; emoji sequences depend on it.
+    title = "\U0001f469\u200d\U0001f4bb engineer"
+
+    assert titles_of([title]) == [title]
+
+
 @pytest.mark.parametrize(
     ("title", "rule"),
     [
@@ -55,8 +82,27 @@ def test_takes_a_title_of_one_hundred_characters() -> None:
         ("Data\tanalyst", "A target title cannot contain control characters"),
         ("Data\x00analyst", "A target title cannot contain control characters"),
         ("Data\x85analyst", "A target title cannot contain control characters"),
+        ("e\u0301" * 101, "A target title can be at most 100 characters"),
+        ("Engineer \ud800", "A target title must be valid text"),
+        ("\u200b", "A target title cannot be blank"),
+        (" \u200b\u0301\u200d ", "A target title cannot be blank"),
+        ("\u202eenigne", "A target title cannot contain text direction controls"),
+        ("Data \u2066analyst\u2069", "A target title cannot contain text direction controls"),
     ],
-    ids=["empty", "only spaces", "too long", "a tab inside", "a null", "a C1 control"],
+    ids=[
+        "empty",
+        "only spaces",
+        "too long",
+        "a tab inside",
+        "a null",
+        "a C1 control",
+        "too long once composed",
+        "a lone surrogate",
+        "a zero-width space alone",
+        "only invisible marks",
+        "a right-to-left override",
+        "a directional isolate",
+    ],
 )
 def test_refuses_a_title_naming_the_rule_and_echoing_only_that_title(title: str, rule: str) -> None:
     error = refusal({"titles": ["Designer", title, "Writer"]})

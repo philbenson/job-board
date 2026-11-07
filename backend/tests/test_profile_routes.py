@@ -182,6 +182,25 @@ async def test_refuses_a_title_breaking_a_rule_with_the_rule_alone_and_stores_no
     assert someone.stored() == []
 
 
+async def test_refuses_a_title_that_is_not_valid_text_as_a_rule_not_a_failure(
+    someone: Someone, migrated_database_url: str
+) -> None:
+    # JSON can spell half of a surrogate pair, which no text encoding can hold.
+    body = b'{"titles": ["Engineer \\ud800"]}'
+    async with client_for(migrated_database_url) as client:
+        response = await client.put(
+            "/profile/target-titles",
+            content=body,
+            headers={**someone.headers, "Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["msg"] == "A target title must be valid text"
+    assert error["loc"] == ["body", "titles", 0]
+    assert someone.stored() == []
+
+
 @pytest.mark.parametrize(
     ("method", "path"), [("GET", "/profile"), ("PUT", "/profile/target-titles")]
 )

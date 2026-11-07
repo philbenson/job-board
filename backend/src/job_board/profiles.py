@@ -40,39 +40,67 @@ class Profile(BaseModel):
     target_titles: list[str] = Field(default_factory=list)
 
 
-def _checked_title(title: str) -> str:
-    """The title with its surrounding whitespace trimmed, or the rule it breaks.
+# The embeddings and overrides (U+202A to U+202E) and the isolates (U+2066 to
+# U+2069), which reverse or reorder how the rest of a line shows.
+DIRECTION_CONTROLS = frozenset(map(chr, [*range(0x202A, 0x202F), *range(0x2066, 0x206A)]))
 
-    Each refusal's message is the rule alone, so the person reads it as given.
+
+def _shows_something(character: str) -> bool:
+    # Format characters (Cf: zero-width spaces, joiners) and combining marks
+    # (Mn) show nothing on their own.
+    return not character.isspace() and unicodedata.category(character) not in {"Cf", "Mn"}
+
+
+def _checked_title(title: str) -> str:
+    """The title trimmed and in its composed form, or the rule it breaks.
+
+    The title is stored as the person sees it, so it is normalised to NFC
+    first and every rule measures that: an accented letter counts as one
+    character however it was typed. Each refusal's message is the rule alone,
+    so the person reads it as given.
     """
-    trimmed = title.strip()
-    if not trimmed:
+    shown = unicodedata.normalize("NFC", title.strip())
+    # Half of a surrogate pair is no character at all: JSON can spell one, but
+    # no text encoding holds it, and the database would refuse the document.
+    if any(unicodedata.category(character) == "Cs" for character in shown):
+        raise PydanticCustomError("target_title_invalid_text", "A target title must be valid text")
+    if not any(_shows_something(character) for character in shown):
         raise PydanticCustomError("target_title_blank", "A target title cannot be blank")
-    if len(trimmed) > MAX_TITLE_LENGTH:
+    if len(shown) > MAX_TITLE_LENGTH:
         raise PydanticCustomError(
             "target_title_too_long",
             f"A target title can be at most {MAX_TITLE_LENGTH} characters",
         )
     # Category Cc is the C0 and C1 controls and DEL: tabs, newlines, nulls and
     # the like, which have no place inside a title and break how it shows.
-    if any(unicodedata.category(character) == "Cc" for character in trimmed):
+    if any(unicodedata.category(character) == "Cc" for character in shown):
         raise PydanticCustomError(
             "target_title_control_character",
             "A target title cannot contain control characters",
         )
-    return trimmed
+    # Other format characters stay: a zero-width joiner inside a title binds
+    # an emoji sequence.
+    if not DIRECTION_CONTROLS.isdisjoint(shown):
+        raise PydanticCustomError(
+            "target_title_direction_control",
+            "A target title cannot contain text direction controls",
+        )
+    return shown
 
 
 def _distinct_and_capped(titles: list[str]) -> list[str]:
     """The titles without repeats, in the order given, or a refusal past the cap.
 
-    A repeat differs from an earlier title only in case and is dropped rather
-    than refused; the first spelling stays. The cap counts what is left.
+    A repeat differs from an earlier title only in case or in how its letters
+    are composed, and is dropped rather than refused; the first spelling stays.
+    The cap counts what is left.
     """
     seen: set[str] = set()
     distinct: list[str] = []
     for title in titles:
-        key = title.casefold()
+        # Each title is already composed; folding case can decompose a letter
+        # again, so the key is composed after folding.
+        key = unicodedata.normalize("NFC", title.casefold())
         if key not in seen:
             seen.add(key)
             distinct.append(title)
