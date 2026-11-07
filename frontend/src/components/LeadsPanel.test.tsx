@@ -18,6 +18,7 @@ const SESSION_TOKEN = 'header.payload.signature'
 
 const LOADING = 'Loading your leads…'
 const NOT_LOADED = 'Could not load your leads.'
+const NOT_REFRESHED = 'Could not refresh your leads.'
 const NONE_YET =
   'No leads yet. Postings are scored on a schedule once your model key and at least one target title are saved.'
 const TITLES_AS_THEY_WERE =
@@ -245,6 +246,85 @@ describe('LeadsPanel', () => {
     expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
   })
 
+  it('keeps Retry on the page and focused while a retry reads, held, and through a second failure', async () => {
+    const user = userEvent.setup()
+    const retried = laterAnswer()
+    const fetchMock = service(
+      () => answer(503, { detail: 'down' }),
+      () => retried.reply,
+    )
+
+    render(<LeadsPanel />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_LOADED)
+    const retry = screen.getByRole('button', { name: 'Retry' })
+    await user.click(retry)
+    await settle()
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBe(retry)
+    expect(retry).toHaveFocus()
+    expect(retry).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('status')).toHaveTextContent(LOADING)
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement()
+    await user.click(retry)
+    await settle()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    retried.send(answer(503, { detail: 'down' }))
+    await settle()
+    expect(screen.getByRole('alert')).toHaveTextContent(NOT_LOADED)
+    expect(screen.getByRole('button', { name: 'Retry' })).toBe(retry)
+    expect(retry).toHaveFocus()
+    expect(retry).toHaveAttribute('aria-disabled', 'false')
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+  })
+
+  it('keeps one status line and one alert line on the page, empty while the list is shown', async () => {
+    service(() => leads(PLATFORM_LEAD))
+
+    render(<LeadsPanel />)
+    const status = screen.getByRole('status')
+    const alert = screen.getByRole('alert')
+    expect(status).toHaveTextContent(LOADING)
+    expect(alert).toBeEmptyDOMElement()
+    await shownLeads()
+
+    expect(screen.getByRole('status')).toBe(status)
+    expect(screen.getByRole('alert')).toBe(alert)
+    expect(status).toBeEmptyDOMElement()
+    expect(alert).toBeEmptyDOMElement()
+  })
+
+  it('keeps the list shown when a refresh fails, says so under the heading, and asks again on Retry', async () => {
+    const user = userEvent.setup()
+    service(
+      () => leads(PLATFORM_LEAD),
+      () => answer(503, { detail: 'down' }),
+      () => leads(STAFF_ENGINEER),
+    )
+
+    render(<LeadsPanel />)
+    await shownLeads()
+    showPage('visible')
+    await settle()
+
+    const list = screen.getByRole('list', { name: 'Your leads, best first' })
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(NOT_REFRESHED)
+    expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
+    expect(
+      screen
+        .getByRole('heading', { level: 2, name: 'Your leads' })
+        .compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(alert.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    await settle()
+
+    expect(titlesShown(await shownLeads())).toEqual(['Staff Engineer'])
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
   it('keeps the list shown while it asks again as the page comes back into view, then shows the new one', async () => {
     const refreshed = laterAnswer()
     const fetchMock = service(
@@ -269,10 +349,11 @@ describe('LeadsPanel', () => {
 
   it('cancels a request still out when the page comes into view again, and shows only the newest answer', async () => {
     const stale = laterAnswer()
+    const newest = laterAnswer()
     const fetchMock = service(
       () => leads(PLATFORM_LEAD),
       () => stale.reply,
-      () => leads(STAFF_ENGINEER),
+      () => newest.reply,
     )
 
     render(<LeadsPanel />)
@@ -281,10 +362,27 @@ describe('LeadsPanel', () => {
     await settle()
     showPage('visible')
     await settle()
+
+    // The cancelled request is no failure: the list stays, with nothing said.
+    expect(fetchMock.mock.calls[1]?.[1]?.signal?.aborted).toBe(true)
+    expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
+    expect(screen.getByRole('alert')).toBeEmptyDOMElement()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     stale.send(leads(PLATFORM_LEAD))
+    newest.send(leads(STAFF_ENGINEER))
     await settle()
 
-    expect(fetchMock.mock.calls[1]?.[1]?.signal?.aborted).toBe(true)
     expect(titlesShown(await shownLeads())).toEqual(['Staff Engineer'])
+  })
+
+  it('cancels the request still out when it leaves the page', async () => {
+    const fetchMock = service()
+
+    const { unmount } = render(<LeadsPanel />)
+    await settle()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    unmount()
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
   })
 })

@@ -19,18 +19,35 @@ const HIGHEST_SCORE = 5
 // The person's own locale, from the browser.
 const DATE = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 
-type Shown = 'loading' | 'unavailable' | Loaded
+const LOADING = 'Loading your leads…'
+const NOT_LOADED = 'Could not load your leads.'
+const NOT_REFRESHED = 'Could not refresh your leads.'
+
+// What the person is waiting on: the first load, or a read they asked for
+// with Retry. A refresh as the page comes back into view keeps quiet.
+type Reading = 'first' | 'retry' | null
 
 /**
  * The signed-in person's leads, best first, as the backend ordered them.
  * Asks on mount, and again each time the page comes back into view, so a tab
  * left open picks up the postings scored meanwhile. Only the newest answer is
- * ever shown, and a list already shown stays until that answer replaces it.
+ * ever shown, and a list already shown stays until a new list replaces it: a
+ * refresh that fails keeps it, says so, and offers Retry.
  * Everything from a posting is shown as text.
+ *
+ * The status and alert lines stay on the page, empty when there is nothing to
+ * say, so a screen reader hears each change of their words. Retry stays on
+ * the page while the read it asked for runs, held with aria-disabled rather
+ * than disabled, which would drop keyboard focus to the page, and its handler
+ * does nothing meanwhile.
  */
 export function LeadsPanel() {
   const { getToken } = useAuth()
-  const [shown, setShown] = useState<Shown>('loading')
+  // The newest list the service gave, kept through any failure since.
+  const [loaded, setLoaded] = useState<Loaded | null>(null)
+  // Whether the newest answer was a failure.
+  const [failed, setFailed] = useState(false)
+  const [reading, setReading] = useState<Reading>('first')
   // Bumped by Retry, to run the loading effect again.
   const [attempt, setAttempt] = useState(0)
   const headingId = useId()
@@ -52,8 +69,15 @@ export function LeadsPanel() {
         // An aborted load has been replaced by a newer one, or belongs to an
         // effect that has been cleaned up; see ServiceStatus for why its
         // answer must not be shown.
-        if (read !== 'aborted') {
-          setShown(read)
+        if (read === 'aborted') {
+          return
+        }
+        setReading(null)
+        if (read === 'unavailable') {
+          setFailed(true)
+        } else {
+          setFailed(false)
+          setLoaded(read)
         }
       })
     }
@@ -73,30 +97,37 @@ export function LeadsPanel() {
   }, [getToken, attempt])
 
   function retry(): void {
-    setShown('loading')
+    if (reading !== null) {
+      return
+    }
+    setReading('retry')
+    setFailed(false)
     setAttempt((count) => count + 1)
+  }
+
+  let problem = ''
+  if (failed) {
+    problem = loaded === null ? NOT_LOADED : NOT_REFRESHED
   }
 
   return (
     <section aria-labelledby={headingId}>
       <h2 id={headingId}>Your leads</h2>
-      {shown === 'loading' && <p role="status">Loading your leads…</p>}
-      {shown === 'unavailable' && (
-        <>
-          <p role="alert">Could not load your leads.</p>
-          <button type="button" onClick={retry}>
-            Retry
-          </button>
-        </>
+      <p role="status">{reading === null ? '' : LOADING}</p>
+      <p role="alert">{problem}</p>
+      {(failed || reading === 'retry') && (
+        <button type="button" aria-disabled={reading !== null} onClick={retry}>
+          Retry
+        </button>
       )}
-      {typeof shown === 'object' &&
-        (shown.leads.length === 0 ? (
+      {loaded !== null &&
+        (loaded.leads.length === 0 ? (
           <p>
             No leads yet. Postings are scored on a schedule once your model key
             and at least one target title are saved.
           </p>
         ) : (
-          <LeadList leads={shown.leads} total={shown.total} />
+          <LeadList leads={loaded.leads} total={loaded.total} />
         ))}
     </section>
   )
