@@ -33,6 +33,7 @@ NOT_A_PDF = {"detail": "That file is not a PDF"}
 SEND_THE_LENGTH = {"detail": "Send the file's length"}
 TOO_LARGE = {"detail": "A resume can be at most 5 MB"}
 LONGER_THAN_DECLARED = {"detail": "The file is longer than its declared length"}
+ENDED_EARLY = {"detail": "The file ended before its declared length"}
 
 
 def run(database_url: str, sql: str, **values: Any) -> list[Any]:
@@ -147,14 +148,25 @@ def pdf_headers(person: Someone, **more: str) -> dict[str, str]:
 
 @dataclass
 class CountedBody:
-    """A request body sent a chunk at a time, counting the chunks the service asked for."""
+    """A request body sent a chunk at a time, counting the chunks the service asked for.
+
+    Given the service, it also notes, as each chunk is asked for, whether the
+    request's session is in a transaction and how many pooled connections are
+    checked out.
+    """
 
     chunks: list[bytes]
     asked: int = 0
+    service: Service | None = None
+    seen: list[tuple[bool, int]] = field(default_factory=list)
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         for chunk in self.chunks:
             self.asked += 1
+            if self.service is not None:
+                session = self.service.sessions[-1]
+                checked_out = self.service.app.state.engine.pool.checkedout()
+                self.seen.append((session.in_transaction(), checked_out))
             yield chunk
 
 
@@ -317,6 +329,21 @@ async def test_stops_reading_at_the_first_bytes_that_are_not_a_pdf(
     assert s3_bucket.stored_keys() == []
 
 
+async def test_refuses_a_body_that_ends_before_its_declared_length_storing_nothing(
+    service: Service, someone: Someone, s3_bucket: LocalBucket
+) -> None:
+    # The body ends with more_body False, as a server that does not send a
+    # disconnect would end it.
+    body = CountedBody([A_PDF[:100]])
+    headers = pdf_headers(someone, **{"Content-Length": "200"})
+
+    response = await service.client.put("/resume", headers=headers, content=body)
+
+    assert (response.status_code, response.json()) == (400, ENDED_EARLY)
+    assert someone.rows() == []
+    assert s3_bucket.stored_keys() == []
+
+
 async def test_an_unsigned_upload_is_refused_before_a_byte_of_it_is_read(
     service: Service, s3_bucket: LocalBucket
 ) -> None:
@@ -402,6 +429,19 @@ async def test_holds_no_database_transaction_or_connection_while_the_store_answe
 
     assert (uploaded.status_code, removed.status_code) == (200, 204)
     assert watched.seen == [("put", False, 0), ("delete", False, 0)]
+
+
+async def test_holds_no_database_transaction_or_connection_while_the_file_arrives(
+    service: Service, someone: Someone
+) -> None:
+    file = b"%PDF-" + bytes(3 * CHUNK - 5)
+    body = CountedBody(in_chunks(file), service=service)
+    headers = pdf_headers(someone, **{"Content-Length": str(len(file))})
+
+    response = await service.client.put("/resume", headers=headers, content=body)
+
+    assert response.status_code == 200
+    assert body.seen == [(False, 0)] * 3
 
 
 async def test_a_store_that_does_not_answer_changes_nothing_and_is_logged_without_secrets(
