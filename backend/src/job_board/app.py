@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from job_board import health, me
 from job_board.database import make_sessionmaker
 from job_board.logging_setup import configure_logging
+from job_board.model_key import routes as model_key_routes
 from job_board.settings import Settings
 
 
@@ -35,4 +36,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.include_router(health.router)
     app.include_router(me.router)
+    app.include_router(model_key_routes.router)
     return app

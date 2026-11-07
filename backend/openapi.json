@@ -65,6 +65,134 @@
           }
         ]
       }
+    },
+    "/model-key": {
+      "get": {
+        "summary": "Read Model Key",
+        "operationId": "read_model_key_model_key_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedModelKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No key saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Save Model Key",
+        "operationId": "save_model_key_model_key_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelKeyToSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedModelKey"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A malformed key, or one Anthropic refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelKeyRefused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Anthropic could not be reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelKeyRefused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Remove Model Key",
+        "operationId": "remove_model_key_model_key_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -108,6 +236,51 @@
         ],
         "title": "Me"
       },
+      "ModelKeyRefused": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "malformed",
+              "rejected",
+              "not-permitted",
+              "unavailable"
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "reason"
+        ],
+        "title": "ModelKeyRefused"
+      },
+      "ModelKeyToSave": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "anthropic",
+            "title": "Provider"
+          },
+          "key": {
+            "type": "string",
+            "format": "password",
+            "title": "Key",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "key"
+        ],
+        "title": "ModelKeyToSave"
+      },
       "Refused": {
         "properties": {
           "detail": {
@@ -120,6 +293,31 @@
           "detail"
         ],
         "title": "Refused"
+      },
+      "SavedModelKey": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "anthropic",
+            "title": "Provider"
+          },
+          "last_four": {
+            "type": "string",
+            "title": "Last Four"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "last_four",
+          "checked_at"
+        ],
+        "title": "SavedModelKey"
       }
     },
     "securitySchemes": {
