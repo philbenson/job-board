@@ -18,6 +18,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15  # a hung test or service fails the run instead of holding a runner
     services:
       db:
         image: postgres:18  # the same server as compose.yaml
@@ -28,7 +29,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U job_board -d job_board"
+          --health-cmd "pg_isready -h 127.0.0.1 -U job_board -d job_board"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
