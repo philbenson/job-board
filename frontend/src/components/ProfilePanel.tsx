@@ -2,9 +2,9 @@ import { useAuth } from '@clerk/react'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import {
   fetchProfile,
-  saveTargetTitles,
+  saveSection,
   type ProfileRead,
-  type TitlesSave,
+  type SectionSave,
 } from '../api/profile.ts'
 import { withToken } from '../api/withToken.ts'
 
@@ -84,7 +84,7 @@ export function ProfilePanel() {
           setLoading('unavailable')
           return
         }
-        setTitles(read.titles)
+        setTitles(read.profile.target_titles)
         setLoading('loaded')
       },
     )
@@ -183,24 +183,27 @@ export function ProfilePanel() {
       getToken,
       EXCHANGE_TIMEOUT_MS,
       controller.signal,
-      (token, signal) => saveTargetTitles(token, sent, signal),
+      (token, signal) =>
+        saveSection(token, '/profile/target-titles', { titles: sent }, signal),
       'unavailable',
-    ).then((saved: TitlesSave) => {
+    ).then((saved: SectionSave<'/profile/target-titles'>) => {
       if (saved === 'aborted') {
         return
       }
       if (saved === 'unavailable') {
         setSave({ kind: 'said', message: NOT_SAVED })
       } else if (saved.kind === 'refused') {
+        // A rule about one title points at its place in the list sent.
+        const [field, index] = saved.at
+        const title =
+          field === 'titles' && typeof index === 'number' ? sent[index] : undefined
         setSave({
           kind: 'said',
           message:
-            saved.title === null
-              ? saved.message
-              : `${saved.message}: ${saved.title}`,
+            title === undefined ? saved.message : `${saved.message}: ${title}`,
         })
       } else {
-        setTitles(saved.titles)
+        setTitles(saved.section)
         setSave({ kind: 'said', message: 'Saved' })
       }
     })
