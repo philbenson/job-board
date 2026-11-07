@@ -51,13 +51,18 @@ def sqlalchemy_url(url: str) -> str:
     return converted
 
 
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def origin(value: str, schemes: frozenset[str]) -> str | None:
     """``scheme://host[:port]`` in lower case, as browsers and Clerk write it.
 
-    None for anything else: another scheme, a path beyond a trailing slash, a
-    query, a fragment, a user name or a port that is not a number. Clerk
-    compares the issuer and the requesting origin as exact strings, so a value
-    that only looks alike would refuse every sign-in.
+    A scheme's default port is dropped, since neither writes it. None for
+    anything else: another scheme, a path beyond a trailing slash, a query, a
+    fragment, a user name or a port that is not a number. Clerk writes the
+    issuer and the requesting origin in this form, and the token check compares
+    them as exact strings, so a value that only looks alike would refuse every
+    sign-in.
     """
     try:
         parts = urlsplit(value.strip())
@@ -73,7 +78,9 @@ def origin(value: str, schemes: frozenset[str]) -> str | None:
         or parts.username is not None
     ):
         return None
-    return f"{parts.scheme}://{parts.hostname}" + (f":{port}" if port is not None else "")
+    if port is None or port == DEFAULT_PORTS[parts.scheme]:
+        return f"{parts.scheme}://{parts.hostname}"
+    return f"{parts.scheme}://{parts.hostname}:{port}"
 
 
 def pem(key: RSAPublicKey) -> str:

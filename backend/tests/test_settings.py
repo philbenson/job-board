@@ -82,6 +82,18 @@ def test_the_issuer_is_kept_in_the_form_tokens_carry() -> None:
     assert settings.clerk_issuer == "https://sign-in.example.com"
 
 
+# Clerk and browsers leave a scheme's default port out, so one written in is dropped.
+@pytest.mark.parametrize(
+    ("issuer", "kept"),
+    [
+        ("https://sign-in.example.com:443", "https://sign-in.example.com"),
+        ("https://sign-in.example.com:8443", "https://sign-in.example.com:8443"),
+    ],
+)
+def test_the_issuer_drops_only_the_default_port(issuer: str, kept: str) -> None:
+    assert make_settings(clerk_issuer=issuer).clerk_issuer == kept
+
+
 @pytest.mark.parametrize(
     "issuer",
     [
@@ -139,6 +151,20 @@ def test_reads_the_permitted_origins_in_the_form_browsers_send() -> None:
     assert settings.clerk_authorized_parties == frozenset(
         {"http://localhost:5173", "https://jobs.example.com"}
     )
+
+
+@pytest.mark.parametrize(
+    ("party", "kept"),
+    [
+        ("http://localhost:80", "http://localhost"),
+        ("https://jobs.example.com:443", "https://jobs.example.com"),
+        ("http://localhost:443", "http://localhost:443"),
+        ("https://jobs.example.com:80", "https://jobs.example.com:80"),
+        ("http://localhost:5173", "http://localhost:5173"),
+    ],
+)
+def test_a_permitted_origin_drops_only_its_scheme_default_port(party: str, kept: str) -> None:
+    assert make_settings(clerk_authorized_parties=party).clerk_authorized_parties == {kept}
 
 
 @pytest.mark.parametrize(
