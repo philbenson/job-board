@@ -428,7 +428,9 @@ async def test_the_key_never_comes_back_or_reaches_the_logs(
         assert leak not in caplog.text
 
 
-async def test_a_structurally_broken_body_still_gets_fastapis_own_answer(service: Service) -> None:
+async def test_a_structurally_broken_body_gets_a_list_of_problems_without_its_input(
+    service: Service,
+) -> None:
     response = await service.client.put("/model-key", headers=new_person(), json={"key": "x"})
     assert response.status_code == 422
     (problem,) = response.json()["detail"]
