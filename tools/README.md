@@ -16,7 +16,7 @@ It needs only Python 3.9 or newer and its standard library, since the git hooks 
 
 ### Running it
 
-From anywhere inside the repository:
+From the repository root (the script itself works from any folder):
 
 ```sh
 python3 tools/public_check.py --tracked              # every tracked file and its path
