@@ -5,14 +5,15 @@ export type HealthBody =
   paths['/health']['get']['responses'][200]['content']['application/json']
 
 /**
- * What the service says about itself. Taken from the body, so a status the
- * backend adds or renames fails the type check wherever a state is handled.
+ * The client's verdict: "ok" only when the service said so, "unavailable" for
+ * anything it could not confirm. Its own type rather than the body's status,
+ * since the client reports nothing finer than that.
  */
-export type ServiceHealth = HealthBody['status']
+export type ServiceHealth = 'ok' | 'unavailable'
 
-// Typed against the body, so renaming the value in the backend fails the type
-// check here instead of showing a healthy service as unavailable.
-const OK_STATUS: ServiceHealth = 'ok'
+// Checked against the body, so renaming the value in the backend fails the
+// type check here instead of showing a healthy service as unavailable.
+const OK_STATUS = 'ok' satisfies HealthBody['status']
 
 /** The caller aborted the check, so nobody wants its answer. */
 export type HealthCheck = ServiceHealth | 'aborted'
