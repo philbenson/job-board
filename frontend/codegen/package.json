@@ -1,0 +1,13 @@
+{
+  "name": "job-board-frontend-codegen",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Generates the web app's API types from the backend's OpenAPI description, apart from the app's own packages because the generator needs TypeScript 5.",
+  "scripts": {
+    "generate": "openapi-typescript ../../backend/openapi.json --output ../src/api/schema.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

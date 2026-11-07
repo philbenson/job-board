@@ -1,14 +1,33 @@
 import socket
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from per_run_database import per_run_database, server_url
+
+ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     """The URL of a database that exists for this test run only."""
     with per_run_database(server_url()) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def migrated_database_url() -> Iterator[str]:
+    """A second database for this run, at the migrations' head.
+
+    Its own, so the migration tests can take theirs down to nothing and back
+    without touching rows another test is reading.
+    """
+    with per_run_database(server_url()) as url:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
+            command.upgrade(Config(ALEMBIC_INI), "head")
         yield url
 
 

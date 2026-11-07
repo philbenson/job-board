@@ -1,8 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchHealth } from './health.ts'
+import { fetchHealth, type HealthBody } from './health.ts'
 
-function answer(status: number, body: string): Response {
-  return new Response(body, {
+const OK = { status: 'ok', database: 'ok' } satisfies HealthBody
+const UNAVAILABLE = {
+  status: 'unavailable',
+  database: 'unreachable',
+} satisfies HealthBody
+
+// A body the contract allows, typed so it changes when the backend's does.
+function answer(status: number, body: HealthBody): Response {
+  return answerText(status, JSON.stringify(body))
+}
+
+// A body outside the contract, written out on purpose.
+function answerText(status: number, text: string): Response {
+  return new Response(text, {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
@@ -50,27 +62,26 @@ describe('fetchHealth', () => {
   it('reports ok for a 200 whose status is ok', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(200, '{"status": "ok", "database": "ok"}')),
+      vi.fn(async () => answer(200, OK)),
     )
 
     await expect(fetchHealth()).resolves.toBe('ok')
   })
 
   it.each([
+    ['a 503 from the service', () => answer(503, UNAVAILABLE)],
+    ['a status of ok on an error code', () => answer(500, OK)],
+    ['a success code other than 200', () => answer(203, OK)],
     [
-      'a 503 from the service',
-      503,
-      '{"status": "unavailable", "database": "unreachable"}',
+      'a 200 with a status outside the contract',
+      () => answerText(200, '{"status": "degraded"}'),
     ],
-    ['a 200 with another status', 200, '{"status": "degraded"}'],
-    ['a status of ok on an error code', 500, '{"status": "ok"}'],
-    ['a success code other than 200', 203, '{"status": "ok"}'],
-    ['a body that does not parse', 200, 'Service is fine'],
-    ['a body that is not an object', 200, 'null'],
-  ])('reports unavailable for %s', async (_case, status, body) => {
+    ['a body that does not parse', () => answerText(200, 'Service is fine')],
+    ['a body that is not an object', () => answerText(200, 'null')],
+  ])('reports unavailable for %s', async (_case, reply) => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(status, body)),
+      vi.fn(async () => reply()),
     )
 
     await expect(fetchHealth()).resolves.toBe('unavailable')
@@ -91,7 +102,7 @@ describe('fetchHealth', () => {
     let requestSignal: AbortSignal | null | undefined
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       requestSignal = init?.signal
-      return answer(200, '{"status": "ok", "database": "ok"}')
+      return answer(200, OK)
     })
     vi.stubGlobal('fetch', fetchMock)
     const controller = new AbortController()

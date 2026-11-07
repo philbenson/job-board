@@ -1,6 +1,37 @@
+import { ClerkProvider } from '@clerk/react'
+import type { ReactNode } from 'react'
+import { Account } from './components/Account.tsx'
 import { ServiceStatus } from './components/ServiceStatus.tsx'
 
-function App() {
+type AppProps = {
+  /** Clerk's publishable key; without one the app runs with sign-in off. */
+  publishableKey: string | undefined
+}
+
+function App({ publishableKey }: AppProps) {
+  const key = publishableKey?.trim()
+  // Without a key Clerk is never mounted: it could not load, so its controls
+  // would render nothing and never say why.
+  if (!key) {
+    return (
+      <Page>
+        <p>
+          Sign-in is not configured: set <code>VITE_CLERK_PUBLISHABLE_KEY</code>{' '}
+          to turn it on.
+        </p>
+      </Page>
+    )
+  }
+  return (
+    <ClerkProvider publishableKey={key}>
+      <Page>
+        <Account />
+      </Page>
+    </ClerkProvider>
+  )
+}
+
+function Page({ children }: { children: ReactNode }) {
   return (
     <main>
       <h1>Job board</h1>
@@ -9,6 +40,7 @@ function App() {
         best first.
       </p>
       <ServiceStatus />
+      {children}
     </main>
   )
 }
