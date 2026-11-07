@@ -55,7 +55,7 @@ export function ProfilePanel() {
     <section aria-labelledby={headingId}>
       <h2 id={headingId}>Your profile</h2>
       {loading.kind === 'loading' && <p role="status">Loading your profile…</p>}
-      {loading.kind === 'unavailable' && <p role="alert">Could not load your profile</p>}
+      {loading.kind === 'unavailable' && <p role="alert">Could not load your profile. Reload the page to try again.</p>}
       {loading.kind === 'loaded' && (
         <>
           <p>

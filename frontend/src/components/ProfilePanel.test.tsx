@@ -25,7 +25,7 @@ vi.mock('@clerk/react', () => ({
 const SESSION_TOKEN = 'header.payload.signature'
 
 const LOADING = 'Loading your profile…'
-const NOT_LOADED = 'Could not load your profile'
+const NOT_LOADED = 'Could not load your profile. Reload the page to try again.'
 const NONE_YET = 'No target titles yet'
 const AT_MOST_TWENTY = 'You can list at most 20 target titles'
 const SAVED = 'Saved'

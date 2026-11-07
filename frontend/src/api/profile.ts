@@ -196,11 +196,10 @@ export function saveSection<Route extends SectionRoute>(
       if (response.status === 422) {
         return refusedFrom(await response.json())
       }
-      const profile = await profileFrom(response)
+      const section = await sectionFrom(response, SECTION_OF[route])
       // A section just saved cannot read as unanswered: the answer is not
       // what the save stored.
-      const section = profile?.[SECTION_OF[route]] ?? null
-      return section === null
+      return section === null || section === undefined
         ? 'unavailable'
         : { kind: 'saved', section: section as StoredSection<Route> }
     } catch {
@@ -209,12 +208,36 @@ export function saveSection<Route extends SectionRoute>(
   })
 }
 
+// The whole profile is read strictly: a field this page does not know
+// means it is older than the backend, and only a reload brings the newer.
 async function profileFrom(response: Response): Promise<ProfileBody | null> {
   if (response.status !== 200) {
     return null
   }
   const body: unknown = await response.json()
   return isProfile(body) ? body : null
+}
+
+/**
+ * The saved section from a save's answer, checked as strictly as the read;
+ * undefined when the answer is not a profile holding it in that shape. The
+ * rest of the answer is not checked: the save is stored whatever else the
+ * backend has added since the page loaded, and the page says so.
+ */
+async function sectionFrom<Key extends keyof ProfileBody>(
+  response: Response,
+  key: Key,
+): Promise<ProfileBody[Key] | undefined> {
+  if (response.status !== 200) {
+    return undefined
+  }
+  const body: unknown = await response.json()
+  if (typeof body !== 'object' || body === null || !Object.hasOwn(body, key)) {
+    return undefined
+  }
+  const section: unknown = (body as Record<string, unknown>)[key]
+  const isSection: Check<ProfileBody[Key]> = SECTIONS[key]
+  return isSection(section) ? section : undefined
 }
 
 function refusedFrom(body: unknown): Refused | 'unavailable' {
@@ -299,7 +322,8 @@ function objectOf<T extends object>(checks: {
   }
 }
 
-const isProfile = objectOf<ProfileBody>({
+// Each section's shape, for the whole read and for a save's own section.
+const SECTIONS: { [Key in keyof ProfileBody]: Check<ProfileBody[Key]> } = {
   target_titles: listOf(isText),
   title_range: orNull(
     objectOf<Schemas['TitleRange']>({
@@ -364,4 +388,6 @@ const isProfile = objectOf<ProfileBody>({
   own_rules: orNull(
     objectOf<Schemas['OwnRules']>({ rules: listOf(isText) }),
   ),
-})
+}
+
+const isProfile = objectOf<ProfileBody>(SECTIONS)

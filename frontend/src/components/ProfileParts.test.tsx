@@ -961,6 +961,38 @@ describe('the profile parts, past the first visit', () => {
     expect(saveLine).toHaveTextContent(/^$/)
   })
 
+  it('says "Saved" for a stored save whose answer holds a field the page does not know elsewhere', async () => {
+    const changed = { ...profileWith([]), pay: { floor_usd: 90_000, ask_usd: 120_000 } }
+    await panelOn(profileWith([]), {
+      '/profile/pay': () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ...changed, scoring: { weights: [] } }), { status: 200 }),
+        ),
+      '/profile/places': () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...changed,
+              places: { ...fullProfile().places, country: 'US' },
+            }),
+            { status: 200 },
+          ),
+        ),
+    })
+    const [, paySaid] = part('Pay').getAllByRole('status')
+    const [, placesSaid] = part('Places').getAllByRole('status')
+
+    await type('Pay', 'Lowest base pay you would take, in US dollars a year', '90000')
+    await type('Pay', 'Base pay you would ask for, in US dollars a year', '120000')
+    await save('Pay')
+    await save('Places')
+
+    expect(await part('Pay').findByText('Saved')).toBe(paySaid)
+    expect(
+      await part('Places').findByText('Could not save your places; your changes are still here'),
+    ).toBe(placesSaid)
+  })
+
   it('tells the relocation input its condition', async () => {
     await panelOn(profileWith([]))
 

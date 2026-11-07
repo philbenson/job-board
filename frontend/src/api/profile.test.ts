@@ -214,6 +214,31 @@ describe('saveSection', () => {
     ).resolves.toEqual({ kind: 'saved', section: ['Designer'] })
   })
 
+  // A deploy can add a field while a page is open: the save is stored all
+  // the same, and only the saved section's shape says what was stored.
+  it.each([
+    ['a section the page does not know', (p: Record<string, any>) => (p.scoring = { weights: [] })],
+    ['a key another section does not name', (p: Record<string, any>) => (p.pay.bonus_usd = 1)],
+    ['another section in a shape the page does not know', (p: Record<string, any>) => (p.skills = 'many')],
+  ])('reads back the saved section from an answer with %s', async (_case, change) => {
+    stubFetch(async () => answerText(200, fullWith(change)))
+
+    await expect(saveSection(TOKEN, '/profile/places', FULL.places)).resolves.toEqual({
+      kind: 'saved',
+      section: FULL.places,
+    })
+  })
+
+  it.each([
+    ['a key the saved section does not name', (p: Record<string, any>) => (p.places.country = 'US')],
+    ['a key an office does not name', (p: Record<string, any>) => (p.places.offices[0].country = 'US')],
+    ['the saved section in another shape', (p: Record<string, any>) => (p.places.remote_ok = 'yes')],
+  ])('reports unavailable for an answer with %s', async (_case, change) => {
+    stubFetch(async () => answerText(200, fullWith(change)))
+
+    await expect(saveSection(TOKEN, '/profile/places', FULL.places)).resolves.toBe('unavailable')
+  })
+
   it('reports unavailable when the answer still holds the saved section as unanswered', async () => {
     stubFetch(async () => answer(200, profileWith(['Designer'])))
 
@@ -273,6 +298,7 @@ describe('saveSection', () => {
     ['a 401', () => answerText(401, '{"detail": "sign-in required"}')],
     ['a 500', () => answerText(500, 'Internal Server Error')],
     ['a 200 without the titles', () => answerText(200, '{}')],
+    ['a 200 that is not an object', () => answerText(200, 'null')],
     ['a 422 without a detail list', () => answerText(422, '{"detail": "no"}')],
     ['a 422 with an empty detail list', () => answerText(422, '{"detail": []}')],
     ['a 422 whose first entry has no message', () => answerText(422, '{"detail": [{"loc": []}]}')],
