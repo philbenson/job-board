@@ -86,6 +86,7 @@ REFUSALS: dict[str, tuple[Callable[[], dict[str, str]], str]] = {
         lambda: bearer(signed(claims(azp="https://evil.example.com"))),
         "party",
     ),
+    "a session still pending": (lambda: bearer(signed(claims(sts="pending"))), "pending"),
     "signed by another key": (lambda: bearer(signed(claims(), ANOTHER_KEY)), "signature"),
     "HS256 keyed with the public key": (lambda: bearer(forged("HS256", claims())), "signature"),
     "alg none": (lambda: bearer(forged("none", claims())), "signature"),

@@ -21,6 +21,12 @@ def test_allows_for_a_little_clock_skew() -> None:
     assert verify_session_token(signed(claims(exp=expired_just_now)), SETTINGS) == USER_ID
 
 
+# Clerk marks a session waiting on a further step "pending"; older tokens carry no status.
+@pytest.mark.parametrize("session_status", ["active", ABSENT], ids=["active", "no status"])
+def test_accepts_a_session_that_is_active_or_has_no_status(session_status: object) -> None:
+    assert verify_session_token(signed(claims(sts=session_status)), SETTINGS) == USER_ID
+
+
 def an_hour(sign: int) -> int:
     return int(time.time()) + sign * 3600
 
@@ -33,6 +39,7 @@ REFUSALS: dict[str, tuple[Callable[[], str], str]] = {
     "no issuer": (lambda: signed(claims(iss=ABSENT)), "claims"),
     "no authorized party": (lambda: signed(claims(azp=ABSENT)), "party"),
     "a party not permitted": (lambda: signed(claims(azp="https://evil.example.com")), "party"),
+    "a session still pending": (lambda: signed(claims(sts="pending")), "pending"),
     "signed by another key": (lambda: signed(claims(), ANOTHER_KEY), "signature"),
     "HS256 keyed with the public key": (lambda: forged("HS256", claims()), "signature"),
     "alg none": (lambda: forged("none", claims()), "signature"),

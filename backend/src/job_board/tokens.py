@@ -3,9 +3,9 @@
 Invariant: a token names a person only when it is signed with RS256 by the
 configured key, was issued by the configured Clerk instance, is inside its
 validity window (give or take TOKEN_LEEWAY_SECONDS), was requested by a page
-whose origin is permitted, and carries a non-empty subject. Anything else is
-refused with a short reason code, which is safe to log: it never carries the
-token or any of its claims.
+whose origin is permitted, belongs to a session that is not pending, and
+carries a non-empty subject. Anything else is refused with a short reason code,
+which is safe to log: it never carries the token or any of its claims.
 """
 
 from typing import Any, Literal
@@ -19,7 +19,15 @@ ALGORITHMS = ["RS256"]  # Clerk's only algorithm; the token's own header never c
 REQUIRED_CLAIMS = ["exp", "iss", "sub"]
 
 Reason = Literal[
-    "missing", "malformed", "expired", "not-yet-valid", "issuer", "party", "signature", "claims"
+    "missing",
+    "malformed",
+    "expired",
+    "not-yet-valid",
+    "issuer",
+    "party",
+    "pending",
+    "signature",
+    "claims",
 ]
 
 
@@ -69,6 +77,11 @@ def verify_session_token(token: str, settings: Settings) -> str:
     party = payload.get("azp")
     if not isinstance(party, str) or party not in settings.clerk_authorized_parties:
         raise TokenRefused("party")
+    # A session waiting on a further step, such as a forced password reset, is
+    # "pending"; Clerk's own components treat it as signed out, and so does the
+    # service. Older tokens carry no status and stay accepted.
+    if payload.get("sts") == "pending":
+        raise TokenRefused("pending")
     subject = payload["sub"]  # PyJWT has checked that it is present and a string
     if not subject:
         raise TokenRefused("claims")
