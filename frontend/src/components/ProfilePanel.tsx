@@ -58,10 +58,7 @@ export function ProfilePanel() {
       {loading.kind === 'unavailable' && <p role="alert">Could not load your profile. Reload the page to try again.</p>}
       {loading.kind === 'loaded' && (
         <>
-          <p>
-            Scoring reads your target titles today. The other sections are kept
-            for the interview and for scoring to read later.
-          </p>
+          <p>Scoring reads every section except pace, which nothing reads yet.</p>
           <TargetTitlesPart stored={loading.profile.target_titles} />
           <NearbyTitlesPart stored={loading.profile.title_range} />
           <PlacesPart stored={loading.profile.places} />

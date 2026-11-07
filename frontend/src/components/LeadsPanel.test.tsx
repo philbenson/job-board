@@ -21,8 +21,8 @@ const NOT_LOADED = 'Could not load your leads.'
 const NOT_REFRESHED = 'Could not refresh your leads.'
 const NONE_YET =
   'No leads yet. Leads appear once your model key and at least one target title are saved and scoring next runs.'
-const TITLES_AS_THEY_WERE =
-  'Each lead was rated against your target titles as they were when it was scored. A change to your titles applies to postings rated after it.'
+const PROFILE_AS_IT_WAS =
+  'Each lead was rated against your profile as it was when the lead was scored. A change to your profile applies to postings rated after it.'
 const NEWER_FIRST =
   'Newer postings are rated first; older ones follow on later runs while there is room.'
 
@@ -224,7 +224,7 @@ describe('LeadsPanel', () => {
     render(<LeadsPanel />)
     await shownLeads()
 
-    expect(screen.getByText(TITLES_AS_THEY_WERE)).toBeInTheDocument()
+    expect(screen.getByText(PROFILE_AS_IT_WAS)).toBeInTheDocument()
     expect(screen.getByText(NEWER_FIRST)).toBeInTheDocument()
   })
 
@@ -235,7 +235,7 @@ describe('LeadsPanel', () => {
 
     expect(await screen.findByText(NONE_YET)).toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
-    expect(screen.queryByText(TITLES_AS_THEY_WERE)).not.toBeInTheDocument()
+    expect(screen.queryByText(PROFILE_AS_IT_WAS)).not.toBeInTheDocument()
     expect(screen.queryByText(NEWER_FIRST)).not.toBeInTheDocument()
   })
 

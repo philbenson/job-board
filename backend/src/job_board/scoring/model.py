@@ -8,13 +8,16 @@ SDK would add headers from ``ANTHROPIC_CUSTOM_HEADERS`` over the client's own,
 so the scoring command refuses to start while that variable is set.
 """
 
+import json
 import unicodedata
 from collections.abc import Callable
 from typing import Any
 
 from langchain.chat_models import init_chat_model
+from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langchain_core.language_models import LanguageModelInput
-from langchain_core.runnables import Runnable
+from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from job_board.model_key.check import ANTHROPIC_API, CHECK_MODEL
@@ -24,9 +27,26 @@ SCORING_MODEL = CHECK_MODEL  # the model a person's key was checked against
 MIN_SCORE = 1
 MAX_SCORE = 5
 MAX_REASON_LENGTH = 200  # one sentence, short enough to show beside a posting's title
-# A score and one sentence take well under this; it caps what a runaway reply costs.
-MAX_TOKENS = 1024
-TIMEOUT_SECONDS = 60.0  # one rating; the schedule's next run tries again
+# A score and one sentence are a small judgement, paid for from the person's own
+# key; raise it only if a measured set of postings rates better at a higher one.
+EFFORT = "low"
+# Thinking counts toward the limit on this model: this leaves room for short
+# thinking at that effort and still bounds what a runaway reply costs.
+MAX_TOKENS = 4096
+# Thinking is always on; once an effort is set the library would ask for its
+# summaries, which nothing reads and which would carry text drawn from the
+# person's profile through every callback. Leaving them out changes only what
+# is returned, not what is thought or billed.
+THINKING = {"type": "adaptive", "display": "omitted"}
+# A rating that runs past its timeout stops the person's batch and records
+# nothing, so the same posting would be asked for, and paid for, on every run.
+# The timeout is therefore sized to let the whole token limit arrive: 4,096
+# tokens at 25 a second, a speed this model is sure to beat, is about 164
+# seconds, and 30 more for reading the input makes about 194.
+SLOWEST_TOKENS_PER_SECOND = 25
+INPUT_READING_SECONDS = 30
+TIMEOUT_SECONDS = MAX_TOKENS / SLOWEST_TOKENS_PER_SECOND + INPUT_READING_SECONDS
+CUT_OFF = "max_tokens"  # the stop reason of a reply that reached the token limit
 
 # A model that takes the prompt's messages and answers a Rating, or raises.
 type RatingModel = Runnable[LanguageModelInput, Any]
@@ -34,8 +54,15 @@ type RatingModel = Runnable[LanguageModelInput, Any]
 type ModelFactory = Callable[[str], RatingModel]
 
 
+class ReplyCutOff(Exception):
+    """The reply stopped at the token limit before it was a whole rating.
+
+    It carries none of the reply, so it can be logged or raised anywhere.
+    """
+
+
 class Rating(BaseModel):
-    """How well one posting fits the titles a person seeks, and why.
+    """How well one posting fits the person's profile, and why.
 
     The schema sent to the model carries the bounds only as descriptions, so
     these validators are what hold a reply to them. Strict, so a score sent as
@@ -46,7 +73,7 @@ class Rating(BaseModel):
 
     score: int = Field(
         description=(
-            f"How well the posting fits the titles sought: a whole number from {MIN_SCORE}, "
+            f"How well the posting fits the person's profile: a whole number from {MIN_SCORE}, "
             f"a poor fit, to {MAX_SCORE}, a strong fit."
         )
     )
@@ -83,6 +110,39 @@ class Rating(BaseModel):
         return trimmed
 
 
+def _is_whole_json(text: str) -> bool:
+    try:
+        json.loads(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _one_rating(answer: dict[str, Any]) -> Any:
+    """The rating in a reply, or the reason there is none, raised.
+
+    The parser mends unclosed JSON, so a reply that ended early inside its
+    reason would read as a rating with half a sentence: a reply counts only when
+    its text is whole JSON on its own, whatever its stop reason. Structured
+    output makes a finished reply whole, so this costs nothing. One that is not
+    whole raises ReplyCutOff when it stopped at the limit, and is unreadable
+    otherwise. A refusal, which may hold part of a reply or none, is raised
+    first, as it came. A reply that is whole but no rating raises the parser's
+    own error as it came; it quotes the reply, so it is never logged.
+    """
+    raw: AIMessage = answer["raw"]
+    error: BaseException | None = answer["parsing_error"]
+    if isinstance(error, ModelRefusalError):
+        raise error
+    if not _is_whole_json(raw.text):
+        if raw.response_metadata.get("stop_reason") == CUT_OFF:
+            raise ReplyCutOff
+        raise OutputParserException("the reply is not whole JSON")
+    if error is not None:
+        raise error
+    return answer["parsed"]
+
+
 def anthropic_model(
     key: str, *, base_url: str = ANTHROPIC_API, timeout: float = TIMEOUT_SECONDS
 ) -> RatingModel:
@@ -91,7 +151,10 @@ def anthropic_model(
     The schema goes as structured output rather than a forced tool call, which
     the model does not support. No retries: the schedule is the retry, and a
     retried call costs the person twice. ``base_url`` and ``timeout`` are for
-    the tests, which point it at a local server.
+    the tests, which point it at a local server. The raw reply comes back
+    beside the parsed one only so its text can be checked whole and a reply
+    cut off at the limit told apart; what leaves this model is a Rating, or an
+    exception.
     """
     chat = init_chat_model(
         SCORING_MODEL,
@@ -99,7 +162,10 @@ def anthropic_model(
         api_key=key,
         base_url=base_url,
         max_tokens=MAX_TOKENS,
+        effort=EFFORT,
+        thinking=THINKING,
         max_retries=0,
         timeout=timeout,
     )
-    return chat.with_structured_output(Rating, method="json_schema")
+    structured = chat.with_structured_output(Rating, method="json_schema", include_raw=True)
+    return structured | RunnableLambda(_one_rating)

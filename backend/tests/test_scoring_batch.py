@@ -35,10 +35,25 @@ from job_board.scoring.batch import (
     score_person,
 )
 from job_board.scoring.model import ModelFactory, Rating, RatingModel, anthropic_model
-from job_board.scoring.people import eligible_people
+from job_board.scoring.people import candidate, eligible_people
 
 SERVICE_KEY = base64.urlsafe_b64decode(MODEL_KEY_ENCRYPTION_KEY)
 TITLES = {"target_titles": ["Staff Engineer", "Platform Lead"]}
+RULE = "Nothing in advertising, however the posting words it."
+WHOLE_PROFILE = {
+    **TITLES,
+    "places": {
+        "remote_ok": True,
+        "offices": [],
+        "states": ["MA"],
+        "will_relocate": False,
+        "relocate_for": [],
+    },
+    "pay": {"floor_usd": 150000, "ask_usd": 180000},
+    "deal_breakers": {"industries": ["Gambling"], "company_sizes": [], "no_agencies": True},
+    "pace": {"leads_per_day": 10, "brief_from_score": None},
+    "own_rules": {"rules": [RULE]},
+}
 START = datetime(2026, 9, 1, tzinfo=UTC)
 GOOD = Rating(score=4, reason="A close match.")
 UNREADABLE = OutputParserException("Failed to parse Rating from completion")
@@ -222,6 +237,7 @@ async def test_scores_only_people_with_a_working_key_and_a_title(engine: AsyncEn
     await add_person(engine, None)  # no profile row
     await add_person(engine, {})  # a profile with no titles key
     await add_person(engine, {"target_titles": []})
+    await add_person(engine, {**WHOLE_PROFILE, "target_titles": []})  # all else, but no titles
     second = await add_person(engine, {"target_titles": ["Engineer"], "other": 1})
     async with make_sessionmaker(engine)() as session:
         assert await eligible_people(session) == [first, second]
@@ -231,11 +247,27 @@ async def test_scores_a_person_whose_section_holds_a_key_this_code_does_not_name
     engine: AsyncEngine,
 ) -> None:
     # A section saved by newer code may hold a key this code does not know;
-    # the titles still read, as the profile route reads them.
+    # the profile still reads, as the profile route reads it, and is sent whole.
     pay = {"floor_usd": 90000, "ask_usd": 120000, "currency": "USD"}
     person = await add_person(engine, {"target_titles": ["Engineer"], "pay": pay})
     async with make_sessionmaker(engine)() as session:
         assert await eligible_people(session) == [person]
+    await add_posting(engine)
+    with canned_anthropic(rating(3, "A partial match.")) as server:
+        assert (await run(engine, person, real(server.url))).rated == 1
+    [block] = server.received[0].body["system"]
+    assert "What they ask for: $120,000" in block["text"]
+    assert "currency" not in block["text"]
+
+
+async def test_keeps_the_persons_profile_out_of_the_candidates_repr(engine: AsyncEngine) -> None:
+    person = await add_person(engine, WHOLE_PROFILE)
+    async with make_sessionmaker(engine)() as session:
+        found = await candidate(session, person)
+    assert found is not None
+    assert found.profile.own_rules is not None and found.profile.own_rules.rules == [RULE]
+    assert RULE not in repr(found)
+    assert "Staff Engineer" not in repr(found)
 
 
 async def test_scores_everyone_who_qualifies_in_order_of_id(engine: AsyncEngine) -> None:
@@ -494,6 +526,41 @@ async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
 
 
 @pytest.mark.parametrize(
+    ("text", "quoted"),
+    [
+        ('{"score": 4, "reason": "Cut short in the mid', "Cut short"),
+        ('{"score": 4, "reason": "Wants {Go}', "Wants"),  # cut just after a brace
+    ],
+    ids=["mid-reason", "after-a-brace"],
+)
+async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_goes_on(
+    engine: AsyncEngine, caplog: pytest.LogCaptureFixture, text: str, quoted: str
+) -> None:
+    caplog.set_level(logging.INFO)
+    person = await add_person(engine)
+    first, second, third = [
+        await add_posting(engine, seen=START - timedelta(days=age)) for age in range(3)
+    ]
+    cut_off = message(text, stop_reason="max_tokens")
+    with canned_anthropic(rating(5, "Exact."), cut_off, rating(2, "A different field.")) as server:
+        result = await run(engine, person, real(server.url))
+
+    assert result == BatchResult(person, rated=2, unreadable=1, end="finished")
+    assert await scores_of(engine, person) == [
+        (first, "scored", 5),
+        (second, "unreadable", None),
+        (third, "scored", 2),
+    ]
+    assert len(server.received) == 3
+    ours = [record for record in caplog.records if record.name.startswith("job_board.scoring")]
+    assert [(record.levelno, record.getMessage()) for record in ours] == [
+        (logging.WARNING, f"person {person}, posting {second}: reply cut off at the token limit"),
+        (logging.INFO, f"person {person}: 2 rated, 1 unreadable, finished"),
+    ]
+    assert quoted not in caplog.text
+
+
+@pytest.mark.parametrize(
     ("status", "failure"),
     [(401, "rejected"), (403, "not-permitted"), (402, "no-credit")],
 )
@@ -691,9 +758,58 @@ async def test_sends_the_persons_key_the_model_the_cap_and_the_schema_to_anthrop
     [request] = server.received
     assert request.headers["authorization"] == f"Bearer {key}"
     assert request.body["model"] == CHECK_MODEL
-    assert request.body["max_tokens"] == 1024
+    assert request.body["max_tokens"] == 4096
+    assert request.body["output_config"]["effort"] == "low"
     assert request.body["output_config"]["format"]["type"] == "json_schema"
     assert "tools" not in request.body and "tool_choice" not in request.body
+
+
+async def test_sends_every_posting_in_a_batch_the_same_system_block_holding_the_profile(
+    engine: AsyncEngine,
+) -> None:
+    person = await add_person(engine, WHOLE_PROFILE)
+    for age in range(3):
+        await add_posting(engine, seen=START - timedelta(days=age))
+    new_rule = "A rule saved while the batch was running."
+    changed = {**WHOLE_PROFILE, "own_rules": {"rules": [new_rule]}}
+
+    def changing_the_profile_after_the_first_posting(url: str) -> ModelFactory:
+        """The real model, and the person saving a new profile once it has answered."""
+
+        def factory(key: str) -> RatingModel:
+            model = anthropic_model(key, base_url=url, timeout=5.0)
+            answered: list[object] = []
+
+            async def answer(messages: LanguageModelInput) -> object:
+                answered.append(await model.ainvoke(messages))
+                if len(answered) == 1:
+                    async with engine.begin() as connection:
+                        await connection.execute(
+                            text("UPDATE profiles SET document = :document WHERE person_id = :id"),
+                            {"document": json.dumps(changed), "id": person},
+                        )
+                return answered[-1]
+
+            return RunnableLambda(answer)
+
+        return factory
+
+    with canned_anthropic(rating(3, "A partial match.")) as server:
+        result = await run(engine, person, changing_the_profile_after_the_first_posting(server.url))
+
+    assert result.rated == 3
+    blocks = [json.dumps(request.body["system"]) for request in server.received]
+    # Every posting is rated against the profile read at the start of the batch.
+    assert len(blocks) == 3 and blocks == [blocks[0]] * 3
+    assert new_rule not in blocks[0]
+    [block] = server.received[0].body["system"]
+    assert block["cache_control"] == {"type": "ephemeral"}
+    assert f"- {RULE}" in block["text"]
+    assert "- Gambling" in block["text"]
+    for request in server.received:  # the user message is the posting alone
+        [turn] = request.body["messages"]
+        assert turn["content"].startswith("<posting>\nTitle: Staff Engineer\n")
+        assert turn["content"].endswith("</posting>")
 
 
 @pytest.mark.parametrize(

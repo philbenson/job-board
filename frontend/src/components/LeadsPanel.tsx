@@ -155,12 +155,11 @@ export function LeadsPanel() {
 function LeadList({ leads, total }: { leads: Lead[]; total: number }) {
   return (
     <>
-      {/* Scoring rates each posting once per person, so a change of titles
+      {/* Scoring rates each posting once per person, so a change of profile
           re-scores nothing already rated. */}
       <p>
-        Each lead was rated against your target titles as they were when it
-        was scored. A change to your titles applies to postings rated after
-        it.
+        Each lead was rated against your profile as it was when the lead was
+        scored. A change to your profile applies to postings rated after it.
       </p>
       {/* Scoring takes the newest unrated postings first, a capped number
           each run; the cap is left out so it can change without the page. */}

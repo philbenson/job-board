@@ -2,7 +2,8 @@
 
 A person is scored when they have an Anthropic key with no recorded failure
 and at least one target title. No profile, a profile without titles and an
-empty list of titles all mean no titles.
+empty list of titles all mean no titles. A person scored is rated against their
+whole profile.
 """
 
 import logging
@@ -15,7 +16,7 @@ from sqlalchemy import Row, Select, and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.models import ModelKey, Person, Posting, ProfileRow, Score
-from job_board.profiles import stored_profile
+from job_board.profiles import Profile, stored_profile
 
 PROVIDER = "anthropic"
 
@@ -25,7 +26,8 @@ log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Candidate:
     person_id: int
-    titles: tuple[str, ...]
+    # The person's own words, kept out of every repr and so out of every traceback.
+    profile: Profile = field(repr=False)
     # Sealed, so it says nothing without the service key; kept out of the repr regardless.
     sealed_key: bytes = field(repr=False)
 
@@ -46,21 +48,23 @@ def _with_a_working_key() -> Select[int, bytes, dict[str, Any] | None]:
     )
 
 
-def _titles(person_id: int, document: dict[str, Any] | None) -> tuple[str, ...]:
+def _profile(person_id: int, document: dict[str, Any] | None) -> Profile | None:
     if document is None:
-        return ()
+        return None
     try:
-        return tuple(stored_profile(document).target_titles)
+        return stored_profile(document)
     except ValidationError:
         # The error would quote the document, so it names the person alone.
         log.warning("person %d: profile unreadable, not scored", person_id)
-        return ()
+        return None
 
 
 def _candidate(row: Row[int, bytes, dict[str, Any] | None]) -> Candidate | None:
     person_id, sealed_key, document = row
-    titles = _titles(person_id, document)
-    return Candidate(person_id, titles, sealed_key) if titles else None
+    profile = _profile(person_id, document)
+    if profile is None or not profile.target_titles:
+        return None
+    return Candidate(person_id, profile, sealed_key)
 
 
 async def eligible_people(session: AsyncSession) -> list[int]:
