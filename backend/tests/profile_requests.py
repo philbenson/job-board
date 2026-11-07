@@ -31,10 +31,14 @@ NEW_PROFILE: dict[str, Any] = {
 
 
 @asynccontextmanager
-async def client_for(database_url: str) -> AsyncIterator[httpx.AsyncClient]:
+async def client_for(
+    database_url: str, *, raise_app_exceptions: bool = True
+) -> AsyncIterator[httpx.AsyncClient]:
+    # By default an error the app does not handle is raised in the test; turned
+    # off, the client gets the 500 a real client would.
     app = create_app(make_settings(database_url=database_url))
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 

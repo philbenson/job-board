@@ -50,6 +50,7 @@ __all__ = [
     "Profile",
     "TargetTitles",
     "router",
+    "stored_profile",
 ]
 
 UNANSWERED = "Null until the person saves this section."
@@ -125,8 +126,11 @@ async def _save_section(
         },
     ).returning(ProfileRow.document)
     document = await session.scalar(save)
+    # Read before committing: a stored section today's rules refuse fails the
+    # save here, and it is rolled back, so a failed answer means nothing changed.
+    profile = stored_profile(document)
     await session.commit()
-    return stored_profile(document)
+    return profile
 
 
 @router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)

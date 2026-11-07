@@ -4,6 +4,9 @@ Requests are strict: a body with a key its section does not name is refused,
 and no value is converted to the type a field wants. Every field carries a
 description written for the person filling in a form and for a language model
 reading the model's schema as a tool's.
+
+A stored document is read through these same rules, so tightening a rule or a
+limit needs the stored documents migrated first.
 """
 
 from typing import Annotated, Literal, get_args

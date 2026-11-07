@@ -1,5 +1,6 @@
 """Saving and reading the profile's sections through their routes."""
 
+import asyncio
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -164,6 +165,47 @@ async def test_saving_a_section_leaves_every_other_section_and_an_unknown_key_un
         section.key: section.answer,
     }
     assert [row.document for row in someone.stored()] == [{**before, section.key: section.answer}]
+
+
+@pytest.mark.parametrize("stored_first", [False, True], ids=["no profile yet", "a profile already"])
+async def test_saves_of_every_section_at_once_all_survive_in_the_one_row(
+    someone: Someone, migrated_database_url: str, stored_first: bool
+) -> None:
+    before = {"later": {"anything": [1, 2]}} if stored_first else {}
+    async with client_for(migrated_database_url) as client:
+        await client.get("/me", headers=someone.headers)  # adds the person's row
+        if stored_first:
+            store(someone, before)
+        answers = await asyncio.gather(
+            client.put(
+                "/profile/target-titles", json={"titles": ["Designer"]}, headers=someone.headers
+            ),
+            *(
+                client.put(section.path, json=section.sent, headers=someone.headers)
+                for section in SECTIONS.values()
+            ),
+        )
+
+    assert [answer.status_code for answer in answers] == [200] * (len(SECTIONS) + 1)
+    every = {"target_titles": ["Designer"]} | {
+        section.key: section.answer for section in SECTIONS.values()
+    }
+    assert [row.document for row in someone.stored()] == [before | every]
+
+
+async def test_a_save_beside_a_stored_section_todays_rules_refuse_fails_and_stores_nothing(
+    someone: Someone, migrated_database_url: str
+) -> None:
+    # Written under a looser rule, say, before a limit was tightened without
+    # migrating the stored documents.
+    before = {"pace": {"leads_per_day": 0, "brief_from_score": None}}
+    async with client_for(migrated_database_url, raise_app_exceptions=False) as client:
+        await client.get("/me", headers=someone.headers)
+        store(someone, before)
+        saved = await client.put("/profile/pay", json=SECTIONS["pay"].sent, headers=someone.headers)
+
+    assert saved.status_code == 500
+    assert [row.document for row in someone.stored()] == [before]
 
 
 @pytest.mark.parametrize("section", SECTIONS.values(), ids=SECTIONS.keys())
