@@ -211,6 +211,10 @@ export interface components {
             checked_at: string;
             /** Usable */
             usable: boolean;
+            /** Failure */
+            failure: ("rejected" | "not-permitted" | "no-credit") | null;
+            /** Failed At */
+            failed_at: string | null;
         };
         /** SavedResume */
         SavedResume: {

@@ -16,6 +16,8 @@ const SAVED = {
   last_four: 'abcd',
   checked_at: '2026-11-07T12:00:00Z',
   usable: true,
+  failure: null,
+  failed_at: null,
 } satisfies SavedModelKeyBody
 const NONE = { detail: 'no model key saved' } satisfies NoModelKeyBody
 const REJECTED = {
@@ -87,6 +89,17 @@ describe('readModelKey', () => {
     )
   })
 
+  it.each(['rejected', 'not-permitted', 'no-credit'] as const)(
+    'reads a key scoring found %s',
+    async (failure) => {
+      const failed = { ...SAVED, failure, failed_at: '2026-11-09T12:00:00Z' }
+      serviceAnswers(() => answer(200, failed))
+      await expect(readModelKey(TOKEN, signal())).resolves.toEqual({
+        saved: failed,
+      })
+    },
+  )
+
   it('reports none for a 404', async () => {
     serviceAnswers(() => answer(404, NONE))
     await expect(readModelKey(TOKEN, signal())).resolves.toBe('none')
@@ -107,6 +120,23 @@ describe('readModelKey', () => {
     [
       'a 200 whose check time is not a time',
       () => answer(200, { ...SAVED, checked_at: 'yesterday' }),
+    ],
+    [
+      'a 200 without the failure',
+      () =>
+        answerText(
+          200,
+          '{"provider": "anthropic", "last_four": "abcd", "checked_at": "2026-11-07T12:00:00Z", "usable": true}',
+        ),
+    ],
+    [
+      'a 200 with a failure of no known kind',
+      () => answerText(200, JSON.stringify({ ...SAVED, failure: 'expired' })),
+    ],
+    [
+      'a 200 whose failure time is not a time',
+      () =>
+        answer(200, { ...SAVED, failure: 'rejected', failed_at: 'yesterday' }),
     ],
     ['a body that is not JSON', () => answerText(200, 'not json')],
   ])('reports unavailable for %s', async (_case, response) => {

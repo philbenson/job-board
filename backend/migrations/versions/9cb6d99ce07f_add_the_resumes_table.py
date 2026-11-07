@@ -5,7 +5,7 @@ store: its key there, its size, from 1 byte to 5 MiB, and when it was
 uploaded. The row goes when the person does; the file in the store does not.
 
 Revision ID: 9cb6d99ce07f
-Revises: 50648919cc44
+Revises: 0379d9403735
 Create Date: 2026-11-07 15:23:30.053607
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "9cb6d99ce07f"
-down_revision: str | Sequence[str] | None = "50648919cc44"
+down_revision: str | Sequence[str] | None = "0379d9403735"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

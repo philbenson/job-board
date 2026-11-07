@@ -16,6 +16,7 @@ Backend, from `backend/`:
 - `DATABASE_URL` takes the form `postgresql://user:password@host:port/database`. The service reads it or `backend/.env`; the tests read it or `backend/.env.example`, never `.env`
 - The service also needs `CLERK_ISSUER`, `CLERK_JWT_KEY`, `CLERK_AUTHORIZED_PARTIES` and `MODEL_KEY_ENCRYPTION_KEY` (see `backend/.env.example`, which gives the command that makes the last) and refuses to start without them; migrations need only `DATABASE_URL`, and the tests build their own values with a key each run generates
 - Resume upload takes five optional settings, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` (see `backend/.env.example`): all five or none. Without them the service starts and the resume routes answer 503; with some but not all it refuses to start
+- `uv run python -m job_board.scoring` rates up to 25 unscored open postings for each person with a working key and a target title, on their own key, and exits: 0 finished, 1 a batch stopped on a failure or no key opened under this service key, 2 refused to start. It needs only `DATABASE_URL` and `MODEL_KEY_ENCRYPTION_KEY`, and refuses to start while any of `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` or either with `_V2` is `true`, `1` or `yes`, or while `ANTHROPIC_CUSTOM_HEADERS` is set; the tests run with all five unset
 
 Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer):
 
@@ -44,7 +45,7 @@ Public-content check, from the repository root:
 - A change to a route rewrites `backend/openapi.json` and regenerates the front end's types in the same commit. Front end code and test fixtures use the generated types, never hand-written body shapes.
 - Tests at every layer, written first; tests that need a database use the per-run database fixture, never a shared one.
 - Test data uses `example.com` email addresses and `555-0100` to `555-0199` phone numbers.
-- No test or tool reaches Clerk's or Anthropic's servers: backend tests sign tokens with a key they generate and answer the model key check through a fake, and front end tests mock `@clerk/react` and `fetch`.
+- No test or tool reaches Clerk's or Anthropic's servers: backend tests sign tokens with a key they generate, answer the model key check through a fake, and score with a fake model, the real one tested against a local server through `base_url`, and front end tests mock `@clerk/react` and `fetch`.
 - No test reaches a storage provider: the backend tests start a local S3 server (moto) once per run, and the service reads the store's address and credentials from its five settings alone, never `AWS_` variables or `~/.aws`.
 - No private names, personal email addresses or phone numbers in any file, path, commit message or branch name: this repository is public, and the public-content check enforces it.
 - Commit under the repository's configured identity; never pass `--author`.

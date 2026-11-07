@@ -47,6 +47,8 @@ const SAVED = {
   last_four: 'abcd',
   checked_at: '2026-11-07T12:00:00Z',
   usable: true,
+  failure: null,
+  failed_at: null,
 } satisfies SavedModelKeyBody
 const SAVED_LINE = 'Anthropic key ending in abcd, checked Nov 7, 2026'
 const NEWLY_SAVED = {
@@ -54,8 +56,12 @@ const NEWLY_SAVED = {
   last_four: 'wxyz',
   checked_at: '2026-11-08T12:00:00Z',
   usable: true,
+  failure: null,
+  failed_at: null,
 } satisfies SavedModelKeyBody
 const NEWLY_SAVED_LINE = 'Anthropic key ending in wxyz, checked Nov 8, 2026'
+// A key scoring stopped on is dated by when it stopped, not when it was checked.
+const STOPPED_LINE = 'Anthropic key ending in abcd, stopped working Nov 9, 2026'
 const NONE = { detail: 'no model key saved' } satisfies NoModelKeyBody
 
 type Reply = (init?: RequestInit) => Promise<Response>
@@ -168,6 +174,63 @@ describe('ModelKeyPanel', () => {
     expect(screen.getByRole('button', { name: 'Replace' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Anthropic API key')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    [
+      'rejected',
+      'Anthropic stopped accepting this key. Save a new one to keep scoring.',
+    ],
+    [
+      'not-permitted',
+      'This key can no longer use the model this app runs. Save a new one to keep scoring.',
+    ],
+    [
+      'no-credit',
+      "This key's account has run out of credit. Add credit, then save the key again to keep scoring.",
+    ],
+  ] as const)(
+    'says above the saved key why scoring stopped when the key is %s',
+    async (failure, sentence) => {
+      service({
+        get: () =>
+          answer(200, { ...SAVED, failure, failed_at: '2026-11-09T12:00:00Z' }),
+      })
+
+      render(<ModelKeyPanel />)
+
+      const said = await screen.findByText(sentence)
+      const line = screen.getByText(STOPPED_LINE)
+      expect(screen.queryByText(SAVED_LINE)).not.toBeInTheDocument()
+      expect(
+        said.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(button('Replace')).toBeInTheDocument()
+    },
+  )
+
+  it('says nothing of a failure once a new key is saved', async () => {
+    const sentence =
+      'Anthropic stopped accepting this key. Save a new one to keep scoring.'
+    service({
+      get: () =>
+        answer(200, {
+          ...SAVED,
+          failure: 'rejected',
+          failed_at: '2026-11-09T12:00:00Z',
+        }),
+      put: () => answer(200, NEWLY_SAVED),
+    })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+    expect(await screen.findByText(sentence)).toBeInTheDocument()
+
+    await user.click(button('Replace'))
+    await user.type(keyInput(), KEY)
+    await user.click(button('Save'))
+
+    expect(await screen.findByText(NEWLY_SAVED_LINE)).toBeInTheDocument()
+    expect(screen.queryByText(sentence)).not.toBeInTheDocument()
   })
 
   it('asks for a key saved under an old encryption key to be entered again, with the form open', async () => {

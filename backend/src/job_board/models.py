@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     MetaData,
+    SmallInteger,
     Text,
     UniqueConstraint,
     func,
@@ -55,13 +56,17 @@ class ModelKey(Base):
     """A person's own key for a model provider, sealed so only the service can open it.
 
     One per person and provider. Only the last four characters are kept in the
-    clear, to show which key is saved.
+    clear, to show which key is saved. ``failure`` says why scoring stopped
+    using the key, if it did; saving a key again clears it.
     """
 
     __tablename__ = "model_keys"
     __table_args__ = (
         UniqueConstraint("person_id", "provider"),
         CheckConstraint("provider = 'anthropic'", name="provider_is_known"),
+        CheckConstraint(
+            "failure IN ('rejected', 'not-permitted', 'no-credit')", name="failure_is_known"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
@@ -70,6 +75,8 @@ class ModelKey(Base):
     sealed_key: Mapped[bytes] = mapped_column(LargeBinary)
     last_four: Mapped[str] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    failure: Mapped[str | None] = mapped_column(Text)
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -171,3 +178,35 @@ class ResumeRow(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class Score(Base):
+    """One person's rating of one posting, or a note that the model's reply could not be read.
+
+    Invariant: at most one row per person and posting; the per-person lock is
+    what keeps a run from paying twice for one rating. An unreadable reply
+    holds the place too, and is not retried.
+    """
+
+    __tablename__ = "scores"
+    __table_args__ = (
+        UniqueConstraint("person_id", "posting_id"),
+        CheckConstraint("outcome IN ('scored', 'unreadable')", name="outcome"),
+        CheckConstraint("score BETWEEN 1 AND 5", name="score_on_the_scale"),
+        CheckConstraint(
+            "(outcome = 'scored' AND score IS NOT NULL AND reason IS NOT NULL) "
+            "OR (outcome <> 'scored' AND score IS NULL AND reason IS NULL)",
+            name="rated_exactly_when_scored",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    person_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("people.id", ondelete="CASCADE"))
+    posting_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("postings.id", ondelete="CASCADE")
+    )
+    outcome: Mapped[str] = mapped_column(Text)
+    score: Mapped[int | None] = mapped_column(SmallInteger)
+    reason: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(Text)  # the model id that gave the rating
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

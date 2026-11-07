@@ -16,6 +16,7 @@ HEAD_TABLES = [
     "postings",
     "profiles",
     "resumes",
+    "scores",
 ]
 # The key, unique and check constraints of the fetcher's tables, in name order,
 # each named by the models' naming convention.

@@ -4,7 +4,8 @@ type ModelKeyRoute = paths['/model-key']
 
 /**
  * A saved key as the backend shows it: provider, last four characters, check
- * time, and whether the service can still open it.
+ * time, whether the service can still open it, and why scoring stopped using
+ * it, with when, if it did.
  */
 export type SavedModelKeyBody =
   ModelKeyRoute['get']['responses'][200]['content']['application/json']
@@ -33,6 +34,12 @@ export type ModelKeyRemoval = 'removed' | 'unavailable'
 const MODEL_KEY_URL = '/api/model-key'
 // The answers to a save that carry a sentence for the person.
 const REFUSAL_STATUSES = new Set([422, 429, 503])
+// Why scoring stopped using a key, as the backend names it.
+const KEY_FAILURES: ReadonlySet<string> = new Set<NonNullable<SavedModelKeyBody['failure']>>([
+  'rejected',
+  'not-permitted',
+  'no-credit',
+])
 
 /**
  * The signed-in person's saved key: "none" for the backend's 404, and
@@ -134,7 +141,11 @@ function isSavedKey(body: unknown): body is SavedModelKeyBody {
     typeof fields.last_four === 'string' &&
     typeof fields.checked_at === 'string' &&
     !Number.isNaN(Date.parse(fields.checked_at)) &&
-    typeof fields.usable === 'boolean'
+    typeof fields.usable === 'boolean' &&
+    (fields.failure === null ||
+      (typeof fields.failure === 'string' && KEY_FAILURES.has(fields.failure))) &&
+    (fields.failed_at === null ||
+      (typeof fields.failed_at === 'string' && !Number.isNaN(Date.parse(fields.failed_at))))
   )
 }
 

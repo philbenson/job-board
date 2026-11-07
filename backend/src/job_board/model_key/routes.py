@@ -13,7 +13,7 @@ earlier one in place.
 """
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.database import get_session
 from job_board.model_key.check import KeyChecker, get_key_checker
 from job_board.model_key.check_limits import CheckLimits
+from job_board.model_key.failure import KeyFailure
 from job_board.model_key.sealing import seal, sealed_with
 from job_board.models import ModelKey, Person
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person, get_settings
@@ -76,6 +77,9 @@ class SavedModelKey(BaseModel):
     # False when the key was sealed under a service key this service no longer
     # holds, so it cannot be opened and the person must enter it again.
     usable: bool
+    # Set when scoring found Anthropic no longer accepts the key; saving a key clears it.
+    failure: KeyFailure | None
+    failed_at: datetime | None
 
 
 class ModelKeyRefused(BaseModel):
@@ -105,6 +109,8 @@ def saved(row: ModelKey, settings: Settings) -> SavedModelKey:
         last_four=row.last_four,
         checked_at=row.checked_at,
         usable=sealed_with(row.sealed_key, service_key=service_key),
+        failure=cast(KeyFailure | None, row.failure),  # the table's check holds it to these
+        failed_at=row.failed_at,
     )
 
 
@@ -184,6 +190,8 @@ async def save_model_key(
                 "sealed_key": upsert.excluded.sealed_key,
                 "last_four": upsert.excluded.last_four,
                 "checked_at": upsert.excluded.checked_at,
+                "failure": None,
+                "failed_at": None,
                 "updated_at": func.now(),
             },
         ).returning(ModelKey)

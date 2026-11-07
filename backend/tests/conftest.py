@@ -13,14 +13,33 @@ from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
 
 from job_board.resumes.store import SETTINGS_FROM_NOWHERE
+from job_board.scoring.tracing import TRACING_VARIABLES
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+
+
+@pytest.fixture(autouse=True)
+def no_tracing_or_custom_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test runs with LangSmith tracing and the SDK's custom headers unset.
+
+    So none can send a trace, and none sends a header the environment added.
+    """
+    for name in (*TRACING_VARIABLES, "ANTHROPIC_CUSTOM_HEADERS"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     """The URL of a database that exists for this test run only."""
     with per_run_database(server_url()) as url:
+        yield url
+
+
+def _migrated_database() -> Iterator[str]:
+    with per_run_database(server_url()) as url:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
+            command.upgrade(Config(ALEMBIC_INI), "head")
         yield url
 
 
@@ -31,11 +50,17 @@ def migrated_database_url() -> Iterator[str]:
     Its own, so the migration tests can take theirs down to nothing and back
     without touching rows another test is reading.
     """
-    with per_run_database(server_url()) as url:
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
-            command.upgrade(Config(ALEMBIC_INI), "head")
-        yield url
+    yield from _migrated_database()
+
+
+@pytest.fixture(scope="module")
+def module_database_url() -> Iterator[str]:
+    """A database at the migrations' head for one test module alone.
+
+    For tests that read every row of a table, such as all open postings, and
+    so may empty the tables between tests without touching another module's.
+    """
+    yield from _migrated_database()
 
 
 @pytest.fixture
