@@ -1,6 +1,17 @@
+import type { paths } from './schema.ts'
+
+type MeResponses = paths['/me']['get']['responses']
+
+/** The me route's body, as the backend's OpenAPI description defines it. */
+export type MeBody = MeResponses[200]['content']['application/json']
+
+/** The me route's refusal, as the backend's OpenAPI description defines it. */
+export type RefusedBody = MeResponses[401]['content']['application/json']
+
 /**
- * What the backend said of the signed-in person: it recognised them, it
- * refused their sign-in, or it gave no usable answer.
+ * The client's verdict on the signed-in person: the backend recognised them,
+ * refused their sign-in, or gave no usable answer. Its own type rather than
+ * the body, since a caller needs nothing finer than that.
  */
 export type MeAnswer = 'recognised' | 'refused' | 'unavailable'
 
@@ -63,10 +74,11 @@ async function askService(
 }
 
 function isPersonBody(body: unknown): boolean {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    'id' in body &&
-    Number.isInteger(body.id)
-  )
+  if (typeof body !== 'object' || body === null) {
+    return false
+  }
+  // Every field may be missing or of any type until checked; naming the field
+  // through the body's type ties it to the backend's name for it.
+  const { id } = body as Partial<Record<keyof MeBody, unknown>>
+  return Number.isInteger(id)
 }

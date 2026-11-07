@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
+import type { MeBody, RefusedBody } from './api/me.ts'
 
 // Clerk replaced by a stand-in whose sign-in state each test sets, so no test
 // reaches Clerk's servers.
@@ -55,9 +56,21 @@ function serviceAnswersMe(
   return fetchMock
 }
 
-function answer(status: number, body: string): Promise<Response> {
+const PERSON = { id: 7 } satisfies MeBody
+const REFUSAL = { detail: 'sign-in required' } satisfies RefusedBody
+
+// A body the contract allows, typed so it changes when the backend's does.
+function answer(
+  status: number,
+  body: MeBody | RefusedBody,
+): Promise<Response> {
+  return answerText(status, JSON.stringify(body))
+}
+
+// A body outside the contract, written out on purpose.
+function answerText(status: number, text: string): Promise<Response> {
   return Promise.resolve(
-    new Response(body, {
+    new Response(text, {
       status,
       headers: { 'Content-Type': 'application/json' },
     }),
@@ -144,7 +157,7 @@ describe('App', () => {
     })
 
     it('says signed in once the service recognises the session token', async () => {
-      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+      const fetchMock = serviceAnswersMe(() => answer(200, PERSON))
 
       render(<App publishableKey={PUBLISHABLE_KEY} />)
 
@@ -158,23 +171,21 @@ describe('App', () => {
     })
 
     it.each([
+      ['the service refuses the token', () => answer(401, REFUSAL), REFUSED],
       [
-        'the service refuses the token',
-        401,
-        '{"detail": "sign-in required"}',
-        REFUSED,
-      ],
-      [
-        'the service answers without an id',
-        200,
-        '{"detail": "ok"}',
+        'the service answers 200 without an id',
+        () => answer(200, REFUSAL),
         UNAVAILABLE,
       ],
-      ['the service fails', 503, '{"detail": "unavailable"}', UNAVAILABLE],
+      [
+        'the service fails',
+        () => answerText(503, '{"detail": "down"}'),
+        UNAVAILABLE,
+      ],
     ])(
       'never says signed in when %s',
-      async (_case, status, body, message) => {
-        serviceAnswersMe(() => answer(status, body))
+      async (_case, reply, message) => {
+        serviceAnswersMe(reply)
 
         render(<App publishableKey={PUBLISHABLE_KEY} />)
 
@@ -198,7 +209,7 @@ describe('App', () => {
 
     it('treats a missing session token as refused, without asking the service', async () => {
       clerk.getToken.mockResolvedValue(null)
-      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+      const fetchMock = serviceAnswersMe(() => answer(200, PERSON))
 
       render(<App publishableKey={PUBLISHABLE_KEY} />)
 
@@ -208,7 +219,7 @@ describe('App', () => {
 
     it('says it could not confirm the sign-in when the session token cannot be had', async () => {
       clerk.getToken.mockRejectedValue(new Error('network'))
-      const fetchMock = serviceAnswersMe(() => answer(200, '{"id": 7}'))
+      const fetchMock = serviceAnswersMe(() => answer(200, PERSON))
 
       render(<App publishableKey={PUBLISHABLE_KEY} />)
 

@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchMe } from './me.ts'
+import { fetchMe, type MeBody, type RefusedBody } from './me.ts'
 
 const TOKEN = 'header.payload.signature'
 
-function answer(status: number, body: string): Response {
-  return new Response(body, {
+const PERSON = { id: 7 } satisfies MeBody
+const REFUSED = { detail: 'sign-in required' } satisfies RefusedBody
+
+// A body the contract allows, typed so it changes when the backend's does.
+function answer(status: number, body: MeBody | RefusedBody): Response {
+  return answerText(status, JSON.stringify(body))
+}
+
+// A body outside the contract, written out on purpose.
+function answerText(status: number, text: string): Response {
+  return new Response(text, {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
@@ -28,7 +37,7 @@ describe('fetchMe', () => {
   it('reports recognised for a 200 carrying the person id', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(200, '{"id": 7}')),
+      vi.fn(async () => answer(200, PERSON)),
     )
 
     await expect(fetchMe(TOKEN)).resolves.toBe('recognised')
@@ -37,25 +46,28 @@ describe('fetchMe', () => {
   it('reports refused for a 401', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(401, '{"detail": "sign-in required"}')),
+      vi.fn(async () => answer(401, REFUSED)),
     )
 
     await expect(fetchMe(TOKEN)).resolves.toBe('refused')
   })
 
   it.each([
-    ['a 503 from the service', 503, '{"detail": "unavailable"}'],
-    ['an id on an error code', 500, '{"id": 7}'],
-    ['a success code other than 200', 203, '{"id": 7}'],
-    ['a 200 without an id', 200, '{"detail": "ok"}'],
-    ['a 200 whose id is a string', 200, '{"id": "7"}'],
-    ['a 200 whose id is not a whole number', 200, '{"id": 7.5}'],
-    ['a body that does not parse', 200, 'Signed in'],
-    ['a body that is not an object', 200, 'null'],
-  ])('reports unavailable for %s', async (_case, status, body) => {
+    ['a 503 from the service', () => answerText(503, '{"detail": "down"}')],
+    ['an id on an error code', () => answer(500, PERSON)],
+    ['a success code other than 200', () => answer(203, PERSON)],
+    ['a 200 carrying a refusal', () => answer(200, REFUSED)],
+    ['a 200 whose id is a string', () => answerText(200, '{"id": "7"}')],
+    [
+      'a 200 whose id is not a whole number',
+      () => answerText(200, '{"id": 7.5}'),
+    ],
+    ['a body that does not parse', () => answerText(200, 'Signed in')],
+    ['a body that is not an object', () => answerText(200, 'null')],
+  ])('reports unavailable for %s', async (_case, reply) => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(status, body)),
+      vi.fn(async () => reply()),
     )
 
     await expect(fetchMe(TOKEN)).resolves.toBe('unavailable')
@@ -102,7 +114,7 @@ describe('fetchMe', () => {
       'fetch',
       vi.fn(async () => {
         controller.abort()
-        return answer(401, '{"detail": "sign-in required"}')
+        return answer(401, REFUSED)
       }),
     )
 
@@ -113,7 +125,7 @@ describe('fetchMe', () => {
     let init: RequestInit | undefined
     const fetchMock = vi.fn(async (_url: string, given?: RequestInit) => {
       init = given
-      return answer(200, '{"id": 7}')
+      return answer(200, PERSON)
     })
     vi.stubGlobal('fetch', fetchMock)
     const controller = new AbortController()
