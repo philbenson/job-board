@@ -19,6 +19,9 @@ const EXCHANGE_TIMEOUT_MS = 5_000
 
 const NOT_SAVED = 'Could not save your target titles; your changes are still here'
 
+// Where focus goes after the last title is removed.
+const INPUT = Symbol('the input')
+
 type GetToken = ReturnType<typeof useAuth>['getToken']
 
 type Loading = 'loading' | 'loaded' | 'unavailable'
@@ -50,6 +53,11 @@ export function ProfilePanel() {
   const [addNotice, setAddNotice] = useState<string | null>(null)
   const [save, setSave] = useState<SaveShown>({ kind: 'idle' })
   const saveController = useRef<AbortController | null>(null)
+  // After a Remove, the control that takes focus once the list has redrawn:
+  // a title's Remove button, or the input.
+  const focusNext = useRef<string | typeof INPUT | null>(null)
+  const removeButtons = useRef(new Map<string, HTMLButtonElement>())
+  const input = useRef<HTMLInputElement>(null)
   const held = save.kind === 'saving'
   const headingId = useId()
   const inputId = useId()
@@ -76,6 +84,16 @@ export function ProfilePanel() {
     }
   }, [getToken])
 
+  useEffect(() => {
+    const target = focusNext.current
+    focusNext.current = null
+    if (target === INPUT) {
+      input.current?.focus()
+    } else if (target !== null) {
+      removeButtons.current.get(target)?.focus()
+    }
+  }, [titles])
+
   // A save still in flight when the panel goes has nobody to tell.
   useEffect(
     () => () => {
@@ -91,6 +109,19 @@ export function ProfilePanel() {
     setTitles(next)
     setAddNotice(null)
     setSave({ kind: 'idle' })
+  }
+
+  /**
+   * Removes `title` and moves focus to the next title's Remove button, else
+   * the one before, else the input, so a keyboard stays where it was working.
+   */
+  function remove(title: string): void {
+    if (held) {
+      return
+    }
+    const at = titles.indexOf(title)
+    focusNext.current = titles[at + 1] ?? titles[at - 1] ?? INPUT
+    edit(titles.filter((listed) => listed !== title))
   }
 
   function add(event: FormEvent<HTMLFormElement>): void {
@@ -123,6 +154,8 @@ export function ProfilePanel() {
     }
     const controller = new AbortController()
     saveController.current = controller
+    // The add notice was about the last Add; Save is a new act.
+    setAddNotice(null)
     setSave({ kind: 'saving' })
     const sent = titles
     void withToken(getToken, controller.signal, (token, signal) =>
@@ -148,7 +181,9 @@ export function ProfilePanel() {
       {loading === 'loading' && (
         <p role="status">Loading your target titles…</p>
       )}
-      {loading === 'unavailable' && <p>Could not load your target titles</p>}
+      {loading === 'unavailable' && (
+        <p role="alert">Could not load your target titles</p>
+      )}
       {loading === 'loaded' && (
         <>
           {titles.length === 0 ? (
@@ -162,8 +197,15 @@ export function ProfilePanel() {
                     type="button"
                     aria-label={`Remove ${title}`}
                     aria-disabled={held}
+                    ref={(button) => {
+                      if (button === null) {
+                        removeButtons.current.delete(title)
+                      } else {
+                        removeButtons.current.set(title, button)
+                      }
+                    }}
                     onClick={() => {
-                      edit(titles.filter((listed) => listed !== title))
+                      remove(title)
                     }}
                   >
                     Remove
@@ -176,6 +218,7 @@ export function ProfilePanel() {
             <label htmlFor={inputId}>Add a target title</label>{' '}
             <input
               id={inputId}
+              ref={input}
               type="text"
               value={draft}
               readOnly={held}
@@ -190,12 +233,15 @@ export function ProfilePanel() {
               Add
             </button>
           </form>
-          {addNotice !== null && <p role="status">{addNotice}</p>}
+          {/* Both status lines stay on the page while the editor shows, and
+              change their words, which is what a screen reader announces. */}
+          <p role="status">{addNotice ?? ''}</p>
           <button type="button" aria-disabled={held} onClick={sendAll}>
             Save
           </button>
-          {held && <p role="status">Saving…</p>}
-          {save.kind === 'said' && <p role="status">{save.message}</p>}
+          <p role="status">
+            {held ? 'Saving…' : save.kind === 'said' ? save.message : ''}
+          </p>
         </>
       )}
     </section>

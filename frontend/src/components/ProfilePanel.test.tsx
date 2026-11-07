@@ -132,8 +132,50 @@ describe('ProfilePanel', () => {
 
     render(<ProfilePanel />)
 
-    expect(await screen.findByText(NOT_LOADED)).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_LOADED)
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('keeps its two status lines on the page, empty, so each message is announced', async () => {
+    service(['Designer'], () => answer(200, { target_titles: ['Designer'] }))
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    // A live region is announced when its words change, not when it arrives
+    // already holding them.
+    const [addLine, saveLine] = screen.getAllByRole('status')
+    expect(screen.getAllByRole('status')).toHaveLength(2)
+    expect(addLine).toHaveTextContent('')
+    expect(saveLine).toHaveTextContent('')
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Add a target title' }),
+      'designer{Enter}',
+    )
+    expect(addLine).toHaveTextContent('Designer is already in your list')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText(SAVED)
+    expect(saveLine).toHaveTextContent(SAVED)
+    expect(addLine).toHaveTextContent('')
+  })
+
+  it('moves focus after Remove to the next title, else the one before, else the input', async () => {
+    service(['Designer', 'Writer', 'Editor'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    screen.getByRole('button', { name: 'Remove Writer' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('button', { name: 'Remove Editor' })).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('button', { name: 'Remove Designer' })).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('textbox', { name: 'Add a target title' })).toHaveFocus()
+    expect(shownTitles()).toEqual([])
   })
 
   it('adds a trimmed title with the Add button or Enter, ignoring an empty one', async () => {
