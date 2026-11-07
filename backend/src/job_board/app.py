@@ -8,6 +8,7 @@ from job_board import health, me, profiles
 from job_board.database import make_sessionmaker
 from job_board.logging_setup import configure_logging
 from job_board.settings import Settings
+from job_board.validation_answers import answer_refused_requests
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Job board", lifespan=lifespan)
     app.state.settings = resolved
+    answer_refused_requests(app)
     app.include_router(health.router)
     app.include_router(me.router)
     app.include_router(profiles.router)
