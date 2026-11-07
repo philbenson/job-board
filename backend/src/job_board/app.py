@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from job_board import health
+from job_board import health, me
 from job_board.database import make_sessionmaker
 from job_board.settings import Settings
 
@@ -30,5 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     app = FastAPI(title="Job board", lifespan=lifespan)
+    app.state.settings = resolved
     app.include_router(health.router)
+    app.include_router(me.router)
     return app
