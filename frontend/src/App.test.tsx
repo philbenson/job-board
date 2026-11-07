@@ -207,6 +207,21 @@ describe('App', () => {
       expect(screen.queryByText(RECOGNISED)).not.toBeInTheDocument()
     })
 
+    it('gives up after five seconds when Clerk never gives a session token, never saying signed in', async () => {
+      vi.useFakeTimers()
+      clerk.getToken.mockReturnValue(new Promise(() => {}))
+      const fetchMock = serviceAnswersMe(() => answer(200, PERSON))
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+      await act(() => vi.advanceTimersByTimeAsync(4_999))
+      expect(screen.getByText(CHECKING)).toBeInTheDocument()
+      await act(() => vi.advanceTimersByTimeAsync(1))
+
+      expect(screen.getByText(UNAVAILABLE)).toBeInTheDocument()
+      expect(screen.queryByText(RECOGNISED)).not.toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/me', expect.anything())
+    })
+
     it('treats a missing session token as refused, without asking the service', async () => {
       clerk.getToken.mockResolvedValue(null)
       const fetchMock = serviceAnswersMe(() => answer(200, PERSON))

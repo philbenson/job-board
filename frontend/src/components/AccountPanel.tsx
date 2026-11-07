@@ -1,5 +1,6 @@
 import { useAuth } from '@clerk/react'
 import { useEffect, useState } from 'react'
+import { askWithin } from '../api/askWithin.ts'
 import { fetchMe, type MeAnswer, type MeCheck } from '../api/me.ts'
 
 type Shown = MeAnswer | 'checking'
@@ -12,6 +13,11 @@ const MESSAGES: Record<Shown, string> = {
 }
 
 type GetToken = ReturnType<typeof useAuth>['getToken']
+
+// One limit for the whole confirmation, Clerk's session token included, so a
+// token that never comes is no reply too. The me request's own limit is as
+// long and starts later, so this one is always the one that gives up.
+const CONFIRM_TIMEOUT_MS = 5_000
 
 /**
  * Sends the signed-in person's session token to the backend once on mount and
@@ -39,22 +45,18 @@ export function AccountPanel() {
   return <p role="status">{MESSAGES[shown]}</p>
 }
 
-async function confirmSignIn(
+function confirmSignIn(
   getToken: GetToken,
   signal: AbortSignal,
 ): Promise<MeCheck> {
-  let token: string | null
-  try {
-    token = await getToken()
-  } catch {
-    return signal.aborted ? 'aborted' : 'unavailable'
-  }
-  if (signal.aborted) {
-    return 'aborted'
-  }
-  // Clerk has no session token to give, so there is nothing to recognise.
-  if (token === null) {
-    return 'refused'
-  }
-  return fetchMe(token, signal)
+  return askWithin(CONFIRM_TIMEOUT_MS, signal, async (confirmSignal) => {
+    const token = await getToken()
+    // Clerk has no session token to give, so there is nothing to recognise.
+    if (token === null) {
+      return 'refused'
+    }
+    // Past the limit or the caller's abort this signal has aborted, so a
+    // token that comes late sends no request.
+    return fetchMe(token, confirmSignal)
+  })
 }
