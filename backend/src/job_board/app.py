@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from job_board import health, me, profiles
+from job_board import health, leads, me, profiles
 from job_board.body_limit import BodyLimit
 from job_board.database import make_sessionmaker
 from job_board.logging_setup import configure_logging
@@ -48,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodyLimit)
     answer_refused_requests(app)
     app.include_router(health.router)
+    app.include_router(leads.router)
     app.include_router(me.router)
     app.include_router(model_key_routes.router)
     app.include_router(profiles.router)
