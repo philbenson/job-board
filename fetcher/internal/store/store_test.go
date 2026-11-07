@@ -173,17 +173,51 @@ func TestWriteBoardClosesAPostingThatIsGoneAndReopensItWhenItReturns(t *testing.
 	}
 }
 
-func TestWriteBoardUpdatesAChangedPosting(t *testing.T) {
+func TestWriteBoardUpdatesEveryFieldOfAChangedPosting(t *testing.T) {
 	s := open(t)
 	write(t, s, "ottermere", sample(1, "Data Engineer"))
-	changed := sample(1, "Senior Data Engineer")
-	changed.SourceUpdatedAt = changed.SourceUpdatedAt.Add(time.Hour)
+	first := rows(t, s, "ottermere", 1)[0]
+	republished := time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC)
+	changed := posting.Posting{
+		ExternalID:       1,
+		Title:            "Senior Data Engineer",
+		CompanyName:      "Ottermere Analytics Group",
+		Location:         "", // was "Remote": an optional field emptied must become NULL
+		URL:              "https://jobs.example.com/ottermere/1-senior",
+		ContentHTML:      "<p>Count more otters.</p>",
+		FirstPublishedAt: &republished,
+		SourceUpdatedAt:  time.Date(2026, 10, 21, 9, 30, 0, 0, time.UTC),
+	}
 
 	write(t, s, "ottermere", changed)
 
 	got := rows(t, s, "ottermere", 1)[0]
-	if got.Title != "Senior Data Engineer" || !got.SourceUpdatedAt.Equal(changed.SourceUpdatedAt) {
-		t.Errorf("stored %+v, want the new title and update time", got)
+	company, content := changed.CompanyName, changed.ContentHTML
+	want := row{
+		ExternalID:       1,
+		Title:            changed.Title,
+		CompanyName:      &company,
+		Location:         nil,
+		URL:              changed.URL,
+		ContentHTML:      &content,
+		FirstPublishedAt: got.FirstPublishedAt,
+		SourceUpdatedAt:  got.SourceUpdatedAt,
+		FirstSeenAt:      first.FirstSeenAt,
+		LastSeenAt:       got.LastSeenAt,
+		ClosedAt:         nil,
+	}
+	// Times read back in the session's zone, so compare them as instants.
+	if got.FirstPublishedAt == nil || !got.FirstPublishedAt.Equal(republished) {
+		t.Errorf("first_published_at %v, want %v", got.FirstPublishedAt, republished)
+	}
+	if !got.SourceUpdatedAt.Equal(changed.SourceUpdatedAt) {
+		t.Errorf("source_updated_at %v, want %v", got.SourceUpdatedAt, changed.SourceUpdatedAt)
+	}
+	if !got.LastSeenAt.After(first.LastSeenAt) {
+		t.Errorf("last_seen_at did not advance from %v", first.LastSeenAt)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("stored\n %+v\nwant\n %+v", got, want)
 	}
 }
 
