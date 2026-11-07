@@ -1,0 +1,68 @@
+name: fetcher
+
+on:
+  push:
+    paths:
+      - "fetcher/**"
+      # The fetcher's tests migrate their database with the backend's migrations.
+      - "backend/migrations/**"
+      - "backend/pyproject.toml"
+      - "backend/uv.lock"
+      - ".github/workflows/fetcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fetcher-${{ github.ref }}
+  cancel-in-progress: true  # only the newest push on a branch matters
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # a hung test or service fails the run instead of holding a runner
+    services:
+      db:
+        image: postgres:18  # the same server as compose.yaml
+        env:
+          POSTGRES_USER: job_board
+          POSTGRES_PASSWORD: job_board
+          POSTGRES_DB: job_board
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U job_board -d job_board"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://job_board:job_board@127.0.0.1:5432/job_board
+    defaults:
+      run:
+        working-directory: fetcher
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: fetcher/go.mod
+          cache-dependency-path: fetcher/go.sum  # the module is not at the repository root
+
+      # The tests run the backend's migrations through uv.
+      # setup-uv publishes no moving major tag, so pin the release's commit.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          working-directory: backend  # finds .python-version and uv.lock there
+
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Static analysis
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
+
+      - name: Test
+        run: go test -race ./...
