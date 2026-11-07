@@ -4,11 +4,11 @@
 
 This repository is public. `public_check.py` keeps three things out of it:
 
-- the name of the private repository that holds this project's planning notes, in any spelling: any case, hyphens, underscores, spaces, inside a path, or run together. The script holds only SHA-256 hashes of the name, never the name itself;
-- email addresses, except documentation domains (`example.com`, `example.org`, `example.net` and their subdomains), GitHub's no-reply addresses (`…@users.noreply.github.com`) and `noreply@github.com`;
-- phone numbers: North American numbers written with separators, and `+` followed by 10 to 15 digits. Numbers in the fictional range `555-0100` to `555-0199` are allowed, so test data uses those.
+- the name of the private repository that holds this project's planning notes, in any spelling within one line: any case, hyphens, underscores, dots, spaces, inside a path, or run together. The script holds only SHA-256 hashes of the name, never the name itself;
+- email addresses, except documentation domains (`example.com`, `example.org`, `example.net` and their subdomains), GitHub's no-reply addresses (`…@users.noreply.github.com`), `noreply@github.com` and `git@github.com`. A URL with a user and password has the same shape as an address, so test and deployment URLs use `example.com` hosts;
+- phone numbers: North American numbers written with separators, whose area code and exchange start with 2 to 9, and `+` followed by 10 to 15 digits. Numbers in the fictional range `555-0100` to `555-0199` are allowed, so test data uses those.
 
-It looks at file contents, file paths, commit messages and commit authors and committers. A file with a NUL byte in its first 8 KB, or that is not UTF-8, is skipped as binary; its path is still checked.
+It looks at file contents, file paths, commit messages (comment lines included, since git keeps them for `git commit -m` and `-F`) and commit authors and committers. A file with a NUL byte in its first 8 KB, or that is not UTF-8, is skipped as binary; its path is still checked.
 
 Its output can end up in a public CI log, so a finding never repeats what it found. Each finding prints a location, a rule and a redacted form (an email as `j***@g***`, a phone number as its last two digits, the private name not at all), and a path holding a finding is printed with that part masked. The last line counts the files, commits, findings and binary files skipped.
 

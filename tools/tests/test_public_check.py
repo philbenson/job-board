@@ -58,7 +58,7 @@ class PrivateNameTest(unittest.TestCase):
             "alphabravo-charlie",
             "alpha bravocharlie",
             "see ../alpha-bravo-charlie/plans/first.md",
-            "alpha\nbravo\ncharlie",
+            "alpha_bravo.charlie",
         ]
         for spelling in spellings:
             with self.subTest(spelling=spelling):
@@ -70,6 +70,9 @@ class PrivateNameTest(unittest.TestCase):
             "alpha-bravo",
             "bravo charlie alpha",
             "alphabet bravo charlie",
+            "alpha\nbravo\ncharlie",
+            "# alpha-bravo\n\n## Charlie\n",
+            "alpha-bravo\r\ncharlie",
         ]:
             with self.subTest(text=text):
                 self.assertEqual(rules(text), [])
@@ -96,9 +99,29 @@ class PrivateNameTest(unittest.TestCase):
         findings = scan("first line\nsecond alpha-bravo-charlie\n")
         self.assertEqual(findings[0].location, "sample.txt:2")
 
-    def test_the_real_hashes_are_the_default(self) -> None:
+    def test_the_default_hashes_are_two_and_not_the_made_up_name(self) -> None:
         self.assertEqual(len(public_check.PRIVATE_NAME_HASHES), 2)
         self.assertEqual(public_check.scan_text("alpha-bravo-charlie", "sample.txt"), [])
+
+
+class MaskTest(unittest.TestCase):
+    def mask(self, text: str) -> str:
+        return public_check.mask(text, MADE_UP_HASHES, len(MADE_UP_NAME))
+
+    def test_masks_the_whole_of_overlapping_findings(self) -> None:
+        cases = {
+            joined("docs/alpha-bravo-charlie-jane", "@", "mail.invalid/x.md"): "docs/***/x.md",
+            joined("fatal: path 'alpha-bravo-charlie.jane.doe", "@", "mail.invalid' is gone"): (
+                "fatal: path '***' is gone"
+            ),
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(self.mask(text), expected)
+
+    def test_masks_separate_findings_and_keeps_the_text_between(self) -> None:
+        text = joined("alpha-bravo-charlie and jane", "@", "mail.invalid end")
+        self.assertEqual(self.mask(text), "*** and *** end")
 
 
 class EmailTest(unittest.TestCase):
@@ -120,6 +143,8 @@ class EmailTest(unittest.TestCase):
             joined("jane", "@", "example.net"),
             joined("12345+someone", "@", "users.noreply.github.com"),
             joined("noreply", "@", "github.com"),
+            joined("git", "@", "github.com"),
+            joined("postgresql://app:pw", "@", "db.example.com/jobs"),
         ]:
             with self.subTest(address=address):
                 self.assertEqual(rules("contact " + address), [])
@@ -130,6 +155,7 @@ class EmailTest(unittest.TestCase):
             "go run example/cmd/tool@v1.7.12",
             "@pytest.fixture",
             "a @ b.com",
+            joined("git clone git", "@", "github.com:someone/job-board.git"),
         ]:
             with self.subTest(text=text):
                 self.assertEqual(rules(text), [])
@@ -175,6 +201,9 @@ class PhoneTest(unittest.TestCase):
             "id 1212555023445678901",
             "+12345",
             "212-555-012",
+            "sizes: 100-200-3000",
+            joined("(112)", " 555-0234"),
+            joined("212", "-155-0234"),
         ]:
             with self.subTest(text=text):
                 self.assertEqual(rules(text), [])
@@ -315,7 +344,7 @@ class MessageModeTest(RepositoryTestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("commit message:1: email-address: j***@m***", result.stdout)
 
-    def test_ignores_comment_lines_and_the_diff_below_the_scissors(self) -> None:
+    def test_scans_comment_lines_and_ignores_the_diff_below_the_scissors(self) -> None:
         message = "\n".join(
             [
                 "add the health route",
@@ -327,7 +356,9 @@ class MessageModeTest(RepositoryTestCase):
         )
         self.write("message.txt", message)
         result = self.check("--message-file", "message.txt")
-        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("commit message:2: phone-number: ***34", result.stdout)
+        self.assertIn("1 findings", result.stdout)
 
 
 class TrackedModeTest(RepositoryTestCase):

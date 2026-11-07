@@ -48,18 +48,19 @@ EMAIL = re.compile(
 )
 ALLOWED_EMAIL_DOMAINS = ("example.com", "example.org", "example.net")
 ALLOWED_EMAIL_SUFFIX = "users.noreply.github.com"
-ALLOWED_EMAIL_ADDRESSES = frozenset({"noreply@github.com"})
+ALLOWED_EMAIL_ADDRESSES = frozenset({"noreply@github.com", "git@github.com"})
 
 # Neither shape may touch a letter, digit or underscore, or sit beside a dot
 # that joins it to more digits: dates, versions, addresses, hashes and
 # lock-file integrity strings stay quiet, while a number ending a sentence
-# is still found.
+# is still found. A North American area code and exchange start with 2 to 9,
+# so runs such as 100-200-3000 are not numbers.
 _BEFORE = r"(?<![\w+])(?<!\d\.)"
 _AFTER = r"(?![\w])(?!\.\d)"
 PHONE = re.compile(
     _BEFORE
     + r"(?:"
-    + r"(?:\+1[ .-]?)?(?:\(\d{3}\) ?|\d{3}[ .-])\d{3}[ .-]\d{4}"  # North American, with separators
+    + r"(?:\+1[ .-]?)?(?:\([2-9]\d\d\) ?|[2-9]\d\d[ .-])[2-9]\d\d[ .-]\d{4}"  # North American
     + r"|\+\d{10,15}"  # international, digits only
     + r")"
     + _AFTER
@@ -68,6 +69,7 @@ FICTIONAL_EXCHANGE = "555"
 FICTIONAL_LINES = range(100, 200)  # 555-0100 to 555-0199 are reserved for fiction
 
 _WORD = re.compile(r"[A-Za-z0-9]+")
+_LINE = re.compile(r"[^\n]+")
 # git commit --verbose puts the diff below this line
 SCISSORS = "------------------------ >8 ------------------------"
 
@@ -91,14 +93,27 @@ class Finding:
 
 
 def _name_matches(text: str, name_hashes: frozenset[str], name_words: int) -> Iterator[Match]:
-    """Find the name in any spelling: any case, any separators, or run together.
+    """Find the name in any spelling on one line: any case, any separators, or run together.
 
-    The text is lowercased and split into words at every character outside
+    Each line is lowercased and split into words at every character outside
     a-z0-9. Every window of up to ``name_words`` consecutive words is hashed
     joined with nothing, and every full-length window joined with hyphens, so
-    "a-b-c", "A_B C", "ABC" and "ab-c" are all caught.
+    "a-b-c", "A_B C", "a_b.c", "ABC" and "ab-c" are all caught. A window never
+    spans a line break, so the words on separate lines or headings are not a
+    finding.
     """
-    words = [(word.group().lower(), word.start(), word.end()) for word in _WORD.finditer(text)]
+    for line in _LINE.finditer(text):
+        yield from _name_matches_in_line(line, name_hashes, name_words)
+
+
+def _name_matches_in_line(
+    line: re.Match[str], name_hashes: frozenset[str], name_words: int
+) -> Iterator[Match]:
+    offset = line.start()
+    words = [
+        (word.group().lower(), offset + word.start(), offset + word.end())
+        for word in _WORD.finditer(line.group())
+    ]
     for first in range(len(words)):
         for size in range(1, name_words + 1):
             window = words[first : first + size]
@@ -165,12 +180,16 @@ def mask(
     name_hashes: frozenset[str] = PRIVATE_NAME_HASHES,
     name_words: int = PRIVATE_NAME_WORDS,
 ) -> str:
-    """The text with every finding replaced by a mask, safe to print."""
+    """The text with every finding replaced by a mask, safe to print.
+
+    Findings that overlap, such as the name run into an email address, are
+    merged into one masked span, so no tail of either is printed.
+    """
     masked, position = [], 0
     for match in _matches(text, name_hashes, name_words):
         if match.start >= position:
             masked.append(text[position : match.start] + MASK)
-            position = match.end
+        position = max(position, match.end)
     return "".join(masked) + text[position:]
 
 
@@ -280,13 +299,16 @@ def check_tracked(tally: Tally) -> Iterator[Finding]:
 
 
 def message_text(raw: str) -> str:
-    """A commit message as git records it: no comment lines, nothing below the scissors."""
+    """A commit message up to the scissors line, comment lines included.
+
+    git strips lines starting with # only when it opens an editor; for
+    ``git commit -m`` and ``-F`` it keeps them, so they are scanned too.
+    """
     lines = []
     for line in raw.splitlines():
         if line.startswith("#") and line[1:].strip() == SCISSORS:
             break
-        if not line.startswith("#"):
-            lines.append(line)
+        lines.append(line)
     return "\n".join(lines)
 
 
