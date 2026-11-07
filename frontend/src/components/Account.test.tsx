@@ -29,7 +29,7 @@ describe('Account', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the target titles beside the sign-in check when signed in', () => {
+  it('shows the target titles and the leads beside the sign-in check when signed in', () => {
     clerk.signedIn = true
 
     render(<Account />)
@@ -38,16 +38,20 @@ describe('Account', () => {
       screen.getByRole('heading', { level: 2, name: 'Target titles' }),
     ).toBeInTheDocument()
     expect(
+      screen.getByRole('heading', { level: 2, name: 'Your leads' }),
+    ).toBeInTheDocument()
+    expect(
       screen.getByText('Confirming your sign-in with the service…'),
     ).toBeInTheDocument()
   })
 
-  it('shows no target titles when signed out', () => {
+  it('shows no target titles and no leads when signed out', () => {
     clerk.signedIn = false
 
     render(<Account />)
 
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Target titles' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Your leads' })).not.toBeInTheDocument()
   })
 })
