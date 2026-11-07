@@ -8,6 +8,10 @@ from sqlalchemy import create_engine, text
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
+# Every table at head, in name order: a revision that leaves one out, or one
+# behind, fails here as well as in the check against the models.
+HEAD_TABLES = ["alembic_version", "people", "profiles"]
+
 
 def query(database_url: str, sql: str) -> list[str]:
     engine = create_engine(database_url)
@@ -38,6 +42,7 @@ def test_upgrades_to_head_back_to_base_and_to_head_again(
 
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
+    assert public_tables(database_url) == HEAD_TABLES
 
     # Every downgrade undoes its upgrade: nothing is left behind at base, so a
     # second upgrade does not trip over a table the first one created.
