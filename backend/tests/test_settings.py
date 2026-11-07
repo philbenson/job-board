@@ -1,14 +1,25 @@
+import base64
+
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import ValidationError
-from settings_for_tests import ISSUER, ORIGIN, PUBLIC_PEM, SIGNING_KEY, make_settings, public_pem
+from settings_for_tests import (
+    ISSUER,
+    MODEL_KEY_ENCRYPTION_KEY,
+    ORIGIN,
+    PUBLIC_PEM,
+    SIGNING_KEY,
+    make_settings,
+    public_pem,
+)
 
 from job_board.settings import EXPECTED_FORM, DatabaseSettings, Settings, sqlalchemy_url
 
 PLAIN = "postgresql://reader:hunter2@db.example.com:5432/jobs"
 DRIVER = "postgresql+psycopg://reader:hunter2@db.example.com:5432/jobs"
 CLERK_SETTINGS = ("CLERK_ISSUER", "CLERK_JWT_KEY", "CLERK_AUTHORIZED_PARTIES")
+SERVICE_SETTINGS = (*CLERK_SETTINGS, "MODEL_KEY_ENCRYPTION_KEY")
 
 
 @pytest.fixture
@@ -18,6 +29,7 @@ def environment(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setenv("CLERK_ISSUER", ISSUER)
     monkeypatch.setenv("CLERK_JWT_KEY", PUBLIC_PEM)
     monkeypatch.setenv("CLERK_AUTHORIZED_PARTIES", f"{ORIGIN}, https://jobs.example.com")
+    monkeypatch.setenv("MODEL_KEY_ENCRYPTION_KEY", MODEL_KEY_ENCRYPTION_KEY)
     return monkeypatch
 
 
@@ -27,9 +39,12 @@ def test_reads_every_setting_from_the_environment(environment: pytest.MonkeyPatc
     assert settings.clerk_issuer == ISSUER
     assert settings.clerk_jwt_key.public_numbers() == SIGNING_KEY.public_key().public_numbers()
     assert settings.clerk_authorized_parties == frozenset({ORIGIN, "https://jobs.example.com"})
+    assert settings.model_key_encryption_key.get_secret_value() == base64.urlsafe_b64decode(
+        MODEL_KEY_ENCRYPTION_KEY
+    )
 
 
-@pytest.mark.parametrize("missing", CLERK_SETTINGS)
+@pytest.mark.parametrize("missing", SERVICE_SETTINGS)
 def test_refuses_to_start_naming_a_missing_setting(
     environment: pytest.MonkeyPatch, missing: str
 ) -> None:
@@ -41,7 +56,7 @@ def test_refuses_to_start_naming_a_missing_setting(
 
 
 def test_the_migrations_need_only_the_database_url(environment: pytest.MonkeyPatch) -> None:
-    for name in CLERK_SETTINGS:
+    for name in SERVICE_SETTINGS:
         environment.delenv(name)
     assert DatabaseSettings(_env_file=None).database_url.get_secret_value() == DRIVER
 
@@ -183,3 +198,44 @@ def test_refuses_permitted_origins_that_are_not_origins(parties: str) -> None:
     with pytest.raises(ValidationError) as raised:
         make_settings(clerk_authorized_parties=parties)
     assert "CLERK_AUTHORIZED_PARTIES must be" in str(raised.value)
+
+
+def encoded(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        encoded(b"k" * 31),  # AES-256 takes exactly 32 bytes
+        encoded(b"k" * 33),
+        "not base64 at all!",
+        encoded(b"k" * 32).rstrip("="),  # a pasted key that lost its padding
+    ],
+)
+def test_refuses_an_encryption_key_that_is_not_32_bytes_of_base64_without_repeating_it(
+    value: str,
+) -> None:
+    with pytest.raises(ValidationError) as raised:
+        make_settings(model_key_encryption_key=value)
+    message = str(raised.value)
+    assert "MODEL_KEY_ENCRYPTION_KEY must be" in message
+    assert "secrets.token_bytes(32)" in message  # says how to make one
+    if value:
+        assert value not in message
+
+
+def test_takes_the_encryption_key_with_surrounding_whitespace() -> None:
+    settings = make_settings(model_key_encryption_key=f"  {MODEL_KEY_ENCRYPTION_KEY}\n")
+    assert settings.model_key_encryption_key.get_secret_value() == base64.urlsafe_b64decode(
+        MODEL_KEY_ENCRYPTION_KEY
+    )
+
+
+def test_never_shows_the_encryption_key() -> None:
+    settings = make_settings()
+    raw = settings.model_key_encryption_key.get_secret_value()
+    for shown in (repr(settings), str(settings), settings.model_dump_json()):
+        assert MODEL_KEY_ENCRYPTION_KEY not in shown
+        assert repr(raw) not in shown

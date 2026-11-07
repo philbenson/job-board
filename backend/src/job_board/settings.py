@@ -1,3 +1,5 @@
+import base64
+import binascii
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -7,7 +9,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_public_key,
 )
-from pydantic import PlainSerializer, SecretStr, field_validator
+from pydantic import PlainSerializer, SecretBytes, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import make_url
 from sqlalchemy.exc import ArgumentError
@@ -27,6 +29,12 @@ KEY_REFUSAL = (
 PARTIES_REFUSAL = (
     "CLERK_AUTHORIZED_PARTIES must be one or more comma-separated origins of the "
     "form scheme://host[:port], such as http://localhost:5173"
+)
+ENCRYPTION_KEY_BYTES = 32  # AES-256
+ENCRYPTION_KEY_REFUSAL = (
+    "MODEL_KEY_ENCRYPTION_KEY must be 32 random bytes in URL-safe base64; make one with "
+    "python3 -c 'import base64, secrets; "
+    "print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'"
 )
 
 
@@ -111,7 +119,8 @@ class Settings(DatabaseSettings):
 
     The Clerk settings say whose session tokens to accept: the instance that
     issues them, the public key that signs them, and the origins of the pages
-    allowed to send them.
+    allowed to send them. The model key encryption key seals each person's
+    model key in the database; losing it means everyone enters their key again.
     """
 
     model_config = SettingsConfigDict(arbitrary_types_allowed=True)
@@ -119,6 +128,7 @@ class Settings(DatabaseSettings):
     clerk_issuer: str
     clerk_jwt_key: Annotated[RSAPublicKey, NoDecode, PlainSerializer(pem, return_type=str)]
     clerk_authorized_parties: Annotated[frozenset[str], NoDecode]
+    model_key_encryption_key: SecretBytes
 
     @field_validator("clerk_issuer")
     @classmethod
@@ -149,3 +159,16 @@ class Settings(DatabaseSettings):
         if not origins or None in origins:
             raise ValueError(PARTIES_REFUSAL)
         return frozenset(item for item in origins if item is not None)
+
+    @field_validator("model_key_encryption_key", mode="before")
+    @classmethod
+    def _decode_the_encryption_key(cls, value: object) -> bytes:
+        # Strict decoding, so a mistyped character is refused rather than
+        # silently dropped; the refusal never repeats the value.
+        try:
+            key = base64.b64decode(str(value).strip(), altchars=b"-_", validate=True)
+        except binascii.Error:
+            raise ValueError(ENCRYPTION_KEY_REFUSAL) from None
+        if len(key) != ENCRYPTION_KEY_BYTES:
+            raise ValueError(ENCRYPTION_KEY_REFUSAL)
+        return key

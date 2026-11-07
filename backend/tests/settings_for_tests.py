@@ -1,8 +1,12 @@
 """Settings for the tests, built in one place so a new setting is added once.
 
-The signing key is generated for each test run and never leaves it: the tests
-sign their own session tokens with it, so no test needs a Clerk instance.
+The signing key and the model key encryption key are generated for each test
+run and never leave it: the tests sign their own session tokens with the one,
+so no test needs a Clerk instance, and seal model keys with the other.
 """
+
+import base64
+import secrets
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -25,6 +29,8 @@ def public_pem(key: PublicKeyTypes) -> str:
 
 PUBLIC_PEM = public_pem(SIGNING_KEY.public_key())
 
+MODEL_KEY_ENCRYPTION_KEY = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+
 
 def make_settings(
     *,
@@ -32,11 +38,13 @@ def make_settings(
     clerk_issuer: str = ISSUER,
     clerk_jwt_key: str = PUBLIC_PEM,
     clerk_authorized_parties: str = ORIGIN,
+    model_key_encryption_key: str = MODEL_KEY_ENCRYPTION_KEY,
 ) -> Settings:
     return Settings(
         database_url=database_url,
         clerk_issuer=clerk_issuer,
         clerk_jwt_key=clerk_jwt_key,
         clerk_authorized_parties=clerk_authorized_parties,
+        model_key_encryption_key=model_key_encryption_key,
         _env_file=None,
     )

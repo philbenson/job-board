@@ -5,9 +5,13 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from job_board import health, me
+from job_board.body_limit import BodyLimit
 from job_board.database import make_sessionmaker
 from job_board.logging_setup import configure_logging
+from job_board.model_key import routes as model_key_routes
+from job_board.model_key.check_limits import CheckLimits
 from job_board.settings import Settings
+from job_board.validation_answers import answer_refused_requests
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +37,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Job board", lifespan=lifespan)
     app.state.settings = resolved
+    app.state.check_limits = CheckLimits()
+    app.add_middleware(BodyLimit)
+    answer_refused_requests(app)
     app.include_router(health.router)
     app.include_router(me.router)
+    app.include_router(model_key_routes.router)
     return app
