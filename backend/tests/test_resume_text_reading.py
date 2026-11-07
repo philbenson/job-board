@@ -175,6 +175,18 @@ async def test_a_reading_that_takes_too_much_memory_fails(
     assert logged(caplog) == ["resume text reading exited with code 1"]
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin", reason="macOS does not let a process set an address-space limit"
+)
+async def test_a_long_resume_reads_within_the_memory_limit() -> None:
+    page = [FILLER] * 60
+    file = pdf(*[page] * 4)
+
+    reading = await ResumeTextReader().read(file)
+
+    assert reading.state == "cut"
+
+
 @pytest.mark.parametrize(
     "program",
     [
