@@ -407,9 +407,9 @@ class UsageTest(RepositoryTestCase):
 
     def test_a_git_error_never_repeats_a_finding(self) -> None:
         address = joined("jane", "@", "mail.invalid")
-        with mock.patch.dict(os.environ, self.environment, clear=True):
-            with self.assertRaises(public_check.UsageError) as raised:
-                public_check._git(self.repository, "show", ":" + address)
+        environment = mock.patch.dict(os.environ, self.environment, clear=True)
+        with environment, self.assertRaises(public_check.UsageError) as raised:
+            public_check._git(self.repository, "show", ":" + address)
         self.assertIn("***", str(raised.exception))
         self.assertNotIn("jane", str(raised.exception))
 
