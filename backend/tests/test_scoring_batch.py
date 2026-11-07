@@ -27,7 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from job_board.database import make_sessionmaker
 from job_board.model_key.check import CHECK_MODEL
 from job_board.model_key.sealing import seal
-from job_board.scoring.batch import BATCH_SIZE, BatchResult, score_everyone, score_person
+from job_board.scoring.batch import (
+    BATCH_SIZE,
+    LOCK_CLASS,
+    BatchResult,
+    score_everyone,
+    score_person,
+)
 from job_board.scoring.model import ModelFactory, Rating, RatingModel, anthropic_model
 from job_board.scoring.people import eligible_people
 
@@ -290,6 +296,9 @@ async def test_another_persons_scores_do_not_count_as_this_persons(engine: Async
 
 # The lock
 
+TRY_LOCK = text("SELECT pg_try_advisory_lock(:lock_class, :id)")
+UNLOCK = text("SELECT pg_advisory_unlock(:lock_class, :id)")
+
 
 async def test_skips_a_person_whose_batch_another_run_holds(
     engine: AsyncEngine, module_database_url: str, caplog: pytest.LogCaptureFixture
@@ -300,9 +309,9 @@ async def test_skips_a_person_whose_batch_another_run_holds(
     holder = create_engine(module_database_url)
     fake = Fake(GOOD)
     with holder.connect() as connection:
-        assert connection.execute(text("SELECT pg_try_advisory_lock(:id)"), {"id": person}).scalar()
+        assert connection.execute(TRY_LOCK, {"lock_class": LOCK_CLASS, "id": person}).scalar()
         result = await run(engine, person, fake)
-        connection.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": person})
+        connection.execute(UNLOCK, {"lock_class": LOCK_CLASS, "id": person})
     holder.dispose()
 
     assert result == BatchResult(person, rated=0, unreadable=0, end="locked")
@@ -318,9 +327,81 @@ async def test_lets_go_of_the_lock_when_the_batch_ends(
     await run(engine, person, Fake(status_error(500)))
     other = create_engine(module_database_url)
     with other.connect() as connection:
-        taken = connection.execute(text("SELECT pg_try_advisory_lock(:id)"), {"id": person})
+        taken = connection.execute(TRY_LOCK, {"lock_class": LOCK_CLASS, "id": person})
         assert taken.scalar() is True
     other.dispose()
+
+
+async def test_takes_its_lock_in_the_two_key_space_leaving_the_one_key_space_free(
+    engine: AsyncEngine, module_database_url: str
+) -> None:
+    person = await add_person(engine)
+    await add_posting(engine)
+    holder = create_engine(module_database_url)
+    seen: list[tuple[int, int, int]] = []
+
+    def factory(key: str) -> RatingModel:
+        async def answer(messages: LanguageModelInput) -> Rating:
+            with holder.connect() as probe:
+                seen.extend(
+                    (row[0], row[1], row[2])
+                    for row in probe.execute(
+                        text(
+                            "SELECT classid::bigint, objid::bigint, objsubid FROM pg_locks "
+                            "WHERE locktype = 'advisory' AND granted"
+                        )
+                    )
+                )
+            return GOOD
+
+        return RunnableLambda(answer)
+
+    with holder.connect() as connection:
+        # Someone else's one-key lock on the same number does not hold scoring up.
+        assert connection.execute(text("SELECT pg_try_advisory_lock(:id)"), {"id": person}).scalar()
+        result = await run(engine, person, factory)
+        connection.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": person})
+    holder.dispose()
+
+    assert result.end == "finished"
+    assert (LOCK_CLASS, person, 2) in seen
+
+
+async def test_stops_a_batch_whose_lock_was_lost_and_goes_on_to_the_next_person(
+    engine: AsyncEngine, module_database_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    first, second = await add_person(engine), await add_person(engine)
+    for _ in range(2):
+        await add_posting(engine)
+    killer = create_engine(module_database_url)
+    asked: list[int] = []
+
+    def factory(key: str) -> RatingModel:
+        async def answer(messages: LanguageModelInput) -> Rating:
+            asked.append(len(asked))
+            if len(asked) == 1:  # the first person's first posting: their lock's session ends
+                with killer.connect() as connection:
+                    connection.execute(
+                        text(
+                            "SELECT pg_terminate_backend(pid) FROM pg_locks WHERE "
+                            "locktype = 'advisory' AND classid = :lock_class AND objid = :id "
+                            "AND objsubid = 2"
+                        ),
+                        {"lock_class": LOCK_CLASS, "id": first},
+                    )
+            return GOOD
+
+        return RunnableLambda(answer)
+
+    results = await score_everyone(
+        engine, make_sessionmaker(engine), service_key=SERVICE_KEY, model_factory=factory
+    )
+    killer.dispose()
+
+    assert results[0] == BatchResult(first, 0, 0, "stopped", "lost-the-lock")
+    assert results[1] == BatchResult(second, 2, 0, "finished")
+    assert await scores_of(engine, first) == []
+    assert len(await scores_of(engine, second)) == 2
 
 
 async def test_holds_no_transaction_open_while_the_model_answers(
@@ -361,6 +442,31 @@ async def test_keeps_a_rating_and_an_unreadable_reply(engine: AsyncEngine) -> No
     result = await run(engine, person, Fake(Rating(score=5, reason="Exact."), UNREADABLE))
     assert result == BatchResult(person, rated=1, unreadable=1, end="finished")
     assert await scores_of(engine, person) == [(first, "scored", 5), (second, "unreadable", None)]
+
+
+async def test_records_nothing_more_for_a_posting_scored_while_its_rating_was_asked(
+    engine: AsyncEngine,
+) -> None:
+    person = await add_person(engine)
+    posting = await add_posting(engine)
+
+    def factory(key: str) -> RatingModel:
+        async def answer(messages: LanguageModelInput) -> Rating:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "INSERT INTO scores (person_id, posting_id, outcome, model) "
+                        "VALUES (:person, :posting, 'unreadable', :model)"
+                    ),
+                    {"person": person, "posting": posting, "model": CHECK_MODEL},
+                )
+            return GOOD
+
+        return RunnableLambda(answer)
+
+    result = await run(engine, person, factory)
+    assert result.end == "finished"
+    assert await scores_of(engine, person) == [(posting, "unreadable", None)]
 
 
 async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(

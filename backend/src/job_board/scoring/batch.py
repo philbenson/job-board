@@ -3,9 +3,11 @@
 Invariants:
 
 - One batch per person at a time: a batch holds the person's advisory lock,
-  keyed by their id alone, on a connection kept for the batch. A batch that
-  finds it held skips the person; that is not a failure. (The fetcher's locks
-  take two keys, which never collide with one-key locks.)
+  LOCK_CLASS and their id, on a connection kept for the batch. A batch that
+  finds it held skips the person; that is not a failure. Two-key locks never
+  collide with one-key ones, and the fetcher's take another first key.
+- A batch whose lock's connection has closed has lost the lock, and another
+  run may hold the person now: it stops before recording anything more.
 - No transaction is open while the model answers. The lock's connection runs
   without one, the postings are read in one short transaction before the
   first request, and each result is written in its own afterwards.
@@ -22,9 +24,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 import anthropic
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
 from job_board.model_key.failure import KeyFailure
 from job_board.model_key.sealing import SealBroken, SealedUnderAnotherKey, open_sealed, sealed_with
@@ -35,6 +37,8 @@ from job_board.scoring.people import PROVIDER, candidate, eligible_people, unsco
 from job_board.scoring.posting_text import posting_text
 
 BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run costs them
+# The first key of every lock scoring takes, the person's id the second. Its bytes spell "SCOR".
+LOCK_CLASS = 0x53434F52
 
 log = logging.getLogger(__name__)
 
@@ -140,7 +144,24 @@ async def _mark(
         )
 
 
+async def _still_locked(lock: AsyncConnection) -> bool:
+    """Whether the lock's connection still answers, and so still holds the session lock."""
+    try:
+        await lock.scalar(select(literal(1)))
+    except Exception:  # a closed connection fails in the driver's own way
+        return False
+    return True
+
+
+async def _unlock(lock: AsyncConnection, person_id: int) -> None:
+    try:
+        await lock.scalar(select(func.pg_advisory_unlock(LOCK_CLASS, person_id)))
+    except Exception as error:  # a lost connection took the lock with it
+        log.warning("person %d: could not let go of the lock: %s", person_id, type(error).__name__)
+
+
 async def _rate_batch(
+    lock: AsyncConnection,
     sessionmaker: async_sessionmaker[AsyncSession],
     person_id: int,
     tally: _Tally,
@@ -178,6 +199,8 @@ async def _rate_batch(
             if failure is not None:
                 await _mark(sessionmaker, person_id, found.sealed_key, failure)
             raise _Stopped(reason) from None
+        if not await _still_locked(lock):
+            raise _Stopped("lost-the-lock")
         await _record(sessionmaker, person_id, posting_id, rating)
         if rating is None:
             tally.unreadable += 1
@@ -209,11 +232,12 @@ async def score_person(
     """Rate up to BATCH_SIZE of this person's unscored open postings, and log how it went."""
     async with engine.connect() as connection:
         lock = await connection.execution_options(isolation_level="AUTOCOMMIT")
-        if not await lock.scalar(select(func.pg_try_advisory_lock(person_id))):
+        if not await lock.scalar(select(func.pg_try_advisory_lock(LOCK_CLASS, person_id))):
             return _logged(BatchResult(person_id, 0, 0, "locked"))
         tally = _Tally()
         try:
             await _rate_batch(
+                lock,
                 sessionmaker,
                 person_id,
                 tally,
@@ -235,7 +259,7 @@ async def score_person(
         else:
             result = BatchResult(person_id, tally.rated, tally.unreadable, "finished")
         finally:
-            await lock.scalar(select(func.pg_advisory_unlock(person_id)))
+            await _unlock(lock, person_id)
     return _logged(result)
 
 

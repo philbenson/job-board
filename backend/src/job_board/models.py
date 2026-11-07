@@ -158,8 +158,9 @@ class ProfileRow(Base):
 class Score(Base):
     """One person's rating of one posting, or a note that the model's reply could not be read.
 
-    Invariant: a posting is rated at most once per person, so no run pays twice
-    for one rating. An unreadable reply holds the place too, and is not retried.
+    Invariant: at most one row per person and posting; the per-person lock is
+    what keeps a run from paying twice for one rating. An unreadable reply
+    holds the place too, and is not retried.
     """
 
     __tablename__ = "scores"
