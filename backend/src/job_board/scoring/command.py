@@ -6,7 +6,8 @@ batch stopped on a failure, or when no person's key was sealed under this
 service key, which is the operator's mistake rather than theirs; 2 when it
 refused to start. It needs only DATABASE_URL and MODEL_KEY_ENCRYPTION_KEY, read
 from the environment or a .env file in the working directory, and refuses to
-start while LangSmith tracing is on or ANTHROPIC_CUSTOM_HEADERS is set.
+start while LangSmith tracing is on, ANTHROPIC_CUSTOM_HEADERS is set or
+ANTHROPIC_LOG is set to anything but empty.
 """
 
 import asyncio
@@ -29,6 +30,8 @@ EXIT_REFUSED = 2
 
 # The Anthropic SDK adds these headers to every request, over the client's own.
 CUSTOM_HEADERS = "ANTHROPIC_CUSTOM_HEADERS"
+# The Anthropic SDK's own logging; at debug it writes every request's whole body.
+LIBRARY_LOG = "ANTHROPIC_LOG"
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +57,14 @@ def refuse_the_environment() -> bool:
             "refusing to start: %s adds headers to every request to Anthropic, which could "
             "send another credential beside each person's own key; unset it",
             CUSTOM_HEADERS,
+        )
+        refused = True
+    if os.environ.get(LIBRARY_LOG, ""):
+        log.error(
+            "refusing to start: %s turns on the Anthropic library's own logging, which "
+            "would write postings, each person's profile and the model's replies to the "
+            "log; unset it",
+            LIBRARY_LOG,
         )
         refused = True
     return refused
