@@ -40,7 +40,7 @@ npm ci
 npm run dev                           # serves the app and passes /api/… to the backend on port 8000
 ```
 
-The page then says "Service is up"; stop the backend and reload, and it says "Service is unavailable".
+The page then says "Service is up"; stop the backend and switch away from the tab and back, or reload, and it says "Service is unavailable".
 
 ## Testing it
 
@@ -64,6 +64,8 @@ npm test
 npm run build
 ```
 
+The backend's OpenAPI description is committed as `backend/openapi.json`, the contract between the two parts: a backend test fails when the file falls behind the routes, and the web app's request and response types are generated from it, so a change on one side that the other has not taken up fails CI. After changing a route, rewrite the file from `backend/` with `uv run python -m job_board.openapi_description`, then regenerate the types from `frontend/` with `npm run api:types` (after installing the generator with `npm ci --prefix codegen`, and again after each change to `frontend/codegen/package-lock.json`).
+
 From the repository root, the public-content check and its tests (see [tools/README.md](tools/README.md)):
 
 ```sh
@@ -80,6 +82,7 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 - **Async SQLAlchemy on psycopg 3**: the service waits on the database without holding up other requests, through a query layer that stays readable as the schema grows.
 - **uv, ruff and strict mypy**: one tool and one lock file for Python and its dependencies, so every machine and every CI run installs the same thing; lint, formatting and strict typing catch mistakes before the tests run.
 - **React and TypeScript, built with Vite**: typed components from the API's edge to the screen, with a dev server that reloads in place and passes API requests to the backend under its own origin, so the backend never has to allow requests from another one.
+- **A committed OpenAPI contract**: the web app's types are generated from the backend's own description instead of written by hand, so renaming a field fails a type check rather than the page.
 - **oxlint**: a fast linter that understands TypeScript and React, and keeps up with the newest TypeScript compiler.
 - **Vitest with Testing Library**: tests share Vite's configuration and run in a simulated browser, and they check what a person sees on the page rather than how a component is written.
 - **GitHub Actions**: every push that changes a part runs the same checks as a developer does; the backend's run against a real PostgreSQL rather than a stand-in.

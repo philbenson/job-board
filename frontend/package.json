@@ -12,7 +12,8 @@
     "lint": "oxlint --deny-warnings",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "api:types": "npm run --prefix codegen generate"
   },
   "dependencies": {
     "react": "^19.3.1",

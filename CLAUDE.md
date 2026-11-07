@@ -12,12 +12,14 @@ Backend, from `backend/`:
 - `uv run mypy`
 - `uv run alembic upgrade head`; `uv run alembic revision -m "<what changes>"` for a new migration
 - `uv run uvicorn job_board.app:create_app --factory --reload` serves on port 8000
+- `uv run python -m job_board.openapi_description` rewrites `backend/openapi.json` from the app's routes and models; a test fails while it is out of date
 - `DATABASE_URL` takes the form `postgresql://user:password@host:port/database`. The service reads it or `backend/.env`; the tests read it or `backend/.env.example`, never `.env`
 
 Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer):
 
 - `npm ci` installs from the lock file
-- `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`, in that order, as CI runs them
+- `npm ci --prefix codegen` installs the type generator, again after each change to `codegen/package-lock.json`; `npm run api:types` then regenerates `src/api/schema.ts` from `backend/openapi.json`
+- CI runs `npm ci`, regenerates the API types and fails if they differ from the committed file, then `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`, in that order
 - `npm run dev` serves the app and passes `/api/…` to the backend on port 8000
 
 Public-content check, from the repository root:
@@ -29,6 +31,7 @@ Public-content check, from the repository root:
 
 - Typed throughout: mypy runs in strict mode over the source and the tests.
 - Small modules, each with one job.
+- A change to a route rewrites `backend/openapi.json` and regenerates the front end's types in the same commit. Front end code and test fixtures use the generated types, never hand-written body shapes.
 - Tests at every layer, written first; tests that need a database use the per-run database fixture, never a shared one.
 - Test data uses `example.com` email addresses and `555-0100` to `555-0199` phone numbers.
 - No private names, personal email addresses or phone numbers in any file, path, commit message or branch name: this repository is public, and the public-content check enforces it.

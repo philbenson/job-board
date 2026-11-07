@@ -18,5 +18,10 @@ npm ci
 | `npm test` | Runs the tests once with Vitest and Testing Library on jsdom. Tests replace the network, so no backend is needed. |
 | `npm run build` | Type checks, then writes the production build to `dist/`. |
 | `npm run preview` | Serves the production build locally. |
+| `npm run api:types` | Regenerates `src/api/schema.ts`, the request and response types, from the backend's OpenAPI description in `../backend/openapi.json`. Run it after the backend rewrites that file, and commit both together. Install the generator first with `npm ci --prefix codegen`, and again after each change to `codegen/package-lock.json`, since an older install writes different output. |
 
-The continuous integration runs `npm ci`, then lint, type check, tests and build, in that order.
+## The API types
+
+`src/api/schema.ts` is generated, never edited by hand: the API client and the tests' response bodies are typed from it, so a field the backend renames fails `npm run typecheck`. The generator, openapi-typescript, lives in `codegen/` with its own packages and lock file because it needs TypeScript 5 and cannot install beside the TypeScript 7 compiler the app uses; that folder goes once a generator release works with TypeScript 7.
+
+The continuous integration runs `npm ci`, then installs the generator, regenerates the types and fails if they differ from the committed file, then runs lint, type check, tests and build, in that order. It also runs when `backend/openapi.json` changes.
