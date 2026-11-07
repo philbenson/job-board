@@ -229,7 +229,8 @@ class Tally:
 def _git(repository: Path, *arguments: str) -> bytes:
     result = subprocess.run(["git", *arguments], cwd=repository, capture_output=True)
     if result.returncode != 0:
-        message = result.stderr.decode("utf-8", "replace").strip()
+        # git's errors quote paths, which may hold a finding
+        message = mask(result.stderr.decode("utf-8", "replace").strip())
         raise UsageError(f"git {arguments[0]} failed: {message}")
     return result.stdout
 

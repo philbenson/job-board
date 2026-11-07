@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 TOOLS = Path(__file__).resolve().parents[1]
 REPOSITORY = TOOLS.parent
@@ -403,6 +404,14 @@ class UsageTest(RepositoryTestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+
+    def test_a_git_error_never_repeats_a_finding(self) -> None:
+        address = joined("jane", "@", "mail.invalid")
+        with mock.patch.dict(os.environ, self.environment, clear=True):
+            with self.assertRaises(public_check.UsageError) as raised:
+                public_check._git(self.repository, "show", ":" + address)
+        self.assertIn("***", str(raised.exception))
+        self.assertNotIn("jane", str(raised.exception))
 
 
 class HooksTest(RepositoryTestCase):
