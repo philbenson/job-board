@@ -1,0 +1,291 @@
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  ProfileBody,
+  SaveRefusalBody,
+  TargetTitlesBody,
+} from '../api/profile.ts'
+import { ProfilePanel } from './ProfilePanel.tsx'
+
+// Clerk replaced by a stand-in that hands out a session token, so no test
+// reaches Clerk's servers.
+const clerk = vi.hoisted(() => ({
+  getToken: vi.fn<() => Promise<string | null>>(),
+}))
+
+vi.mock('@clerk/react', () => ({
+  useAuth: () => ({ isLoaded: true, isSignedIn: true, getToken: clerk.getToken }),
+}))
+
+const SESSION_TOKEN = 'header.payload.signature'
+
+const LOADING = 'Loading your target titles…'
+const NOT_LOADED = 'Could not load your target titles'
+const NONE_YET = 'No target titles yet'
+const AT_MOST_TWENTY = 'You can list at most 20 target titles'
+const SAVED = 'Saved'
+const NOT_SAVED = 'Could not save your target titles; your changes are still here'
+
+// A body the contract allows, typed so it changes when the backend's does.
+function answer(status: number, body: ProfileBody | SaveRefusalBody): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  )
+}
+
+// A request that never answers, and fails the way fetch does when aborted.
+function answerOnlyAbort(init?: RequestInit): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      reject(new DOMException('The request was aborted', 'AbortError'))
+    })
+  })
+}
+
+type Reply = (init?: RequestInit) => Promise<Response>
+
+// The profile route answers with `stored`; the save route as the test says.
+function service(stored: string[], save: Reply = () => answerOnlyAbort()) {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    if (url === '/api/profile') {
+      return answer(200, { target_titles: stored })
+    }
+    if (url === '/api/profile/target-titles') {
+      return save(init)
+    }
+    return Promise.reject(new TypeError(`unexpected request to ${url}`))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+function sentTitles(fetchMock: ReturnType<typeof service>): string[] {
+  const call = fetchMock.mock.calls.find(([url]) => url === '/api/profile/target-titles')
+  const body = JSON.parse(call?.[1]?.body as string) as TargetTitlesBody
+  return body.titles
+}
+
+function shownTitles(): string[] {
+  const list = screen.queryByRole('list', { name: 'Your target titles' })
+  if (list === null) {
+    return []
+  }
+  return within(list)
+    .getAllByRole('listitem')
+    .map((item) => item.firstChild?.textContent ?? '')
+}
+
+async function loaded(): Promise<void> {
+  expect(
+    await screen.findByRole('textbox', { name: 'Add a target title' }),
+  ).toBeInTheDocument()
+}
+
+describe('ProfilePanel', () => {
+  beforeEach(() => {
+    clerk.getToken.mockReset()
+    clerk.getToken.mockResolvedValue(SESSION_TOKEN)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('says it is loading, then that none are saved yet', async () => {
+    const fetchMock = service([])
+
+    render(<ProfilePanel />)
+
+    expect(screen.getByText(LOADING)).toBeInTheDocument()
+    await loaded()
+    expect(screen.getByText(NONE_YET)).toBeInTheDocument()
+    expect(shownTitles()).toEqual([])
+    const init = fetchMock.mock.calls[0]?.[1]
+    expect(new Headers(init?.headers).get('Authorization')).toBe(
+      `Bearer ${SESSION_TOKEN}`,
+    )
+  })
+
+  it('lists the saved titles, each with a Remove button named for it', async () => {
+    service(['Designer', 'Writer'])
+
+    render(<ProfilePanel />)
+    await loaded()
+
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    expect(screen.getByRole('button', { name: 'Remove Designer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove Writer' })).toBeInTheDocument()
+    expect(screen.queryByText(NONE_YET)).not.toBeInTheDocument()
+  })
+
+  it('says the titles could not load, and offers nothing to save over them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('down', { status: 503 }))),
+    )
+
+    render(<ProfilePanel />)
+
+    expect(await screen.findByText(NOT_LOADED)).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('adds a trimmed title with the Add button or Enter, ignoring an empty one', async () => {
+    service(['Designer'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const input = screen.getByRole('textbox', { name: 'Add a target title' })
+
+    await user.type(input, '  Data analyst  ')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(input, 'Writer{Enter}')
+    await user.type(input, '   {Enter}')
+
+    expect(shownTitles()).toEqual(['Designer', 'Data analyst', 'Writer'])
+    expect(input).toHaveValue('')
+  })
+
+  it('refuses a title already listed in another case, saying so', async () => {
+    service(['Designer'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Add a target title' }),
+      ' DESIGNER {Enter}',
+    )
+
+    expect(screen.getByText('Designer is already in your list')).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Designer'])
+  })
+
+  it('takes a twentieth title and refuses a twenty-first, saying so', async () => {
+    const nineteen = Array.from({ length: 19 }, (_, index) => `Title ${index + 1}`)
+    service(nineteen)
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const input = screen.getByRole('textbox', { name: 'Add a target title' })
+
+    await user.type(input, 'Title 20{Enter}')
+    expect(shownTitles()).toHaveLength(20)
+    expect(screen.queryByText(AT_MOST_TWENTY)).not.toBeInTheDocument()
+
+    await user.type(input, 'Title 21{Enter}')
+    expect(shownTitles()).toHaveLength(20)
+    expect(shownTitles()).not.toContain('Title 21')
+    expect(screen.getByText(AT_MOST_TWENTY)).toBeInTheDocument()
+  })
+
+  it('removes a title', async () => {
+    service(['Designer', 'Writer'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    await user.click(screen.getByRole('button', { name: 'Remove Designer' }))
+
+    expect(shownTitles()).toEqual(['Writer'])
+  })
+
+  it('saves the whole list, disabled while saving, then shows Saved and the list as stored', async () => {
+    let finish: (response: Response) => void = () => {}
+    const fetchMock = service(
+      ['Designer'],
+      () => new Promise<Response>((resolve) => (finish = resolve)),
+    )
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Add a target title' }),
+      'Writer{Enter}',
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
+    const stored = { target_titles: ['Designer', 'Writer (stored)'] } satisfies ProfileBody
+    await act(async () => {
+      finish(await answer(200, stored))
+    })
+
+    expect(await screen.findByText(SAVED)).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Designer', 'Writer (stored)'])
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+  })
+
+  it("shows the backend's rule when it refuses the list, keeping the list", async () => {
+    const refusal = {
+      detail: [
+        {
+          loc: ['body', 'titles', 1],
+          msg: 'A target title cannot contain control characters',
+          type: 'target_title_control_character',
+          input: 'Data\u0007analyst',
+        },
+      ],
+    } satisfies SaveRefusalBody
+    service(['Designer'], () => answer(422, refusal))
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Add a target title' }),
+      'Writer{Enter}',
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(
+      await screen.findByText('A target title cannot contain control characters'),
+    ).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
+  })
+
+  it('gives up on a save after five seconds without an answer, keeping the unsaved list', async () => {
+    vi.useFakeTimers()
+    service(['Designer'])
+    render(<ProfilePanel />)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await act(() => vi.advanceTimersByTimeAsync(4_999))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    await act(() => vi.advanceTimersByTimeAsync(1))
+
+    expect(screen.getByText(NOT_SAVED)).toBeInTheDocument()
+    expect(screen.getByText(NONE_YET)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
+  })
+
+  it('reaches each Remove, the input, Add and Save by Tab, in that order', async () => {
+    service(['Designer', 'Writer'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    const order = [
+      screen.getByRole('button', { name: 'Remove Designer' }),
+      screen.getByRole('button', { name: 'Remove Writer' }),
+      screen.getByRole('textbox', { name: 'Add a target title' }),
+      screen.getByRole('button', { name: 'Add' }),
+      screen.getByRole('button', { name: 'Save' }),
+    ]
+    for (const control of order) {
+      await user.tab()
+      expect(control).toHaveFocus()
+    }
+  })
+})
