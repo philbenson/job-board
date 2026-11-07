@@ -37,6 +37,15 @@ type FocusTarget = 'input' | 'replace'
 
 const CHECKED_DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' })
 
+// Why scoring stopped using the saved key, shown until a new key is saved.
+const FAILURE_SENTENCES: Record<NonNullable<SavedModelKeyBody['failure']>, string> = {
+  rejected: 'Anthropic stopped accepting this key. Save a new one to keep scoring.',
+  'not-permitted':
+    'This key can no longer use the model this app runs. Save a new one to keep scoring.',
+  'no-credit':
+    "This key's account has run out of credit. Add credit or save a new key to keep scoring.",
+}
+
 /**
  * The signed-in person's own Anthropic key: whether one is saved, by its last
  * four characters only, with a form to save, replace or remove it. The key is
@@ -212,6 +221,7 @@ export function ModelKeyPanel() {
       {saved === 'none' && <p>No key saved</p>}
       {typeof saved === 'object' && (
         <>
+          {saved.failure !== null && <p>{FAILURE_SENTENCES[saved.failure]}</p>}
           <p>{savedLine(saved)}</p>
           {!formOpen && (
             <button

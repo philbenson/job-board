@@ -26,6 +26,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from job_board.model_key.failure import KeyFailure
 from job_board.model_key.sealing import SealBroken, SealedUnderAnotherKey, open_sealed, sealed_with
 from job_board.models import ModelKey, Score
 from job_board.scoring.graph import rate
@@ -38,8 +39,6 @@ BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run 
 log = logging.getLogger(__name__)
 
 type End = Literal["finished", "locked", "skipped", "stopped"]
-# What scoring records on a key Anthropic refused, and the panel explains.
-type KeyFailure = Literal["rejected", "not-permitted", "no-credit"]
 
 
 @dataclass(frozen=True)

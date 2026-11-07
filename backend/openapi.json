@@ -443,6 +443,34 @@
           "usable": {
             "type": "boolean",
             "title": "Usable"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "rejected",
+                  "not-permitted",
+                  "no-credit"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
           }
         },
         "type": "object",
@@ -450,7 +478,9 @@
           "provider",
           "last_four",
           "checked_at",
-          "usable"
+          "usable",
+          "failure",
+          "failed_at"
         ],
         "title": "SavedModelKey"
       },
