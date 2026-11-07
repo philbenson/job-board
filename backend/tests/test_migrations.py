@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 # Every table the migrations create, in name order; base holds alembic_version alone.
-HEAD_TABLES = ["alembic_version", "fetch_runs", "people", "postings"]
+HEAD_TABLES = ["alembic_version", "fetch_runs", "people", "postings", "profiles"]
 # The key, unique and check constraints of the fetcher's tables, in name order,
 # each named by the models' naming convention.
 FETCHER_CONSTRAINTS = [
@@ -23,10 +23,6 @@ OPEN_POSTINGS_INDEX = (
     "CREATE INDEX ix_postings_open_newest_published ON public.postings USING btree "
     "(first_published_at DESC NULLS LAST, first_seen_at DESC, id DESC) WHERE (closed_at IS NULL)"
 )
-
-# Every table at head, in name order: a revision that leaves one out, or one
-# behind, fails here as well as in the check against the models.
-HEAD_TABLES = ["alembic_version", "people", "profiles"]
 
 
 def query(database_url: str, sql: str) -> list[str]:
