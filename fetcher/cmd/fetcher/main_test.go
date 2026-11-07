@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -108,4 +109,93 @@ func TestExitsTwoWhenTheDatabaseCannotBeReached(t *testing.T) {
 	if message := stderr.String(); !strings.Contains(message, "DATABASE_URL") || strings.Contains(message, "s3cret") {
 		t.Errorf("standard error %q should name the setting and never its password", message)
 	}
+}
+
+func TestExitsTwoWhenTheDatabaseIsNotMigrated(t *testing.T) {
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, testdb.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	// A schema with no tables in it stands in for a database nobody migrated.
+	if _, err := conn.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS unmigrated"); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := execute(ctx, environment(map[string]string{
+		"DATABASE_URL":      withParameter(t, testdb.URL(), "search_path", "unmigrated"),
+		"GREENHOUSE_BOARDS": "ottermere",
+	}), &stderr, feed(t))
+
+	if code != 2 {
+		t.Errorf("exit code %d, want 2; standard error:\n%s", code, &stderr)
+	}
+	if message := stderr.String(); !strings.Contains(message, "not migrated") ||
+		!strings.Contains(message, "uv run alembic upgrade head") {
+		t.Errorf("standard error %q should say the database is not migrated and how to migrate it", message)
+	}
+}
+
+func TestExitsTwoNamingTheCauseWhenTheServerRefusesTheConnection(t *testing.T) {
+	cases := []struct {
+		name, databaseURL, cause string
+	}{
+		{name: "a missing database", cause: "does not exist (PostgreSQL condition 3D000)",
+			databaseURL: withDatabase(t, testdb.URL(), "job_board_no_such_database")},
+		{name: "a refused password", cause: "refused the user name or password in DATABASE_URL (PostgreSQL condition 28P01)",
+			databaseURL: withPassword(t, testdb.URL(), "not-the-password")},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			code := execute(context.Background(), environment(map[string]string{
+				"DATABASE_URL": c.databaseURL, "GREENHOUSE_BOARDS": "ottermere",
+			}), &stderr, feed(t))
+
+			if code != 2 {
+				t.Errorf("exit code %d, want 2", code)
+			}
+			message := stderr.String()
+			if !strings.Contains(message, c.cause) {
+				t.Errorf("standard error %q does not name the cause %q", message, c.cause)
+			}
+			if strings.Contains(message, "docker compose") || strings.Contains(message, "not-the-password") {
+				t.Errorf("standard error %q sends a reachable server's refusal to docker, or leaks the password", message)
+			}
+		})
+	}
+}
+
+func withParameter(t *testing.T, databaseURL, key, value string) string {
+	t.Helper()
+	parsed := parse(t, databaseURL)
+	query := parsed.Query()
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func withDatabase(t *testing.T, databaseURL, name string) string {
+	t.Helper()
+	parsed := parse(t, databaseURL)
+	parsed.Path = "/" + name
+	return parsed.String()
+}
+
+func withPassword(t *testing.T, databaseURL, password string) string {
+	t.Helper()
+	parsed := parse(t, databaseURL)
+	parsed.User = url.UserPassword(parsed.User.Username(), password)
+	return parsed.String()
+}
+
+func parse(t *testing.T, databaseURL string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }

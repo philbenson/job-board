@@ -10,7 +10,7 @@ For each board it is given, it asks Greenhouse's public Job Board API once for e
 
 A board is stored whole or not at all: if the request fails, the answer is not the feed, or any one posting fails a check, nothing on that board changes. One board failing never stops the next. Every attempt, successful or not, is recorded in the `fetch_runs` table with what it counted, or a short code saying what failed.
 
-The tables belong to the backend's Alembic migrations; the fetcher never creates or changes one, so migrate the database first.
+The tables belong to the backend's Alembic migrations; the fetcher never creates or changes one, so migrate the database first. It checks both tables exist before it tries any board, and stops if they do not.
 
 ## Settings
 
@@ -46,9 +46,9 @@ docker compose exec db psql -U job_board -d job_board \
       ORDER BY first_published_at DESC NULLS LAST, first_seen_at DESC, id DESC LIMIT 10"
 ```
 
-It exits 0 when every board succeeded, 1 when any board failed, and 2 when the settings are refused or the database cannot be reached, before any board is tried. Ctrl-C or `SIGTERM` stops it: the board in hand is rolled back and recorded as `interrupted`, and no other board is started. If the database drops the connection, only the board in hand fails: the fetcher reconnects to record it and to go on with the next board.
+It exits 0 when every board succeeded, 1 when any board failed, and 2 when the settings are refused, the database cannot be reached or refuses the connection, or it is not migrated, before any board is tried. A server that answered is named by its PostgreSQL condition code (`28P01` a refused password, `3D000` no such database); one that did not is most likely not running. Ctrl-C or `SIGTERM` stops it: the board in hand is rolled back and recorded as `interrupted`, and no other board is started. If the database drops the connection, only the board in hand fails: the fetcher reconnects to record it and to go on with the next board.
 
-A failed run's code is one of `request` (no answer, or it timed out), `status` (an answer other than 200), `too-large`, `decode` (not the feed's JSON), `invalid-posting`, `database`, `interrupted` (stopped while the board was fetched or written) and `locked`.
+A failed run's code is one of `request` (no answer, or it timed out), `status` (an answer other than 200), `too-large`, `decode` (not the feed's JSON), `invalid-posting`, `database`, `interrupted` (stopped while the board was fetched or written) and `locked`. The log line adds a detail beside some codes: the status the board answered for `status`, the posting's id and the field that failed its check for `invalid-posting`, the PostgreSQL condition code for `database`, and whether a `request` timed out. It never logs a URL, a server's message or a posting's text, and `fetch_runs` keeps the code alone.
 
 Two runs never fetch the same board at once: each run holds a lock on a board, in PostgreSQL, from before its fetch until its record is written. A board another run holds is not fetched; it is recorded as failed with the code `locked`, logged as a warning, and counts as a failure in the exit status, so a run that keeps finding its boards locked shows in `fetch_runs` rather than behind a clean exit.
 

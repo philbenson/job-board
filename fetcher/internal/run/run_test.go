@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -85,6 +86,32 @@ func newHarness(t *testing.T) *harness {
 	return h
 }
 
+// useStore replaces the runner's store with one connected to databaseURL.
+func (h *harness) useStore(t *testing.T, databaseURL string) {
+	t.Helper()
+	ctx := context.Background()
+	s, err := store.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close(ctx) })
+	h.runner.Store = s
+}
+
+// withParameter adds a query parameter to a database URL; pgx passes one it
+// does not know to the server as a setting for the session.
+func withParameter(t *testing.T, databaseURL, key, value string) string {
+	t.Helper()
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsed.Query()
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 // postings is a board's rows, every column but the id, in a comparable form.
 func (h *harness) postings(t *testing.T, board string) []string {
 	t.Helper()
@@ -139,22 +166,31 @@ func TestAFailedBoardKeepsItsPostingsAndRecordsWhy(t *testing.T) {
 	cases := []struct {
 		name    string
 		answer  http.HandlerFunc
-		adjust  func(*greenhouse.Client)
+		adjust  func(*testing.T, *harness)
 		failure string
+		detail  string // what the log line says beside the failure code; never a URL or a server's text
 	}{
-		{name: "a server error", failure: "status",
+		{name: "a server error", failure: "status", detail: "http_status=500",
 			answer: func(w http.ResponseWriter, r *http.Request) { http.Error(w, "oops", http.StatusInternalServerError) }},
 		{name: "malformed JSON", failure: "decode", answer: answer([]byte(`{"jobs": [`))},
-		{name: "an invalid posting", failure: "invalid-posting",
+		{name: "an invalid posting", failure: "invalid-posting", detail: "posting=1 check=title",
 			answer: answer([]byte(`{"jobs": [{"id": 1, "title": " ", "absolute_url": "https://jobs.example.com/1", "updated_at": "2026-11-01T00:00:00Z"}]}`))},
 		{name: "a body over the cap", failure: "too-large", answer: answer(fixture),
-			adjust: func(c *greenhouse.Client) { c.MaxBodyBytes = int64(len(fixture)) - 1 }},
-		{name: "a server that never answers", failure: "request",
+			adjust: func(t *testing.T, h *harness) { h.runner.Feed.MaxBodyBytes = int64(len(fixture)) - 1 }},
+		{name: "a server that never answers", failure: "request", detail: "timed_out=true",
 			answer: func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() },
-			adjust: func(c *greenhouse.Client) { c.Timeout = 50 * time.Millisecond }},
+			adjust: func(t *testing.T, h *harness) { h.runner.Feed.Timeout = 50 * time.Millisecond }},
+		{name: "a server that hangs up", failure: "request", detail: "timed_out=false",
+			answer: func(w http.ResponseWriter, r *http.Request) { panic(http.ErrAbortHandler) }},
 		// PostgreSQL refuses a NUL byte in text, so this feed decodes but cannot be stored.
-		{name: "a posting the database refuses", failure: "database",
+		{name: "a posting the database refuses", failure: "database", detail: "condition=22021",
 			answer: answer([]byte(`{"jobs": [{"id": 1, "title": "Engineer\u0000", "absolute_url": "https://jobs.example.com/1", "updated_at": "2026-11-01T00:00:00Z"}]}`))},
+		{name: "a row the write cannot lock in time", failure: "database", detail: "condition=55P03",
+			answer: answer(fixture),
+			adjust: func(t *testing.T, h *harness) {
+				h.useStore(t, withParameter(t, testdb.URL(), "lock_timeout", "100"))
+				holdRow(t, 1001)
+			}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -165,7 +201,7 @@ func TestAFailedBoardKeepsItsPostingsAndRecordsWhy(t *testing.T) {
 
 			h.feeds["ottermere"] = c.answer
 			if c.adjust != nil {
-				c.adjust(h.runner.Feed)
+				c.adjust(t, h)
 			}
 			if ok := h.runner.Boards(context.Background(), []string{"ottermere"}); ok {
 				t.Error("Boards reported success")
@@ -178,8 +214,9 @@ func TestAFailedBoardKeepsItsPostingsAndRecordsWhy(t *testing.T) {
 			if got := h.runs(t); !reflect.DeepEqual(got, want) {
 				t.Errorf("runs %q, want %q", got, want)
 			}
-			if line := h.log.String(); !strings.Contains(line, "board=ottermere outcome=failed failure="+c.failure) {
-				t.Errorf("log %q does not report the failure", line)
+			report := strings.TrimSpace("board=ottermere outcome=failed failure=" + c.failure + " " + c.detail)
+			if line := h.log.String(); !strings.Contains(line, report+"\n") {
+				t.Errorf("log %q does not say %q", line, report)
 			}
 		})
 	}

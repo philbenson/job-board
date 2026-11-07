@@ -19,6 +19,20 @@ var (
 	ErrInvalidPosting = errors.New("a posting in the feed is invalid")
 )
 
+// InvalidPostingError is ErrInvalidPosting with the posting's id and the
+// field whose check it failed.
+type InvalidPostingError struct {
+	Position int    // where the posting is in the feed's list, from 1
+	ID       int64  // the posting's id as the feed gives it
+	Check    string // the field that failed: id, title, absolute_url, updated_at or first_published
+}
+
+func (e *InvalidPostingError) Error() string {
+	return fmt.Sprintf("%v: job %d in the list (id %d): its %s fails its check", ErrInvalidPosting, e.Position, e.ID, e.Check)
+}
+
+func (e *InvalidPostingError) Unwrap() error { return ErrInvalidPosting }
+
 // feed is the part of the Job Board API's list of jobs that the fetcher reads;
 // every other field is ignored.
 type feed struct {
@@ -51,35 +65,39 @@ func Decode(body []byte) ([]posting.Posting, error) {
 	}
 	postings := make([]posting.Posting, 0, len(*decoded.Jobs))
 	for position, raw := range *decoded.Jobs {
-		checked, err := raw.posting()
-		if err != nil {
-			return nil, fmt.Errorf("%w: job %d in the list (id %d): %v", ErrInvalidPosting, position+1, raw.ID, err)
+		checked, failed := raw.posting()
+		if failed != "" {
+			return nil, &InvalidPostingError{Position: position + 1, ID: raw.ID, Check: failed}
 		}
 		postings = append(postings, checked)
 	}
 	return postings, nil
 }
 
-func (j job) posting() (posting.Posting, error) {
+// posting checks one job and returns it as a posting, or names the field that
+// failed its check: the id must be positive, the title not empty, the
+// absolute_url an absolute http or https URL, and updated_at and any
+// first_published RFC 3339 times.
+func (j job) posting() (posting.Posting, string) {
 	if j.ID <= 0 {
-		return posting.Posting{}, errors.New("its id is not a positive number")
+		return posting.Posting{}, "id"
 	}
 	title := strings.TrimSpace(j.Title)
 	if title == "" {
-		return posting.Posting{}, errors.New("its title is empty")
+		return posting.Posting{}, "title"
 	}
 	if !isWebURL(j.AbsoluteURL) {
-		return posting.Posting{}, errors.New("its absolute_url is not an absolute http or https URL")
+		return posting.Posting{}, "absolute_url"
 	}
 	updated, err := time.Parse(time.RFC3339, j.UpdatedAt)
 	if err != nil {
-		return posting.Posting{}, errors.New("its updated_at is not an RFC 3339 time")
+		return posting.Posting{}, "updated_at"
 	}
 	var published *time.Time
 	if j.FirstPublished != nil {
 		parsed, err := time.Parse(time.RFC3339, *j.FirstPublished)
 		if err != nil {
-			return posting.Posting{}, errors.New("its first_published is not an RFC 3339 time")
+			return posting.Posting{}, "first_published"
 		}
 		published = &parsed
 	}
@@ -101,7 +119,7 @@ func (j job) posting() (posting.Posting, error) {
 		// which is still untrusted.
 		checked.ContentHTML = html.UnescapeString(*j.Content)
 	}
-	return checked, nil
+	return checked, ""
 }
 
 func isWebURL(raw string) bool {

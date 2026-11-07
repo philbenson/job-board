@@ -37,6 +37,25 @@ func Connect(ctx context.Context, databaseURL string) (*Store, error) {
 	return &Store{config: config, conn: conn}, nil
 }
 
+// ErrNotMigrated: the database lacks the tables the fetcher writes, which the
+// backend's migrations create.
+var ErrNotMigrated = errors.New("the database is not migrated")
+
+// CheckMigrated returns ErrNotMigrated unless both tables the fetcher writes
+// exist, so an unmigrated database stops the run before any board is tried.
+func (s *Store) CheckMigrated(ctx context.Context) error {
+	var migrated bool
+	err := s.conn.QueryRow(ctx,
+		"SELECT to_regclass('postings') IS NOT NULL AND to_regclass('fetch_runs') IS NOT NULL").Scan(&migrated)
+	if err != nil {
+		return err
+	}
+	if !migrated {
+		return ErrNotMigrated
+	}
+	return nil
+}
+
 // reconnect opens a new connection when the current one has closed, as it
 // does when the database ends the session or a statement is interrupted, so
 // one dropped connection fails at most the board in hand.

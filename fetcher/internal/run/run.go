@@ -6,14 +6,18 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/philbenson/job-board/fetcher/internal/greenhouse"
 	"github.com/philbenson/job-board/fetcher/internal/store"
 )
 
 // The failure codes recorded in fetch_runs.failure: short and fixed, never an
-// error's text, which can carry a URL or a server's message.
+// error's text, which can carry a URL or a server's message. The log line
+// adds a safe detail beside some of them; see detail.
 const (
 	FailureRequest        = "request"         // the request failed or timed out
 	FailureStatus         = "status"          // the board answered with a status other than 200
@@ -90,6 +94,7 @@ func (r *Runner) board(ctx context.Context, board string) bool {
 		attributes = append(attributes, "seen", record.Counts.Seen, "new", record.Counts.New, "closed", record.Counts.Closed)
 	} else {
 		attributes = append(attributes, "failure", record.Failure)
+		attributes = append(attributes, detail(record.Failure, err)...)
 	}
 	if !recorded {
 		attributes = append(attributes, "recorded", false)
@@ -116,6 +121,30 @@ func (r *Runner) fetchAndWrite(ctx context.Context, lock *store.BoardLock, board
 		return store.Counts{}, err
 	}
 	return r.Store.WriteBoard(ctx, lock, postings)
+}
+
+// detail is what the log says beside a failure code to help act on it: the
+// status a board answered, the posting and the check it failed, the
+// PostgreSQL condition code, or whether a request timed out. None of it is a
+// URL, a server's text or a posting's text, which an error's message can
+// carry, and fetch_runs keeps the code alone.
+func detail(code string, err error) []any {
+	var status *greenhouse.StatusError
+	var invalid *greenhouse.InvalidPostingError
+	var refused *pgconn.PgError
+	var network net.Error
+	switch {
+	case code == FailureStatus && errors.As(err, &status):
+		return []any{"http_status", status.Code}
+	case code == FailureInvalidPosting && errors.As(err, &invalid):
+		return []any{"posting", invalid.ID, "check", invalid.Check}
+	case code == FailureDatabase && errors.As(err, &refused):
+		return []any{"condition", refused.Code}
+	case code == FailureRequest:
+		timedOut := errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &network) && network.Timeout())
+		return []any{"timed_out", timedOut}
+	}
+	return nil
 }
 
 // failure is the failure code for an error from fetching or storing a board.

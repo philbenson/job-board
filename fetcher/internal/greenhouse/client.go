@@ -34,6 +34,14 @@ var (
 	ErrTooLarge = errors.New("the board's answer is larger than the cap")
 )
 
+// StatusError is ErrStatus with the status the board answered.
+type StatusError struct {
+	Code int
+}
+
+func (e *StatusError) Error() string { return fmt.Sprintf("%v: %d", ErrStatus, e.Code) }
+func (e *StatusError) Unwrap() error { return ErrStatus }
+
 // Client fetches boards. Its zero value asks Greenhouse itself, with the
 // default time limit and size cap.
 type Client struct {
@@ -52,18 +60,18 @@ func (c *Client) Fetch(ctx context.Context, board string) ([]posting.Posting, er
 	address := cmp.Or(c.BaseURL, DefaultBaseURL) + "/v1/boards/" + url.PathEscape(board) + "/jobs?content=true"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRequest, err)
+		return nil, fmt.Errorf("%w: %w", ErrRequest, err)
 	}
 	request.Header.Set("User-Agent", UserAgent)
 	request.Header.Set("Accept", "application/json")
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRequest, err)
+		return nil, fmt.Errorf("%w: %w", ErrRequest, err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %s", ErrStatus, response.Status)
+		return nil, &StatusError{Code: response.StatusCode}
 	}
 
 	limit := cmp.Or(c.MaxBodyBytes, DefaultMaxBodyBytes)
@@ -73,7 +81,7 @@ func (c *Client) Fetch(ctx context.Context, board string) ([]posting.Posting, er
 	// One byte past the cap is enough to know the body is over it.
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("%w: reading the body: %v", ErrRequest, err)
+		return nil, fmt.Errorf("%w: reading the body: %w", ErrRequest, err)
 	}
 	if int64(len(body)) > limit {
 		return nil, fmt.Errorf("%w: more than %d bytes", ErrTooLarge, limit)
