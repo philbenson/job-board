@@ -1,3 +1,4 @@
+import { askWithin } from './askWithin.ts'
 import type { paths } from './schema.ts'
 
 /** The health route's body, as the backend's OpenAPI description defines it. */
@@ -30,21 +31,8 @@ const HEALTH_TIMEOUT_MS = 5_000
  * service as up without the service saying so. Resolves to "aborted" once the
  * caller's signal has aborted, and never otherwise. Never rejects.
  */
-export async function fetchHealth(signal?: AbortSignal): Promise<HealthCheck> {
-  // Its own controller, so a timeout aborts the request without making the
-  // caller's signal read as aborted.
-  const timeout = new AbortController()
-  const timer = setTimeout(() => {
-    timeout.abort()
-  }, HEALTH_TIMEOUT_MS)
-  const requestSignal =
-    signal === undefined
-      ? timeout.signal
-      : AbortSignal.any([signal, timeout.signal])
-
-  const health = await askService(requestSignal)
-  clearTimeout(timer)
-  return signal?.aborted ? 'aborted' : health
+export function fetchHealth(signal?: AbortSignal): Promise<HealthCheck> {
+  return askWithin(HEALTH_TIMEOUT_MS, signal, askService)
 }
 
 async function askService(signal: AbortSignal): Promise<ServiceHealth> {

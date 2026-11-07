@@ -1,3 +1,4 @@
+import { askWithin } from './askWithin.ts'
 import type { paths } from './schema.ts'
 
 type MeResponses = paths['/me']['get']['responses']
@@ -31,24 +32,10 @@ const ME_TIMEOUT_MS = 5_000
  * as recognised without the service saying so. Resolves to "aborted" once the
  * caller's signal has aborted, and never otherwise. Never rejects.
  */
-export async function fetchMe(
-  token: string,
-  signal?: AbortSignal,
-): Promise<MeCheck> {
-  // Its own controller, so a timeout aborts the request without making the
-  // caller's signal read as aborted.
-  const timeout = new AbortController()
-  const timer = setTimeout(() => {
-    timeout.abort()
-  }, ME_TIMEOUT_MS)
-  const requestSignal =
-    signal === undefined
-      ? timeout.signal
-      : AbortSignal.any([signal, timeout.signal])
-
-  const me = await askService(token, requestSignal)
-  clearTimeout(timer)
-  return signal?.aborted ? 'aborted' : me
+export function fetchMe(token: string, signal?: AbortSignal): Promise<MeCheck> {
+  return askWithin(ME_TIMEOUT_MS, signal, (requestSignal) =>
+    askService(token, requestSignal),
+  )
 }
 
 async function askService(
