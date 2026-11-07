@@ -1,6 +1,6 @@
 # Front end
 
-The job board's web app: React and TypeScript, built with Vite. For now it shows the app's name, whether the backend service answers, and sign-in through Clerk; once a person is signed in, it says whether the service recognised them, lets them save, replace or remove their own Anthropic API key, which the page sends to the service and never keeps in the browser, lets them keep a list of target titles, the job titles they are looking for, saved to the backend, and lets them upload one PDF resume, see its size and when it was uploaded, and remove it.
+The job board's web app: React and TypeScript, built with Vite. For now it shows the app's name, whether the backend service answers, and sign-in through Clerk; once a person is signed in, it says whether the service recognised them, lets them save, replace or remove their own Anthropic API key, which the page sends to the service and never keeps in the browser, lets them keep a list of target titles, the job titles they are looking for, saved to the backend, and lets them upload one PDF resume, see its size and when it was uploaded, remove it, and check, correct and save the text the service read from it.
 
 It needs Node 24.15 or newer on the 24 line, or Node 26 or newer; the continuous integration runs on both Node 24.15.0 and Node 26. Node 25 runs with warnings from the test packages, which do not support it. Install the packages from the lock file first:
 
