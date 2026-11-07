@@ -45,11 +45,20 @@ def upgrade() -> None:
             "source", "board", "external_id", name="postings_source_board_external_id_key"
         ),
     )
-    # Serves the list of open postings, newest first, without reading closed ones.
+    # Serves open postings newest first, without reading closed ones. Newest
+    # means when the company published the posting, not when this system first
+    # saw it: a board's first fetch gives all its postings one first_seen_at,
+    # while their publish times tell them apart. Postings without a publish time
+    # sort after every dated one; first sight and then the id break ties, so the
+    # order is total and the same on every read.
     op.create_index(
-        "postings_open_newest_idx",
+        "postings_open_newest_published_idx",
         "postings",
-        [sa.text("first_seen_at DESC")],
+        [
+            sa.text("first_published_at DESC NULLS LAST"),
+            sa.text("first_seen_at DESC"),
+            sa.text("id DESC"),
+        ],
         postgresql_where=sa.text("closed_at IS NULL"),
     )
 
@@ -71,5 +80,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("fetch_runs")
-    op.drop_index("postings_open_newest_idx", table_name="postings")
+    op.drop_index("postings_open_newest_published_idx", table_name="postings")
     op.drop_table("postings")

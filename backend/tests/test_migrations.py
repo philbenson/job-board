@@ -9,6 +9,12 @@ from sqlalchemy import create_engine, text
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 # Every table the migrations create, in name order; base holds alembic_version alone.
 HEAD_TABLES = ["alembic_version", "fetch_runs", "postings"]
+# Open postings, newest published first; undated ones after every dated one;
+# first sight and then the id break ties, so the order is total and stable.
+OPEN_POSTINGS_INDEX = (
+    "CREATE INDEX postings_open_newest_published_idx ON public.postings USING btree "
+    "(first_published_at DESC NULLS LAST, first_seen_at DESC, id DESC) WHERE (closed_at IS NULL)"
+)
 
 
 def query(database_url: str, sql: str) -> list[str]:
@@ -26,6 +32,14 @@ def recorded_revisions(database_url: str) -> list[str]:
 def public_tables(database_url: str) -> list[str]:
     return query(
         database_url, "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1"
+    )
+
+
+def postings_indexes(database_url: str) -> list[str]:
+    return query(
+        database_url,
+        "SELECT indexdef FROM pg_indexes WHERE tablename = 'postings' "
+        "AND indexname NOT IN ('postings_pkey', 'postings_source_board_external_id_key')",
     )
 
 
@@ -51,3 +65,4 @@ def test_upgrades_to_head_back_to_base_and_to_head_again(
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
     assert public_tables(database_url) == HEAD_TABLES
+    assert postings_indexes(database_url) == [OPEN_POSTINGS_INDEX]
