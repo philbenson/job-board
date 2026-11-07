@@ -11,12 +11,10 @@ in the same statement that adds the row when there is none, so a section
 written by another route, or by newer code, survives it untouched.
 """
 
-import unicodedata
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Text, func, literal, select
 from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,13 +22,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.database import get_session
 from job_board.models import Person, ProfileRow
 from job_board.people import SIGN_IN_REQUIRED, current_person
+from job_board.profile_sections import (
+    MAX_SENT_TITLES,
+    MAX_TARGET_TITLES,
+    MAX_TITLE_LENGTH,
+    TargetTitles,
+)
 
-MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a different search
-MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line
-# The most titles a request may carry, counted before any is checked, so a
-# huge list is refused at once. Repeats are dropped after this count, so it
-# sits well above the cap.
-MAX_SENT_TITLES = 200
+__all__ = [
+    "MAX_SENT_TITLES",
+    "MAX_TARGET_TITLES",
+    "MAX_TITLE_LENGTH",
+    "Profile",
+    "TargetTitles",
+    "router",
+]
 
 
 class Profile(BaseModel):
@@ -41,115 +47,6 @@ class Profile(BaseModel):
     model_config = ConfigDict(extra="ignore", json_schema_serialization_defaults_required=True)
 
     target_titles: list[str] = Field(default_factory=list)
-
-
-# The embeddings and overrides (U+202A to U+202E) and the isolates (U+2066 to
-# U+2069), which reverse or reorder how the rest of a line shows.
-DIRECTION_CONTROLS = frozenset(map(chr, [*range(0x202A, 0x202F), *range(0x2066, 0x206A)]))
-
-
-def _shows_something(character: str) -> bool:
-    # Format characters (Cf: zero-width spaces, joiners) and combining marks
-    # (Mn) show nothing on their own.
-    return not character.isspace() and unicodedata.category(character) not in {"Cf", "Mn"}
-
-
-def _trims_away(character: str) -> bool:
-    # Whitespace and the invisible format characters (Cf: zero-width spaces,
-    # joiners, byte order marks) at an end show nothing and join nothing.
-    # Direction controls stay, to be refused: dropping one would change how
-    # the rest of the title shows. Marks (Mn) stay too: a variation selector,
-    # U+FE0F, ends many emoji.
-    return character.isspace() or (
-        unicodedata.category(character) == "Cf" and character not in DIRECTION_CONTROLS
-    )
-
-
-def _trimmed(title: str) -> str:
-    start, end = 0, len(title)
-    while start < end and _trims_away(title[start]):
-        start += 1
-    while end > start and _trims_away(title[end - 1]):
-        end -= 1
-    return title[start:end]
-
-
-def _checked_title(title: str) -> str:
-    """The title trimmed and in its composed form, or the rule it breaks.
-
-    Whitespace and invisible format characters are trimmed from both ends, so
-    a title pasted with a zero-width space is the title the person sees. The
-    title is stored as the person sees it, so it is then normalised to NFC and
-    every rule measures that: an accented letter counts as one character
-    however it was typed. Each refusal's message is the rule alone, so the
-    person reads it as given.
-    """
-    shown = unicodedata.normalize("NFC", _trimmed(title))
-    # Half of a surrogate pair is no character at all: JSON can spell one, but
-    # no text encoding holds it, and the database would refuse the document.
-    if any(unicodedata.category(character) == "Cs" for character in shown):
-        raise PydanticCustomError("target_title_invalid_text", "A target title must be valid text")
-    if not any(_shows_something(character) for character in shown):
-        raise PydanticCustomError("target_title_blank", "A target title cannot be blank")
-    if len(shown) > MAX_TITLE_LENGTH:
-        raise PydanticCustomError(
-            "target_title_too_long",
-            f"A target title can be at most {MAX_TITLE_LENGTH} characters",
-        )
-    # Category Cc is the C0 and C1 controls and DEL: tabs, newlines, nulls and
-    # the like, which have no place inside a title and break how it shows.
-    if any(unicodedata.category(character) == "Cc" for character in shown):
-        raise PydanticCustomError(
-            "target_title_control_character",
-            "A target title cannot contain control characters",
-        )
-    # Other format characters stay: a zero-width joiner inside a title binds
-    # an emoji sequence.
-    if not DIRECTION_CONTROLS.isdisjoint(shown):
-        raise PydanticCustomError(
-            "target_title_direction_control",
-            "A target title cannot contain text direction controls",
-        )
-    return shown
-
-
-def _distinct_and_capped(titles: list[str]) -> list[str]:
-    """The titles without repeats, in the order given, or a refusal past the cap.
-
-    A repeat differs from an earlier title only in case or in how its letters
-    are composed, and is dropped rather than refused; the first spelling stays.
-    The cap counts what is left.
-    """
-    seen: set[str] = set()
-    distinct: list[str] = []
-    for title in titles:
-        # Each title is already composed; folding case can decompose a letter
-        # again, so the key is composed after folding.
-        key = unicodedata.normalize("NFC", title.casefold())
-        if key not in seen:
-            seen.add(key)
-            distinct.append(title)
-    if len(distinct) > MAX_TARGET_TITLES:
-        raise PydanticCustomError(
-            "target_titles_too_many",
-            f"You can list at most {MAX_TARGET_TITLES} target titles",
-        )
-    return distinct
-
-
-TargetTitle = Annotated[str, AfterValidator(_checked_title)]
-
-
-class TargetTitles(BaseModel):
-    """The body that replaces the target titles. An empty list means none chosen."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    titles: Annotated[
-        list[TargetTitle],
-        Field(max_length=MAX_SENT_TITLES),
-        AfterValidator(_distinct_and_capped),
-    ]
 
 
 router = APIRouter()
