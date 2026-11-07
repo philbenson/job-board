@@ -33,6 +33,40 @@
         }
       }
     },
+    "/leads": {
+      "get": {
+        "summary": "Read Leads",
+        "description": "The signed-in person's leads: open postings with a rating for them, best first.",
+        "operationId": "read_leads_leads_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Leads"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/me": {
       "get": {
         "summary": "Me",
@@ -333,6 +367,100 @@
           "database"
         ],
         "title": "Health"
+      },
+      "Lead": {
+        "properties": {
+          "posting_id": {
+            "type": "integer",
+            "title": "Posting Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "company": {
+            "type": "string",
+            "title": "Company"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "score": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Score"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "scored_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Scored At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "posting_id",
+          "title",
+          "company",
+          "location",
+          "url",
+          "published_at",
+          "score",
+          "reason",
+          "scored_at"
+        ],
+        "title": "Lead",
+        "description": "One open posting scored for the person: enough to judge it and follow the link."
+      },
+      "Leads": {
+        "properties": {
+          "leads": {
+            "items": {
+              "$ref": "#/components/schemas/Lead"
+            },
+            "type": "array",
+            "title": "Leads"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "leads",
+          "total"
+        ],
+        "title": "Leads",
+        "description": "A page of the person's leads, best first, and how many they have in all."
       },
       "Me": {
         "properties": {

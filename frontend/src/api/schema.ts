@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Leads
+         * @description The signed-in person's leads: open postings with a rating for them, best first.
+         */
+        get: operations["read_leads_leads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me": {
         parameters: {
             query?: never;
@@ -118,6 +138,43 @@ export interface components {
              * @enum {string}
              */
             database: "ok" | "unreachable";
+        };
+        /**
+         * Lead
+         * @description One open posting scored for the person: enough to judge it and follow the link.
+         */
+        Lead: {
+            /** Posting Id */
+            posting_id: number;
+            /** Title */
+            title: string;
+            /** Company */
+            company: string;
+            /** Location */
+            location: string | null;
+            /** Url */
+            url: string;
+            /** Published At */
+            published_at: string | null;
+            /** Score */
+            score: number;
+            /** Reason */
+            reason: string;
+            /**
+             * Scored At
+             * Format: date-time
+             */
+            scored_at: string;
+        };
+        /**
+         * Leads
+         * @description A page of the person's leads, best first, and how many they have in all.
+         */
+        Leads: {
+            /** Leads */
+            leads: components["schemas"]["Lead"][];
+            /** Total */
+            total: number;
         };
         /** Me */
         Me: {
@@ -236,6 +293,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    read_leads_leads_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Leads"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
                 };
             };
         };
