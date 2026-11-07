@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/react'
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import {
   type ModelKeyRead,
   type ModelKeyRemoval,
@@ -25,7 +25,14 @@ const READ_FAILED = 'Could not load your model key'
 const SAVE_FAILED = 'Could not save the key. Try again.'
 const REMOVE_FAILED = 'Could not remove the key. Try again.'
 
+const CHECKING = 'Checking the key with Anthropic…'
+const REMOVING = 'Removing the key…'
+const REMOVED = 'Key removed'
+
 type Saved = SavedModelKeyBody | 'none' | 'loading' | 'unreadable'
+
+// Where focus goes once the next render has put it on the page.
+type FocusTarget = 'input' | 'replace'
 
 const CHECKED_DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' })
 
@@ -33,58 +40,78 @@ const CHECKED_DATE = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' })
  * The signed-in person's own Anthropic key: whether one is saved, by its last
  * four characters only, with a form to save, replace or remove it. The key is
  * read from the input only when it is sent and is never kept in the browser:
- * not in state, not in storage, and the input is emptied once it is saved or
- * the saved key is removed.
+ * not in state and not in storage. After a save the form leaves the page,
+ * taking the key with it; removing the saved key empties a form that stays.
+ *
+ * The status and alert lines stay on the page, empty when there is nothing to
+ * say, so a screen reader hears each change of their words. While a request
+ * runs the buttons are held with aria-disabled rather than disabled, which
+ * would drop keyboard focus to the page, and their handlers do nothing.
  */
 export function ModelKeyPanel() {
   const { getToken } = useAuth()
   const [saved, setSaved] = useState<Saved>('loading')
   const [replacing, setReplacing] = useState(false)
   const [busy, setBusy] = useState<'checking' | 'removing' | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
+  const [status, setStatus] = useState('')
+  const [problem, setProblem] = useState('')
   const keyInput = useRef<HTMLInputElement>(null)
+  const replaceButton = useRef<HTMLButtonElement>(null)
+  const focusNext = useRef<FocusTarget | null>(null)
   // Aborted when the panel goes, so no answer lands on a panel that has gone.
   const lifetime = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    const target = focusNext.current
+    if (target === null) {
+      return
+    }
+    focusNext.current = null
+    const element = target === 'input' ? keyInput.current : replaceButton.current
+    element?.focus()
+  })
+
+  const showRead = useCallback((read: ModelKeyRead | 'aborted'): void => {
+    if (read === 'aborted') {
+      return
+    }
+    if (read === 'unavailable') {
+      setSaved('unreadable')
+      setProblem(READ_FAILED)
+    } else {
+      setSaved(read === 'none' ? 'none' : read.saved)
+    }
+  }, [])
+
+  useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
-    void withToken(
-      getToken,
-      READ_TIMEOUT_MS,
-      controller.signal,
-      readModelKey,
-      NO_ANSWER,
-    ).then((read: ModelKeyRead | 'aborted') => {
-      if (read === 'aborted') {
-        return
-      }
-      if (read === 'unavailable') {
-        setSaved('unreadable')
-      } else {
-        setSaved(read === 'none' ? 'none' : read.saved)
-      }
-    })
+    void readSaved(getToken, controller.signal).then(showRead)
     return () => {
       controller.abort()
     }
-  }, [getToken])
+  }, [getToken, showRead])
 
-  const clearKeyInput = (): void => {
-    if (keyInput.current !== null) {
-      keyInput.current.value = ''
+  const readAgain = (): void => {
+    const signal = lifetime.current?.signal
+    if (signal === undefined) {
+      return
     }
+    setSaved('loading')
+    setProblem('')
+    void readSaved(getToken, signal).then(showRead)
   }
 
   const save = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     const signal = lifetime.current?.signal
     const key = keyInput.current?.value ?? ''
-    if (signal === undefined) {
+    if (signal === undefined || busy !== null) {
       return
     }
     setBusy('checking')
-    setProblem(null)
+    setStatus(CHECKING)
+    setProblem('')
     const outcome: ModelKeySave | 'aborted' = await withToken(
       getToken,
       SAVE_TIMEOUT_MS,
@@ -96,24 +123,25 @@ export function ModelKeyPanel() {
       return
     }
     setBusy(null)
-    if (outcome === 'unavailable') {
-      setProblem(SAVE_FAILED)
-    } else if ('refused' in outcome) {
-      setProblem(outcome.refused)
-    } else {
-      clearKeyInput()
-      setSaved(outcome.saved)
-      setReplacing(false)
+    setStatus('')
+    if (outcome === 'unavailable' || 'refused' in outcome) {
+      setProblem(outcome === 'unavailable' ? SAVE_FAILED : outcome.refused)
+      focusNext.current = 'input'
+      return
     }
+    // The form leaves the page now, and the key in its input goes with it.
+    setSaved(outcome.saved)
+    setReplacing(false)
   }
 
   const remove = async (): Promise<void> => {
     const signal = lifetime.current?.signal
-    if (signal === undefined) {
+    if (signal === undefined || busy !== null) {
       return
     }
     setBusy('removing')
-    setProblem(null)
+    setStatus(REMOVING)
+    setProblem('')
     const outcome: ModelKeyRemoval | 'aborted' = await withToken(
       getToken,
       REMOVE_TIMEOUT_MS,
@@ -126,40 +154,63 @@ export function ModelKeyPanel() {
     }
     setBusy(null)
     if (outcome === 'unavailable') {
+      setStatus('')
       setProblem(REMOVE_FAILED)
       return
     }
-    clearKeyInput()
+    // A replace form open with a key typed in stays on the page: empty it.
+    if (keyInput.current !== null) {
+      keyInput.current.value = ''
+    }
+    setStatus(REMOVED)
     setSaved('none')
     setReplacing(false)
+    focusNext.current = 'input'
+  }
+
+  const openReplace = (): void => {
+    if (busy !== null) {
+      return
+    }
+    setReplacing(true)
+    setStatus('')
+    focusNext.current = 'input'
+  }
+
+  const cancelReplace = (): void => {
+    if (busy !== null) {
+      return
+    }
+    setReplacing(false)
+    setProblem('')
+    focusNext.current = 'replace'
   }
 
   // A key the service can no longer open is as good as none: ask for it again.
-  const formOpen =
-    saved === 'none' || (typeof saved === 'object' && (replacing || !saved.usable))
+  const usable = typeof saved === 'object' && saved.usable
+  const formOpen = saved === 'none' || (typeof saved === 'object' && (replacing || !usable))
+  const held = busy !== null
 
   return (
     <section aria-label="Model key">
       {saved === 'loading' && <p>Loading your model key…</p>}
-      {saved === 'unreadable' && <p role="alert">{READ_FAILED}</p>}
       {saved === 'none' && <p>No key saved</p>}
       {typeof saved === 'object' && (
         <>
           <p>{savedLine(saved)}</p>
           {!formOpen && (
             <button
+              ref={replaceButton}
               type="button"
-              disabled={busy !== null}
-              onClick={() => {
-                setReplacing(true)
-              }}
+              aria-disabled={held}
+              onClick={openReplace}
             >
               Replace
             </button>
           )}
           <button
             type="button"
-            disabled={busy !== null}
+            aria-disabled={held}
             onClick={() => {
               void remove()
             }}
@@ -176,17 +227,43 @@ export function ModelKeyPanel() {
         >
           <label>
             Anthropic API key{' '}
-            <input ref={keyInput} type="password" name="key" autoComplete="off" />
+            <input
+              ref={keyInput}
+              type="password"
+              name="key"
+              autoComplete="off"
+              readOnly={busy === 'checking'}
+            />
           </label>{' '}
-          <button type="submit" disabled={busy !== null}>
+          <button type="submit" aria-disabled={held}>
             Save
           </button>
+          {usable && (
+            <>
+              {' '}
+              <button type="button" aria-disabled={held} onClick={cancelReplace}>
+                Cancel
+              </button>
+            </>
+          )}
         </form>
       )}
-      {busy === 'checking' && <p role="status">Checking the key with Anthropic…</p>}
-      {problem !== null && <p role="alert">{problem}</p>}
+      <p role="status">{status}</p>
+      <p role="alert">{problem}</p>
+      {saved === 'unreadable' && (
+        <button type="button" onClick={readAgain}>
+          Try again
+        </button>
+      )}
     </section>
   )
+}
+
+function readSaved(
+  getToken: () => Promise<string | null>,
+  signal: AbortSignal,
+): Promise<ModelKeyRead | 'aborted'> {
+  return withToken(getToken, READ_TIMEOUT_MS, signal, readModelKey, NO_ANSWER)
 }
 
 function savedLine(saved: SavedModelKeyBody): string {

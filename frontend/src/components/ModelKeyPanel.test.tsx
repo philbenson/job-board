@@ -36,6 +36,8 @@ const KEY = 'sk-ant-api03-placeholder-wxyz'
 const LOADING = 'Loading your model key…'
 const NONE_SAVED = 'No key saved'
 const CHECKING = 'Checking the key with Anthropic…'
+const REMOVING = 'Removing the key…'
+const REMOVED = 'Key removed'
 const READ_FAILED = 'Could not load your model key'
 const SAVE_FAILED = 'Could not save the key. Try again.'
 const REMOVE_FAILED = 'Could not remove the key. Try again.'
@@ -95,6 +97,30 @@ function keyInput(): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>('Anthropic API key')
 }
 
+function button(name: string): HTMLElement {
+  return screen.getByRole('button', { name })
+}
+
+// Held, never disabled: a disabled button drops keyboard focus to the page.
+function expectHeld(name: string): void {
+  expect(button(name)).toHaveAttribute('aria-disabled', 'true')
+  expect(button(name)).not.toBeDisabled()
+}
+
+function expectFree(name: string): void {
+  expect(button(name)).toHaveAttribute('aria-disabled', 'false')
+}
+
+// A reply the test gives when it chooses, to look at the panel meanwhile.
+function later(): { reply: Reply; give: (response: Response) => void } {
+  let give: (response: Response) => void = () => {}
+  const reply = () =>
+    new Promise<Response>((resolve) => {
+      give = resolve
+    })
+  return { reply, give: (response) => give(response) }
+}
+
 function callsWith(fetchMock: ReturnType<typeof service>, method: string) {
   return fetchMock.mock.calls.filter(
     ([, init]) => (init?.method ?? 'GET') === method,
@@ -124,7 +150,9 @@ describe('ModelKeyPanel', () => {
     expect(await screen.findByText(NONE_SAVED)).toBeInTheDocument()
     expect(keyInput()).toHaveAttribute('type', 'password')
     expect(keyInput()).toHaveAttribute('autocomplete', 'off')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expectFree('Save')
+    expect(screen.getByRole('status')).toHaveTextContent(/^$/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/^$/)
     const [, init] = fetchMock.mock.calls[0]
     expect(new Headers(init?.headers).get('Authorization')).toBe(
       `Bearer ${SESSION_TOKEN}`,
@@ -169,6 +197,30 @@ describe('ModelKeyPanel', () => {
 
     expect(await screen.findByText(READ_FAILED)).toBeInTheDocument()
     expect(screen.queryByText(NONE_SAVED)).not.toBeInTheDocument()
+    expect(button('Try again')).toBeInTheDocument()
+  })
+
+  it('reads the key again on Try again', async () => {
+    let reads = 0
+    const fetchMock = service({
+      get: () => {
+        reads += 1
+        return reads === 1
+          ? answerText(500, '{"detail": "down"}')
+          : answer(200, SAVED)
+      },
+    })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+    const alert = screen.getByRole('alert')
+    expect(await screen.findByText(READ_FAILED)).toBe(alert)
+
+    await user.click(button('Try again'))
+
+    expect(await screen.findByText(SAVED_LINE)).toBeInTheDocument()
+    expect(alert).toHaveTextContent(/^$/)
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+    expect(callsWith(fetchMock, 'GET')).toHaveLength(2)
   })
 
   it('says the key could not be loaded when Clerk has no session token', async () => {
@@ -181,23 +233,20 @@ describe('ModelKeyPanel', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('checks a key, then shows it saved, clears the input and keeps nothing in the browser', async () => {
-    let reply: (response: Response) => void = () => {}
-    const fetchMock = service({
-      get: () => answer(404, NONE),
-      put: () =>
-        new Promise<Response>((resolve) => {
-          reply = resolve
-        }),
-    })
+  it('checks a key, then shows it saved, takes the input away and keeps nothing in the browser', async () => {
+    const put = later()
+    const fetchMock = service({ get: () => answer(404, NONE), put: put.reply })
     const user = userEvent.setup()
     render(<ModelKeyPanel />)
-    await user.type(await screen.findByLabelText('Anthropic API key'), KEY)
+    const status = screen.getByRole('status')
+    const typed = await screen.findByLabelText('Anthropic API key')
+    await user.type(typed, KEY)
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(button('Save'))
 
-    expect(screen.getByText(CHECKING)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(status).toHaveTextContent(CHECKING)
+    expectHeld('Save')
+    expect(typed).toHaveAttribute('readonly')
     const [[, init]] = callsWith(fetchMock, 'PUT')
     expect(JSON.parse(String(init?.body))).toEqual({
       provider: 'anthropic',
@@ -208,15 +257,32 @@ describe('ModelKeyPanel', () => {
     )
 
     await act(async () => {
-      reply(new Response(JSON.stringify(NEWLY_SAVED), { status: 200 }))
+      put.give(new Response(JSON.stringify(NEWLY_SAVED), { status: 200 }))
     })
 
     expect(await screen.findByText(NEWLY_SAVED_LINE)).toBeInTheDocument()
-    expect(screen.queryByText(CHECKING)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Replace' }))
-    expect(keyInput()).toHaveValue('')
+    expect(status).toHaveTextContent(/^$/)
+    expect(typed).not.toBeInTheDocument()
     expect(localStorage.length).toBe(0)
     expect(sessionStorage.length).toBe(0)
+  })
+
+  it('sends nothing for a second Save, or Remove, while a check runs', async () => {
+    const fetchMock = service({ get: () => answer(200, SAVED), put: later().reply })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+    await user.click(await screen.findByRole('button', { name: 'Replace' }))
+    await user.type(keyInput(), KEY)
+    await user.click(button('Save'))
+
+    await user.click(button('Save'))
+    await user.type(keyInput(), '{Enter}')
+    await user.click(button('Remove'))
+
+    expectHeld('Save')
+    expectHeld('Remove')
+    expect(callsWith(fetchMock, 'PUT')).toHaveLength(1)
+    expect(callsWith(fetchMock, 'DELETE')).toHaveLength(0)
   })
 
   it.each([
@@ -247,13 +313,16 @@ describe('ModelKeyPanel', () => {
       })
       const user = userEvent.setup()
       render(<ModelKeyPanel />)
+      const alert = screen.getByRole('alert')
       await user.type(await screen.findByLabelText('Anthropic API key'), KEY)
 
-      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await user.click(button('Save'))
 
-      expect(await screen.findByText(detail)).toBeInTheDocument()
+      expect(await screen.findByText(detail)).toBe(alert)
       expect(screen.getByText(NONE_SAVED)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+      expectFree('Save')
+      expect(keyInput()).not.toHaveAttribute('readonly')
+      expect(keyInput()).toHaveFocus()
     },
   )
 
@@ -269,7 +338,8 @@ describe('ModelKeyPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText(SAVE_FAILED)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expectFree('Save')
+    expect(keyInput()).toHaveFocus()
   })
 
   it('gives up on a save after thirty seconds without an answer', async () => {
@@ -285,23 +355,69 @@ describe('ModelKeyPanel', () => {
     await act(() => vi.advanceTimersByTimeAsync(1))
 
     expect(screen.getByText(SAVE_FAILED)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expectFree('Save')
   })
 
-  it('removes the key without asking, then offers the form again', async () => {
-    const fetchMock = service({
-      get: () => answer(200, SAVED),
-      delete: noContent,
-    })
+  it('removes the key without asking, says so, then offers the form with focus in it', async () => {
+    const removal = later()
+    const fetchMock = service({ get: () => answer(200, SAVED), delete: removal.reply })
     const user = userEvent.setup()
     render(<ModelKeyPanel />)
+    const status = screen.getByRole('status')
 
     await user.click(await screen.findByRole('button', { name: 'Remove' }))
 
+    expect(status).toHaveTextContent(REMOVING)
+    expectHeld('Remove')
+    expectHeld('Replace')
+    await user.click(button('Remove'))
+    await user.click(button('Replace'))
+    expect(screen.queryByLabelText('Anthropic API key')).not.toBeInTheDocument()
+
+    await act(async () => {
+      removal.give(new Response(null, { status: 204 }))
+    })
+
     expect(await screen.findByText(NONE_SAVED)).toBeInTheDocument()
+    expect(status).toHaveTextContent(REMOVED)
     expect(screen.queryByText(SAVED_LINE)).not.toBeInTheDocument()
     expect(keyInput()).toHaveValue('')
+    expect(keyInput()).toHaveFocus()
     expect(callsWith(fetchMock, 'DELETE')).toHaveLength(1)
+  })
+
+  it('focuses the input when the replace form opens', async () => {
+    service({ get: () => answer(200, SAVED) })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+
+    await user.click(await screen.findByRole('button', { name: 'Replace' }))
+
+    expect(keyInput()).toHaveFocus()
+  })
+
+  it('closes the replace form on Cancel, sending nothing and putting focus back on Replace', async () => {
+    const fetchMock = service({ get: () => answer(200, SAVED) })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel />)
+    await user.click(await screen.findByRole('button', { name: 'Replace' }))
+    await user.type(keyInput(), KEY)
+
+    await user.click(button('Cancel'))
+
+    expect(screen.queryByLabelText('Anthropic API key')).not.toBeInTheDocument()
+    expect(screen.getByText(SAVED_LINE)).toBeInTheDocument()
+    expect(button('Replace')).toHaveFocus()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers no Cancel when there is no usable key to go back to', async () => {
+    service({ get: () => answer(404, NONE) })
+    render(<ModelKeyPanel />)
+
+    await screen.findByText(NONE_SAVED)
+
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
   })
 
   it('clears a key being typed when the saved one is removed', async () => {
