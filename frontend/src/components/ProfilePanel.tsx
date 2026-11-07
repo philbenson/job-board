@@ -11,6 +11,10 @@ import {
 // The backend holds the same cap and refuses past it; checking here too lets
 // the person hear it at once, as they add, instead of when they save.
 const MAX_TARGET_TITLES = 20
+// The backend's longest title, in characters of the composed form; refused
+// here as the title is added, rather than by the save, and not by a length
+// limit on the input, which would cut a paste short without a word.
+const MAX_TITLE_LENGTH = 100
 
 // One limit for each exchange, Clerk's session token included, so a token
 // that never comes is no reply too. The request's own limit is as long and
@@ -129,13 +133,25 @@ export function ProfilePanel() {
     if (held) {
       return
     }
-    const title = draft.trim()
+    // Composed, as the backend stores it, so a letter and its accent count
+    // as one character.
+    const title = draft.trim().normalize('NFC')
     if (title === '') {
       setDraft('')
       return
     }
-    const key = title.toLowerCase()
-    const existing = titles.find((listed) => listed.toLowerCase() === key)
+    // Spread into code points, which is what the backend counts.
+    if ([...title].length > MAX_TITLE_LENGTH) {
+      setAddNotice(
+        `A target title can be at most ${MAX_TITLE_LENGTH} characters: ${title}`,
+      )
+      return
+    }
+    // The backend is the authority on repeats: it folds case more fully than
+    // this check ("Straße" and "STRASSE" are one title there, two here), may
+    // drop a repeat this check let through, and the panel then shows its list.
+    const key = repeatKey(title)
+    const existing = titles.find((listed) => repeatKey(listed) === key)
     if (existing !== undefined) {
       setAddNotice(`${existing} is already in your list`)
       return
@@ -167,7 +183,13 @@ export function ProfilePanel() {
       if (saved === 'unavailable') {
         setSave({ kind: 'said', message: NOT_SAVED })
       } else if (saved.kind === 'refused') {
-        setSave({ kind: 'said', message: saved.message })
+        setSave({
+          kind: 'said',
+          message:
+            saved.title === null
+              ? saved.message
+              : `${saved.message}: ${saved.title}`,
+        })
       } else {
         setTitles(saved.titles)
         setSave({ kind: 'said', message: 'Saved' })
@@ -246,6 +268,10 @@ export function ProfilePanel() {
       )}
     </section>
   )
+}
+
+function repeatKey(title: string): string {
+  return title.normalize('NFC').toLowerCase()
 }
 
 /**

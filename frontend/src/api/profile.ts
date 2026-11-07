@@ -21,8 +21,12 @@ export type Loaded = { kind: 'loaded'; titles: string[] }
 /** The titles as the backend stored them, which may differ from those sent. */
 export type Saved = { kind: 'saved'; titles: string[] }
 
-/** The backend refused the list, saying which rule it broke. */
-export type Refused = { kind: 'refused'; message: string }
+/**
+ * The backend refused the list, saying which rule it broke, and the title
+ * that broke it when the rule is about one title; null when it is about the
+ * whole list.
+ */
+export type Refused = { kind: 'refused'; message: string; title: string | null }
 
 export type ProfileRead = Loaded | 'unavailable' | 'aborted'
 export type TitlesSave = Saved | Refused | 'unavailable' | 'aborted'
@@ -57,7 +61,8 @@ export function fetchProfile(
 /**
  * Replaces the signed-in person's target titles with `titles`, sent whole.
  * Resolves to the titles as stored for a 200; to the backend's rule for a 422,
- * the first one it names; and like fetchProfile otherwise. Never rejects.
+ * the first one it names, with the sent title it points at; and like
+ * fetchProfile otherwise. Never rejects.
  */
 export function saveTargetTitles(
   token: string,
@@ -77,7 +82,7 @@ export function saveTargetTitles(
         signal: requestSignal,
       })
       if (response.status === 422) {
-        return refusedFrom(await response.json())
+        return refusedFrom(await response.json(), titles)
       }
       const loaded = await loadedFrom(response)
       return loaded === 'unavailable'
@@ -105,7 +110,7 @@ async function loadedFrom(response: Response): Promise<Loaded | 'unavailable'> {
   return isTextList(titles) ? { kind: 'loaded', titles } : 'unavailable'
 }
 
-function refusedFrom(body: unknown): Refused | 'unavailable' {
+function refusedFrom(body: unknown, sent: string[]): Refused | 'unavailable' {
   if (typeof body !== 'object' || body === null) {
     return 'unavailable'
   }
@@ -115,10 +120,23 @@ function refusedFrom(body: unknown): Refused | 'unavailable' {
     return 'unavailable'
   }
   type Entry = NonNullable<SaveRefusalBody['detail']>[number]
-  const { msg } = first as Partial<Record<keyof Entry, unknown>>
+  const { msg, loc } = first as Partial<Record<keyof Entry, unknown>>
   return typeof msg === 'string' && msg !== ''
-    ? { kind: 'refused', message: msg }
+    ? { kind: 'refused', message: msg, title: titleAt(loc, sent) }
     : 'unavailable'
+}
+
+// A rule about one title is placed at ["body", "titles", index] in the list
+// that was sent; any other place names no title.
+function titleAt(loc: unknown, sent: string[]): string | null {
+  if (!Array.isArray(loc) || loc.length !== 3) {
+    return null
+  }
+  const [where, field, index] = loc as unknown[]
+  if (where !== 'body' || field !== 'titles' || typeof index !== 'number') {
+    return null
+  }
+  return sent[index] ?? null
 }
 
 function isTextList(value: unknown): value is string[] {

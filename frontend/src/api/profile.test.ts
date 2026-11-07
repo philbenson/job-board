@@ -144,12 +144,31 @@ describe('saveTargetTitles', () => {
     } satisfies TargetTitlesBody)
   })
 
-  it("reports the backend's rule for a 422", async () => {
+  it("reports the backend's rule for a 422 and the sent title it names", async () => {
     stubFetch(async () => answer(422, TOO_LONG))
 
     await expect(saveTargetTitles(TOKEN, ['x'.repeat(101)])).resolves.toEqual({
       kind: 'refused',
       message: 'A target title can be at most 100 characters',
+      title: 'x'.repeat(101),
+    })
+  })
+
+  it.each([
+    ['the whole list', ['body', 'titles']],
+    ['an index past the list sent', ['body', 'titles', 1]],
+    ['an index that is not a number', ['body', 'titles', '0']],
+    ['another field', ['body', 'salary', 0]],
+  ])('names no title for a 422 about %s', async (_case, loc) => {
+    const refusal = {
+      detail: [{ loc, msg: 'You can list at most 20 target titles', type: 'target_titles_too_many' }],
+    } satisfies SaveRefusalBody
+    stubFetch(async () => answer(422, refusal))
+
+    await expect(saveTargetTitles(TOKEN, ['Designer'])).resolves.toEqual({
+      kind: 'refused',
+      message: 'You can list at most 20 target titles',
+      title: null,
     })
   })
 

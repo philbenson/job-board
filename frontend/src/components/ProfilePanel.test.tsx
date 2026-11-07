@@ -227,6 +227,46 @@ describe('ProfilePanel', () => {
     expect(screen.getByText(AT_MOST_TWENTY)).toBeInTheDocument()
   })
 
+  it('takes a title of 100 characters as the server counts them and refuses 101, naming it', async () => {
+    service([])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const input = screen.getByRole('textbox', { name: 'Add a target title' })
+    // A hundred accented letters, each typed as a letter and a combining
+    // accent, are a hundred characters once composed, as the server counts.
+    const hundred = 'e\u0301'.repeat(100)
+    const tooLong = 'y'.repeat(101)
+
+    // No length limit on the input itself: it would cut a paste short unsaid.
+    expect(input).not.toHaveAttribute('maxlength')
+    fireEvent.change(input, { target: { value: hundred } })
+    await user.type(input, '{Enter}')
+    expect(shownTitles()).toEqual(['\u00e9'.repeat(100)])
+
+    fireEvent.change(input, { target: { value: tooLong } })
+    await user.type(input, '{Enter}')
+    expect(shownTitles()).toEqual(['\u00e9'.repeat(100)])
+    expect(
+      screen.getByText(`A target title can be at most 100 characters: ${tooLong}`),
+    ).toBeInTheDocument()
+  })
+
+  it('refuses a title already listed in another composed form, saying so', async () => {
+    service(['Caf\u00e9 manager'])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Add a target title' }), {
+      target: { value: 'CAFE\u0301 MANAGER' },
+    })
+    await user.type(screen.getByRole('textbox', { name: 'Add a target title' }), '{Enter}')
+
+    expect(screen.getByText('Caf\u00e9 manager is already in your list')).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Caf\u00e9 manager'])
+  })
+
   it('removes a title', async () => {
     service(['Designer', 'Writer'])
     const user = userEvent.setup()
@@ -352,8 +392,9 @@ describe('ProfilePanel', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
+    // The rule names the title by its place in the list that was sent.
     expect(
-      await screen.findByText('A target title cannot contain control characters'),
+      await screen.findByText('A target title cannot contain control characters: Writer'),
     ).toBeInTheDocument()
     expect(shownTitles()).toEqual(['Designer', 'Writer'])
     expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
