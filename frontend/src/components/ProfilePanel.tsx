@@ -34,6 +34,13 @@ type SaveShown =
  * person add and remove titles, and sends the whole list on Save. The list
  * shown after a save is the backend's, which trims and drops repeats; a save
  * that fails keeps the person's unsaved list on screen.
+ *
+ * Invariant: what the panel shows after "Saved" is exactly what the database
+ * holds, and at most one save is in flight. So the whole editor is held while
+ * a save is out: nothing can change the list the answer will replace, and
+ * Save cannot send a second list. The controls are held with aria-disabled
+ * and guarded handlers rather than disabled, which would drop keyboard focus
+ * to the page.
  */
 export function ProfilePanel() {
   const { getToken } = useAuth()
@@ -43,6 +50,7 @@ export function ProfilePanel() {
   const [addNotice, setAddNotice] = useState<string | null>(null)
   const [save, setSave] = useState<SaveShown>({ kind: 'idle' })
   const saveController = useRef<AbortController | null>(null)
+  const held = save.kind === 'saving'
   const headingId = useId()
   const inputId = useId()
 
@@ -77,6 +85,9 @@ export function ProfilePanel() {
   )
 
   function edit(next: string[]): void {
+    if (held) {
+      return
+    }
     setTitles(next)
     setAddNotice(null)
     setSave({ kind: 'idle' })
@@ -84,6 +95,9 @@ export function ProfilePanel() {
 
   function add(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
+    if (held) {
+      return
+    }
     const title = draft.trim()
     if (title === '') {
       setDraft('')
@@ -104,6 +118,9 @@ export function ProfilePanel() {
   }
 
   function sendAll(): void {
+    if (held) {
+      return
+    }
     const controller = new AbortController()
     saveController.current = controller
     setSave({ kind: 'saving' })
@@ -144,6 +161,7 @@ export function ProfilePanel() {
                   <button
                     type="button"
                     aria-label={`Remove ${title}`}
+                    aria-disabled={held}
                     onClick={() => {
                       edit(titles.filter((listed) => listed !== title))
                     }}
@@ -160,20 +178,23 @@ export function ProfilePanel() {
               id={inputId}
               type="text"
               value={draft}
+              readOnly={held}
+              aria-disabled={held}
               onChange={(event) => {
-                setDraft(event.target.value)
+                if (!held) {
+                  setDraft(event.target.value)
+                }
               }}
             />{' '}
-            <button type="submit">Add</button>
+            <button type="submit" aria-disabled={held}>
+              Add
+            </button>
           </form>
           {addNotice !== null && <p role="status">{addNotice}</p>}
-          <button
-            type="button"
-            disabled={save.kind === 'saving'}
-            onClick={sendAll}
-          >
+          <button type="button" aria-disabled={held} onClick={sendAll}>
             Save
           </button>
+          {held && <p role="status">Saving…</p>}
           {save.kind === 'said' && <p role="status">{save.message}</p>}
         </>
       )}

@@ -25,6 +25,7 @@ const NOT_LOADED = 'Could not load your target titles'
 const NONE_YET = 'No target titles yet'
 const AT_MOST_TWENTY = 'You can list at most 20 target titles'
 const SAVED = 'Saved'
+const SAVING = 'Saving…'
 const NOT_SAVED = 'Could not save your target titles; your changes are still here'
 
 // A body the contract allows, typed so it changes when the backend's does.
@@ -195,7 +196,7 @@ describe('ProfilePanel', () => {
     expect(shownTitles()).toEqual(['Writer'])
   })
 
-  it('saves the whole list, disabled while saving, then shows Saved and the list as stored', async () => {
+  it('saves the whole list, held while saving, then shows Saved and the list as stored', async () => {
     let finish: (response: Response) => void = () => {}
     const fetchMock = service(
       ['Designer'],
@@ -211,7 +212,8 @@ describe('ProfilePanel', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText(SAVING)).toBeInTheDocument()
     expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
     const stored = { target_titles: ['Designer', 'Writer (stored)'] } satisfies ProfileBody
     await act(async () => {
@@ -220,7 +222,70 @@ describe('ProfilePanel', () => {
 
     expect(await screen.findByText(SAVED)).toBeInTheDocument()
     expect(shownTitles()).toEqual(['Designer', 'Writer (stored)'])
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
+    expect(screen.queryByText(SAVING)).not.toBeInTheDocument()
+  })
+
+  it('holds every edit and a second Save while a save is in flight', async () => {
+    let finish: (response: Response) => void = () => {}
+    const fetchMock = service(
+      ['Designer'],
+      () => new Promise<Response>((resolve) => (finish = resolve)),
+    )
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const input = screen.getByRole('textbox', { name: 'Add a target title' })
+    const save = screen.getByRole('button', { name: 'Save' })
+
+    await user.click(save)
+    for (const control of [
+      input,
+      screen.getByRole('button', { name: 'Add' }),
+      screen.getByRole('button', { name: 'Remove Designer' }),
+      save,
+    ]) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+    }
+    expect(input).toHaveAttribute('readonly')
+    await user.type(input, 'Writer{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Remove Designer' }))
+    await user.click(save)
+
+    expect(shownTitles()).toEqual(['Designer'])
+    expect(save).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByText(SAVING)).toBeInTheDocument()
+    const saves = fetchMock.mock.calls.filter(([url]) => url === '/api/profile/target-titles')
+    expect(saves).toHaveLength(1)
+
+    await act(async () => {
+      finish(await answer(200, { target_titles: ['Designer'] }))
+    })
+    expect(await screen.findByText(SAVED)).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Designer'])
+    expect(input).not.toHaveAttribute('readonly')
+  })
+
+  it('keeps keyboard focus on Save through a save', async () => {
+    let finish: (response: Response) => void = () => {}
+    service(['Designer'], () => new Promise<Response>((resolve) => (finish = resolve)))
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const save = screen.getByRole('button', { name: 'Save' })
+
+    save.focus()
+    await user.keyboard('{Enter}')
+
+    // A disabled button gives up focus in a browser, so the hold must not
+    // disable it.
+    expect(save).not.toBeDisabled()
+    expect(save).toHaveFocus()
+    await act(async () => {
+      finish(await answer(200, { target_titles: ['Designer'] }))
+    })
+    expect(await screen.findByText(SAVED)).toBeInTheDocument()
+    expect(save).toHaveFocus()
   })
 
   it("shows the backend's rule when it refuses the list, keeping the list", async () => {
@@ -261,12 +326,12 @@ describe('ProfilePanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await act(() => vi.advanceTimersByTimeAsync(4_999))
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
     await act(() => vi.advanceTimersByTimeAsync(1))
 
     expect(screen.getByText(NOT_SAVED)).toBeInTheDocument()
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
     expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
   })
 
