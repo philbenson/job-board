@@ -60,6 +60,7 @@ export function CompaniesPart({ stored }: { stored: Companies | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a company to watch"
+        itemNoun="company to watch"
         listLabel="Companies you watch"
         oneNoun="A company"
         pluralNoun="companies to watch"
@@ -76,6 +77,7 @@ export function CompaniesPart({ stored }: { stored: Companies | null }) {
         onNotice={part.say}
         held={part.held}
         firstLabel="Company"
+        itemNoun="job"
         second={{ kind: 'text', label: 'Job title' }}
         itemFrom={(company, typedTitle) => {
           const title = composed(typedTitle)

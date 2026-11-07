@@ -32,6 +32,7 @@ export function OwnRulesPart({ stored }: { stored: StoredSection<'/profile/own-r
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a rule"
+        itemNoun="rule"
         listLabel="Your rules"
         oneNoun="A rule"
         pluralNoun="rules"

@@ -17,6 +17,8 @@ type TextListEditorProps = {
   listLabel: string
   /** One item, as a sentence starts: "A nearby title". */
   oneNoun: string
+  /** One item as its Add names it, after the word: "nearby title". */
+  itemNoun: string
   /** Many items, as a sentence goes on: "nearby titles". */
   pluralNoun: string
   cap: number
@@ -44,6 +46,7 @@ export function TextListEditor({
   inputLabel,
   listLabel,
   oneNoun,
+  itemNoun,
   pluralNoun,
   cap,
   maxLength,
@@ -155,8 +158,10 @@ export function TextListEditor({
             }
           }}
         />{' '}
+        {/* Named for its item, after the word it shows, as each part's Save. */}
         <button type="submit" aria-disabled={held}>
-          Add
+          Add{' '}
+          <span className="visually-hidden">{itemNoun}</span>
         </button>
       </form>
     </>

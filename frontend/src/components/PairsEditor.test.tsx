@@ -34,6 +34,7 @@ function Offices({
         onNotice={setNotice}
         held={held}
         firstLabel="City"
+        itemNoun="office"
         second={
           typedDays
             ? { kind: 'number', label: 'Days a week in the office' }
@@ -83,7 +84,7 @@ describe('PairsEditor', () => {
       screen.getByRole('combobox', { name: 'Days a week in the office' }),
       '5 (on site)',
     )
-    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.click(screen.getByRole('button', { name: 'Add office' }))
 
     expect(shown()).toEqual(['Boston, 5 days a week'])
     expect(screen.getByRole('textbox', { name: 'City' })).toHaveValue('')
@@ -156,7 +157,7 @@ describe('PairsEditor', () => {
     for (const control of [
       screen.getByRole('textbox', { name: 'City' }),
       screen.getByRole('combobox', { name: 'Days a week in the office' }),
-      screen.getByRole('button', { name: 'Add' }),
+      screen.getByRole('button', { name: 'Add office' }),
       screen.getByRole('button', { name: 'Remove Boston' }),
     ]) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
@@ -177,7 +178,7 @@ describe('PairsEditor', () => {
     await user.selectOptions(days, '5 (on site)')
 
     rerender(<Offices initial={boston} held />)
-    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.click(screen.getByRole('button', { name: 'Add office' }))
     await user.type(city, '{Enter}')
     await user.selectOptions(days, '1')
 

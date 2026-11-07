@@ -32,6 +32,8 @@ type PairsEditorProps<Item> = {
   held: boolean
   firstLabel: string
   second: SecondInput
+  /** One item as its Add names it, after the word: "office". */
+  itemNoun: string
   /**
    * The item made from the first part, trimmed, composed and never blank,
    * and the second as typed or chosen.
@@ -66,6 +68,7 @@ export function PairsEditor<Item>({
   held,
   firstLabel,
   second,
+  itemNoun,
   itemFrom,
   keyOf,
   nameOf,
@@ -217,8 +220,10 @@ export function PairsEditor<Item>({
             }}
           />
         )}{' '}
+        {/* Named for its item, after the word it shows, as each part's Save. */}
         <button type="submit" aria-disabled={held}>
-          Add
+          Add{' '}
+          <span className="visually-hidden">{itemNoun}</span>
         </button>
       </form>
     </fieldset>

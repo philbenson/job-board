@@ -53,6 +53,7 @@ export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add an industry you will not work in"
+        itemNoun="industry you will not work in"
         listLabel="Industries you will not work in"
         oneNoun="An industry"
         pluralNoun="industries"

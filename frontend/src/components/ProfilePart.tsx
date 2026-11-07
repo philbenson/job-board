@@ -24,8 +24,12 @@ export function ProfilePart({ heading, part, onSave, children }: ProfilePartProp
       {/* Both status lines stay on the page and change their words, which
           is what a screen reader announces. */}
       <p role="status">{part.notice}</p>
+      {/* Named for its part, after the word it shows, so a list of the
+          page's buttons tells the ten apart and a spoken "Save" still
+          matches. */}
       <button type="button" aria-disabled={part.held} onClick={onSave}>
-        Save
+        Save{' '}
+        <span className="visually-hidden">{heading.toLowerCase()}</span>
       </button>
       <p role="status">{part.saveLine}</p>
     </section>

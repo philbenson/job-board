@@ -39,6 +39,7 @@ export function GapsPart({ stored }: { stored: Gaps | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a gap you would apply with"
+        itemNoun="gap you would apply with"
         listLabel="Gaps you would apply with"
         oneNoun="A gap"
         pluralNoun="gaps"
@@ -53,6 +54,7 @@ export function GapsPart({ stored }: { stored: Gaps | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a trade-off you would make"
+        itemNoun="trade-off you would make"
         listLabel="Trade-offs you would make"
         oneNoun="A trade-off"
         pluralNoun="trade-offs"

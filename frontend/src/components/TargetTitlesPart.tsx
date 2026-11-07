@@ -29,6 +29,7 @@ export function TargetTitlesPart({ stored }: { stored: string[] }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a target title"
+        itemNoun="target title"
         listLabel="Your target titles"
         oneNoun="A target title"
         pluralNoun="target titles"

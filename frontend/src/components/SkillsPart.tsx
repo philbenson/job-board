@@ -43,6 +43,7 @@ export function SkillsPart({ stored }: { stored: StoredSection<'/profile/skills'
         onNotice={part.say}
         held={part.held}
         firstLabel="Skill"
+        itemNoun="skill"
         second={{ kind: 'number', label: 'Years' }}
         itemFrom={(name, typedYears) => {
           if (lengthOf(name) > MAX_SKILL_LENGTH) {

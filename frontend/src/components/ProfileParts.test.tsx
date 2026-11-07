@@ -43,7 +43,7 @@ async function tick(heading: string, label: string): Promise<void> {
 }
 
 async function save(heading: string): Promise<void> {
-  await user.click(part(heading).getByRole('button', { name: 'Save' }))
+  await user.click(part(heading).getByRole('button', { name: `Save ${heading.toLowerCase()}` }))
 }
 
 // Every item shown in the part, as text, in order.
@@ -104,7 +104,7 @@ describe('the profile parts', () => {
             '3',
           )
           await user.click(
-            within(part('Places').getByRole('group', { name: 'Offices you would go into' })).getByRole('button', { name: 'Add' }),
+            part('Places').getByRole('button', { name: 'Add office' }),
           )
           await type('Places', 'City', 'Chicago')
           await user.selectOptions(
@@ -538,6 +538,15 @@ async function paste(heading: string, label: string, text: string): Promise<void
 async function enter(heading: string, label: string, text: string): Promise<void> {
   await paste(heading, label, text)
   await user.keyboard('{Enter}')
+}
+
+// What a button shows: its text, less what is there for a screen reader alone.
+function shownOn(button: HTMLElement): string {
+  const shown = button.cloneNode(true) as HTMLElement
+  for (const hidden of shown.querySelectorAll('.visually-hidden')) {
+    hidden.remove()
+  }
+  return shown.textContent.trim()
 }
 
 function noticeOf(heading: string): HTMLElement {
@@ -991,6 +1000,45 @@ describe('the profile parts, past the first visit', () => {
     expect(
       await part('Places').findByText('Could not save your places; your changes are still here'),
     ).toBe(placesSaid)
+  })
+
+  it('names each Save by its part and each Add by its item, after the word it shows', async () => {
+    await panelOn(profileWith([]))
+    const saves = [
+      'Save target titles',
+      'Save nearby titles',
+      'Save places',
+      'Save pay',
+      'Save skills',
+      'Save gaps and trade-offs',
+      'Save deal-breakers',
+      'Save companies',
+      'Save pace',
+      'Save your own rules',
+    ]
+    const adds = [
+      'Add target title',
+      'Add nearby title',
+      'Add office',
+      'Add company you would move for',
+      'Add skill',
+      'Add gap you would apply with',
+      'Add trade-off you would make',
+      'Add industry you will not work in',
+      'Add company to watch',
+      'Add job',
+      'Add rule',
+    ]
+
+    for (const name of saves) {
+      expect(shownOn(screen.getByRole('button', { name }))).toBe('Save')
+    }
+    for (const name of adds) {
+      expect(shownOn(screen.getByRole('button', { name }))).toBe('Add')
+    }
+    expect(screen.getAllByRole('button', { name: /^(Save|Add)\b/ })).toHaveLength(
+      saves.length + adds.length,
+    )
   })
 
   it('tells the relocation input its condition', async () => {

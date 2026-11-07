@@ -134,7 +134,7 @@ describe('ProfilePanel', () => {
     clerk.getToken.mockResolvedValue(null)
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
-    await userEvent.click(titlesPart().getByRole('button', { name: 'Save' }))
+    await userEvent.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
     expect(await screen.findByText(NOT_SAVED)).toBeInTheDocument()
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
@@ -159,7 +159,7 @@ describe('ProfilePanel', () => {
       'designer{Enter}',
     )
     expect(addLine).toHaveTextContent('Designer is already in your list')
-    await user.click(titlesPart().getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
     await screen.findByText(SAVED)
     expect(saveLine).toHaveTextContent(SAVED)
     expect(addLine).toHaveTextContent('')
@@ -191,7 +191,7 @@ describe('ProfilePanel', () => {
     const input = screen.getByRole('textbox', { name: 'Add a target title' })
 
     await user.type(input, '  Data analyst  ')
-    await user.click(titlesPart().getByRole('button', { name: 'Add' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Add target title' }))
     await user.type(input, 'Writer{Enter}')
     await user.type(input, '   {Enter}')
 
@@ -297,9 +297,9 @@ describe('ProfilePanel', () => {
       screen.getByRole('textbox', { name: 'Add a target title' }),
       'Writer{Enter}',
     )
-    await user.click(titlesPart().getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
-    expect(titlesPart().getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(SAVING)).toBeInTheDocument()
     expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
     const stored = profileWith(['Designer', 'Writer (stored)'])
@@ -309,7 +309,7 @@ describe('ProfilePanel', () => {
 
     expect(await screen.findByText(SAVED)).toBeInTheDocument()
     expect(shownTitles()).toEqual(['Designer', 'Writer (stored)'])
-    expect(titlesPart().getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'false')
     expect(screen.queryByText(SAVING)).not.toBeInTheDocument()
   })
 
@@ -323,12 +323,12 @@ describe('ProfilePanel', () => {
     render(<ProfilePanel />)
     await loaded()
     const input = screen.getByRole('textbox', { name: 'Add a target title' })
-    const save = titlesPart().getByRole('button', { name: 'Save' })
+    const save = titlesPart().getByRole('button', { name: 'Save target titles' })
 
     await user.click(save)
     for (const control of [
       input,
-      titlesPart().getByRole('button', { name: 'Add' }),
+      titlesPart().getByRole('button', { name: 'Add target title' }),
       screen.getByRole('button', { name: 'Remove Designer' }),
       save,
     ]) {
@@ -359,7 +359,7 @@ describe('ProfilePanel', () => {
     const user = userEvent.setup()
     render(<ProfilePanel />)
     await loaded()
-    const save = titlesPart().getByRole('button', { name: 'Save' })
+    const save = titlesPart().getByRole('button', { name: 'Save target titles' })
 
     save.focus()
     await user.keyboard('{Enter}')
@@ -395,7 +395,7 @@ describe('ProfilePanel', () => {
       screen.getByRole('textbox', { name: 'Add a target title' }),
       'Writer{Enter}',
     )
-    await user.click(titlesPart().getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
     // The rule names the title by its place in the list that was sent.
     expect(
@@ -412,14 +412,14 @@ describe('ProfilePanel', () => {
     await act(() => vi.advanceTimersByTimeAsync(0))
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
-    fireEvent.click(titlesPart().getByRole('button', { name: 'Save' }))
+    fireEvent.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
     await act(() => vi.advanceTimersByTimeAsync(4_999))
-    expect(titlesPart().getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'true')
     await act(() => vi.advanceTimersByTimeAsync(1))
 
     expect(screen.getByText(NOT_SAVED)).toBeInTheDocument()
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
-    expect(titlesPart().getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'false')
     expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
   })
 
@@ -433,8 +433,8 @@ describe('ProfilePanel', () => {
       screen.getByRole('button', { name: 'Remove Designer' }),
       screen.getByRole('button', { name: 'Remove Writer' }),
       screen.getByRole('textbox', { name: 'Add a target title' }),
-      titlesPart().getByRole('button', { name: 'Add' }),
-      titlesPart().getByRole('button', { name: 'Save' }),
+      titlesPart().getByRole('button', { name: 'Add target title' }),
+      titlesPart().getByRole('button', { name: 'Save target titles' }),
     ]
     for (const control of order) {
       await user.tab()
@@ -503,7 +503,7 @@ describe('ProfilePanel, as parts', () => {
     fetchMock.mockImplementation(() =>
       answer(200, { ...profileWith([]), title_range: { nearby_titles: [], lower_level_ok: false } }),
     )
-    await user.click(nearby.getByRole('button', { name: 'Save' }))
+    await user.click(nearby.getByRole('button', { name: 'Save nearby titles' }))
 
     expect(await nearby.findByText(SAVED)).toBeInTheDocument()
     expect(nearby.queryByText('Not answered yet.')).not.toBeInTheDocument()
@@ -527,8 +527,8 @@ describe('ProfilePanel, as parts', () => {
     await user.type(pay.getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' }), '90,000')
     await user.type(pay.getByRole('textbox', { name: 'Base pay you would ask for, in US dollars a year' }), '120,000')
     await user.click(part('Places').getByRole('checkbox', { name: 'A fully remote role is fine' }))
-    await user.click(nearby.getByRole('button', { name: 'Save' }))
-    await user.click(pay.getByRole('button', { name: 'Save' }))
+    await user.click(nearby.getByRole('button', { name: 'Save nearby titles' }))
+    await user.click(pay.getByRole('button', { name: 'Save pay' }))
 
     expect(sentTo(fetchMock, NEARBY_TITLES)).toHaveLength(1)
     expect(sentTo(fetchMock, '/profile/pay')).toEqual([{ floor_usd: 90_000, ask_usd: 120_000 }])
@@ -561,7 +561,7 @@ describe('ProfilePanel, as parts', () => {
     const places = screen.getByRole('region', { name: 'Places' })
     await user.type(within(places).getByRole('textbox', { name: 'City' }), 'Boston{Enter}')
     await user.type(within(places).getByRole('textbox', { name: 'Add a company you would move for' }), 'Example Corp{Enter}')
-    const save = within(places).getByRole('button', { name: 'Save' })
+    const save = within(places).getByRole('button', { name: 'Save places' })
 
     save.focus()
     await user.keyboard('{Enter}')
@@ -607,7 +607,7 @@ describe('ProfilePanel, as parts', () => {
     const { unmount } = render(<ProfilePanel />)
     await loaded()
 
-    await user.click(part('Places').getByRole('button', { name: 'Save' }))
+    await user.click(part('Places').getByRole('button', { name: 'Save places' }))
     const init = fetchMock.mock.calls.find(([url]) => url === '/api/profile/places')?.[1]
     expect(init?.signal?.aborted).toBe(false)
     unmount()

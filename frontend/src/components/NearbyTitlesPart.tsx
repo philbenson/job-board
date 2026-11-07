@@ -45,6 +45,7 @@ export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a nearby title"
+        itemNoun="nearby title"
         listLabel="Your nearby titles"
         oneNoun="A nearby title"
         pluralNoun="nearby titles"

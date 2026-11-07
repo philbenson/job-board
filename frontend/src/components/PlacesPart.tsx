@@ -91,6 +91,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
         onNotice={part.say}
         held={part.held}
         firstLabel="City"
+        itemNoun="office"
         second={{ kind: 'select', label: 'Days a week in the office', options: DAY_CHOICES }}
         itemFrom={(city, days) =>
           lengthOf(city) > MAX_CITY_LENGTH
@@ -129,6 +130,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
         onNotice={part.say}
         held={part.held}
         inputLabel="Add a company you would move for"
+        itemNoun="company you would move for"
         listLabel="Companies you would move for"
         oneNoun="A company"
         pluralNoun="companies you would move for"

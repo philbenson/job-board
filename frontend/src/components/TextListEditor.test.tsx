@@ -21,6 +21,7 @@ function Rules({ initial, held = false }: { initial: string[]; held?: boolean })
         inputLabel="Add a rule"
         listLabel="Your own rules"
         oneNoun="A rule"
+        itemNoun="rule"
         pluralNoun="rules"
         cap={3}
         maxLength={12}
@@ -78,7 +79,7 @@ describe('TextListEditor', () => {
 
     for (const control of [
       input,
-      screen.getByRole('button', { name: 'Add' }),
+      screen.getByRole('button', { name: 'Add rule' }),
       screen.getByRole('button', { name: 'Remove No travel' }),
     ]) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
@@ -98,7 +99,7 @@ describe('TextListEditor', () => {
     await user.type(input, 'No nights')
 
     rerender(<Rules initial={['No travel']} held />)
-    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.click(screen.getByRole('button', { name: 'Add rule' }))
     await user.type(input, '{Enter}')
 
     expect(shownRules()).toEqual(['No travel'])
