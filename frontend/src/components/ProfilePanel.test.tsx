@@ -481,9 +481,7 @@ describe('ProfilePanel, as parts', () => {
       'Your own rules',
     ])
     expect(
-      screen.getByText(
-        'Scoring reads your target titles today. The other sections are kept for the interview and for scoring to read later.',
-      ),
+      screen.getByText('Scoring reads every section except pace, which nothing reads yet.'),
     ).toBeInTheDocument()
   })
 
