@@ -2,7 +2,7 @@
 
 The job board's web app: React and TypeScript, built with Vite. For now it shows the app's name and whether the backend service answers.
 
-It needs Node 24.15 or newer (the continuous integration runs on Node 26). Install the packages from the lock file first:
+It needs Node 24.15 or newer on the 24 line, or Node 26 or newer; the continuous integration runs on both Node 24.15.0 and Node 26. Node 25 runs with warnings from the test packages, which do not support it. Install the packages from the lock file first:
 
 ```sh
 npm ci
