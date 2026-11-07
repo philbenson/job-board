@@ -770,12 +770,38 @@ async def test_sends_every_posting_in_a_batch_the_same_system_block_holding_the_
     person = await add_person(engine, WHOLE_PROFILE)
     for age in range(3):
         await add_posting(engine, seen=START - timedelta(days=age))
+    new_rule = "A rule saved while the batch was running."
+    changed = {**WHOLE_PROFILE, "own_rules": {"rules": [new_rule]}}
+
+    def changing_the_profile_after_the_first_posting(url: str) -> ModelFactory:
+        """The real model, and the person saving a new profile once it has answered."""
+
+        def factory(key: str) -> RatingModel:
+            model = anthropic_model(key, base_url=url, timeout=5.0)
+            answered: list[object] = []
+
+            async def answer(messages: LanguageModelInput) -> object:
+                answered.append(await model.ainvoke(messages))
+                if len(answered) == 1:
+                    async with engine.begin() as connection:
+                        await connection.execute(
+                            text("UPDATE profiles SET document = :document WHERE person_id = :id"),
+                            {"document": json.dumps(changed), "id": person},
+                        )
+                return answered[-1]
+
+            return RunnableLambda(answer)
+
+        return factory
+
     with canned_anthropic(rating(3, "A partial match.")) as server:
-        result = await run(engine, person, real(server.url))
+        result = await run(engine, person, changing_the_profile_after_the_first_posting(server.url))
 
     assert result.rated == 3
     blocks = [json.dumps(request.body["system"]) for request in server.received]
-    assert len(blocks) == 3 and len(set(blocks)) == 1
+    # Every posting is rated against the profile read at the start of the batch.
+    assert len(blocks) == 3 and blocks == [blocks[0]] * 3
+    assert new_rule not in blocks[0]
     [block] = server.received[0].body["system"]
     assert block["cache_control"] == {"type": "ephemeral"}
     assert f"- {RULE}" in block["text"]
