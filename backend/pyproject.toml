@@ -1,0 +1,48 @@
+[project]
+name = "job-board"
+version = "0.1.0"
+description = "The job board's API: postings fetched daily and scored against each person's profile."
+requires-python = ">=3.14"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.162.2",
+    "psycopg[binary]>=3.3.8",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.8",
+    "uvicorn>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.4,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+# Every revision imports sa and op from the template, used or not.
+"migrations/versions/*" = ["F401"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests", "migrations"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest]
+testpaths = ["tests"]
+strict = true
+filterwarnings = ["error"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

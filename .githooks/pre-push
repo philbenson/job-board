@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refuse a push whose new commits, files, paths, identities or ref names carry
+# a private name or a personal email address or phone number, before the
+# remote has any of it. git passes the remote's name and URL as arguments and
+# one line per ref on standard input. See tools/README.md.
+top=$(git rev-parse --show-toplevel) || exit 2
+exec python3 "$top/tools/public_check.py" --pushed "$1"

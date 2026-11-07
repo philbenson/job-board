@@ -1,0 +1,26 @@
+# The local PostgreSQL for development and tests. Start it with:
+#   docker compose up -d --wait db
+name: job-board
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: job_board
+      POSTGRES_PASSWORD: job_board
+      POSTGRES_DB: job_board
+    ports:
+      - "127.0.0.1:55432:5432"  # loopback only, on a port unlikely to clash with another PostgreSQL
+    healthcheck:
+      # Ask over TCP: during first-start initialisation the image runs a server
+      # on the Unix socket only, which must not count as ready.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U job_board -d job_board"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    volumes:
+      # From PostgreSQL 18 the image declares its volume here, one level above the data folder.
+      - db-data:/var/lib/postgresql
+
+volumes:
+  db-data:

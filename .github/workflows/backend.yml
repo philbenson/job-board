@@ -1,0 +1,62 @@
+name: backend
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "compose.yaml"
+      - ".github/workflows/backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true  # only the newest push on a branch matters
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # a hung test or service fails the run instead of holding a runner
+    services:
+      db:
+        image: postgres:18  # the same server as compose.yaml
+        env:
+          POSTGRES_USER: job_board
+          POSTGRES_PASSWORD: job_board
+          POSTGRES_DB: job_board
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U job_board -d job_board"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql://job_board:job_board@127.0.0.1:5432/job_board
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-uv publishes no moving major tag, so pin the release's commit.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          working-directory: backend  # finds .python-version and uv.lock there
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Format
+        run: uv run ruff format --check
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test
+        run: uv run pytest

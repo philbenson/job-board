@@ -1,0 +1,5 @@
+#!/bin/sh
+# Refuse a commit whose staged files or paths carry a private name or a
+# personal email address or phone number. See tools/README.md.
+top=$(git rev-parse --show-toplevel) || exit 2
+exec python3 "$top/tools/public_check.py" --staged

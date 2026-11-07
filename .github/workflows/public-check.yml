@@ -1,0 +1,33 @@
+name: public check
+
+# Every push proves that no tracked file, path, commit message, commit
+# identity or ref name, in any commit of the history, carries a private name or
+# personal contact details.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # --history reads every commit, and --refs every branch and tag
+
+      # The check is standard library only, so the runner's own python3 is enough.
+      - name: Test the check
+        run: python3 -m unittest discover -s tools/tests -v
+
+      - name: Check tracked files
+        run: python3 tools/public_check.py --tracked
+
+      - name: Check history
+        run: python3 tools/public_check.py --history
+
+      - name: Check ref names
+        run: python3 tools/public_check.py --refs
