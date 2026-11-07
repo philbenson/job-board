@@ -31,8 +31,11 @@ from job_board.profile_sections import (
     MAX_SENT_TITLES,
     MAX_TARGET_TITLES,
     MAX_TITLE_LENGTH,
+    Companies,
     DealBreakers,
     Gaps,
+    OwnRules,
+    Pace,
     Pay,
     Places,
     Skills,
@@ -66,6 +69,9 @@ class Profile(BaseModel):
     skills: Skills | None = Field(default=None, description=UNANSWERED)
     gaps: Gaps | None = Field(default=None, description=UNANSWERED)
     deal_breakers: DealBreakers | None = Field(default=None, description=UNANSWERED)
+    companies: Companies | None = Field(default=None, description=UNANSWERED)
+    pace: Pace | None = Field(default=None, description=UNANSWERED)
+    own_rules: OwnRules | None = Field(default=None, description=UNANSWERED)
 
 
 def stored_profile(document: Any) -> Profile:
@@ -163,3 +169,21 @@ async def save_gaps(body: Gaps, person: SignedIn, session: Database) -> Profile:
 async def save_deal_breakers(body: DealBreakers, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's deal-breakers and answers the profile as stored."""
     return await _save_section(session, person, "deal_breakers", body.model_dump(mode="json"))
+
+
+@router.put("/profile/companies", responses=SIGN_IN_REQUIRED)
+async def save_companies(body: Companies, person: SignedIn, session: Database) -> Profile:
+    """Replaces the companies the signed-in person watches and answers the profile as stored."""
+    return await _save_section(session, person, "companies", body.model_dump(mode="json"))
+
+
+@router.put("/profile/pace", responses=SIGN_IN_REQUIRED)
+async def save_pace(body: Pace, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's pace and answers the profile as stored."""
+    return await _save_section(session, person, "pace", body.model_dump(mode="json"))
+
+
+@router.put("/profile/own-rules", responses=SIGN_IN_REQUIRED)
+async def save_own_rules(body: OwnRules, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's own rules and answers the profile as stored."""
+    return await _save_section(session, person, "own_rules", body.model_dump(mode="json"))

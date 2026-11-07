@@ -13,5 +13,8 @@ export function profileWith(titles: string[]): ProfileBody {
     skills: null,
     gaps: null,
     deal_breakers: null,
+    companies: null,
+    pace: null,
+    own_rules: null,
   }
 }

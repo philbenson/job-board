@@ -76,6 +76,37 @@ SECTIONS = {
         },
         {"industries": ["Gambling"], "company_sizes": ["1-10", "10001+"], "no_agencies": True},
     ),
+    "companies": Section(
+        "/profile/companies",
+        "companies",
+        {
+            "watch": ["Example Company", "example company"],
+            "applied": [
+                {"company": "Example Company", "title": "Designer"},
+                {"company": "Example Company", "title": "Writer"},
+                {"company": "example company", "title": "DESIGNER"},
+            ],
+        },
+        {
+            "watch": ["Example Company"],
+            "applied": [
+                {"company": "Example Company", "title": "Designer"},
+                {"company": "Example Company", "title": "Writer"},
+            ],
+        },
+    ),
+    "pace": Section(
+        "/profile/pace",
+        "pace",
+        {"leads_per_day": 12, "brief_from_score": None},
+        {"leads_per_day": 12, "brief_from_score": None},
+    ),
+    "own rules": Section(
+        "/profile/own-rules",
+        "own_rules",
+        {"rules": ["No roles that need a car", "no roles that need a car"]},
+        {"rules": ["No roles that need a car"]},
+    ),
 }
 
 
@@ -220,6 +251,24 @@ def section_body(name: str, **changes: Any) -> dict[str, Any]:
             ["body", "industries"],
             "You can list at most 30 industries",
         ),
+        (
+            "/profile/companies",
+            {"watch": [], "applied": [{"company": "Quoted", "title": " "}]},
+            ["body", "applied", 0, "title"],
+            "A job title cannot be blank",
+        ),
+        (
+            "/profile/pace",
+            {"leads_per_day": 51, "brief_from_score": 3},
+            ["body", "leads_per_day"],
+            "Input should be less than or equal to 50",
+        ),
+        (
+            "/profile/own-rules",
+            {"rules": ["Quoted " + "x" * 300]},
+            ["body", "rules", 0],
+            "A rule can be at most 300 characters",
+        ),
     ],
     ids=[
         "a blank nearby title",
@@ -231,6 +280,9 @@ def section_body(name: str, **changes: Any) -> dict[str, Any]:
         "a skill too long",
         "a blank trade-off",
         "too many industries",
+        "a blank job title applied for",
+        "too many leads a day",
+        "a rule too long",
     ],
 )
 async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_nothing(
@@ -314,6 +366,12 @@ async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_not
             ["body", "no_agencies"],
             "bool_type",
         ),
+        (
+            "/profile/pace",
+            {"leads_per_day": 12, "brief_from_score": "3"},
+            ["body", "brief_from_score"],
+            "int_type",
+        ),
     ],
     ids=[
         "a number as text",
@@ -329,6 +387,7 @@ async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_not
         "a size that is not a choice",
         "a number for a choice",
         "a number as a boolean",
+        "a number as text where null is allowed",
     ],
 )
 async def test_refuses_a_value_of_another_type_without_converting_it(

@@ -299,3 +299,97 @@ class DealBreakers(Section):
     no_agencies: bool = Field(
         description="Whether a posting from a recruiting agency, not the employer, rules it out."
     )
+
+
+MAX_WATCHED = 30  # companies worth checking by hand; past this it stops being a watch list
+MAX_APPLIED = 50  # a long search's applications, enough to keep from applying twice
+
+JobTitle = Annotated[str, AfterValidator(checked_text("a job title", MAX_TITLE_LENGTH))]
+
+
+class Application(Section):
+    """One job a person has applied to: the company and the title of the role."""
+
+    company: CompanyName = Field(
+        description=f"The company's name, up to {MAX_COMPANY_LENGTH} characters."
+    )
+    title: JobTitle = Field(
+        description=f"The title of the role applied for, up to {MAX_TITLE_LENGTH} characters."
+    )
+
+
+def _same_job(application: Application) -> tuple[str, str]:
+    return fold(application.company), fold(application.title)
+
+
+class Companies(Section):
+    """Companies a person keeps an eye on, and the jobs they have already applied to."""
+
+    watch: Annotated[
+        list[CompanyName],
+        Field(
+            max_length=sent_limit(MAX_WATCHED),
+            description=(
+                f"Companies whose postings they want to see, each up to {MAX_COMPANY_LENGTH}"
+                f" characters; at most {MAX_WATCHED}."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("companies", MAX_WATCHED, fold)),
+    ]
+    applied: Annotated[
+        list[Application],
+        Field(
+            max_length=sent_limit(MAX_APPLIED),
+            description=(
+                "Jobs they have already applied to, so a posting for one is not suggested again;"
+                f" at most {MAX_APPLIED}, the same company with another title being another job."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("jobs applied to", MAX_APPLIED, _same_job)),
+    ]
+
+
+MAX_LEADS_PER_DAY = 50  # more than anyone reads closely in a day
+TOP_SCORE = 5  # scores run from 1, a poor fit, to 5, a close one
+
+
+class Pace(Section):
+    """How many postings a person wants a day, and which deserve a written brief."""
+
+    leads_per_day: int = Field(
+        ge=1,
+        le=MAX_LEADS_PER_DAY,
+        description=f"Postings to show a day, from 1 to {MAX_LEADS_PER_DAY}.",
+    )
+    # Required even though it may be null, so a body that leaves it out is
+    # refused rather than read as never wanting a brief.
+    brief_from_score: int | None = Field(
+        ge=1,
+        le=TOP_SCORE,
+        description=(
+            f"The lowest score, from 1 to {TOP_SCORE}, at which a posting gets a written brief;"
+            " null for no briefs."
+        ),
+    )
+
+
+MAX_RULES = 20  # a short list each posting is checked against
+MAX_RULE_LENGTH = 300  # a few sentences, enough to state one rule plainly
+
+Rule = Annotated[str, AfterValidator(checked_text("a rule", MAX_RULE_LENGTH))]
+
+
+class OwnRules(Section):
+    """Rules of a person's own, in their words, that no other section covers."""
+
+    rules: Annotated[
+        list[Rule],
+        Field(
+            max_length=sent_limit(MAX_RULES),
+            description=(
+                "Anything else a posting must or must not be, in their words, each up to"
+                f" {MAX_RULE_LENGTH} characters; at most {MAX_RULES}."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("rules", MAX_RULES, fold)),
+    ]

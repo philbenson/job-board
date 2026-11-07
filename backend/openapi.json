@@ -615,10 +615,224 @@
           }
         ]
       }
+    },
+    "/profile/companies": {
+      "put": {
+        "summary": "Save Companies",
+        "description": "Replaces the companies the signed-in person watches and answers the profile as stored.",
+        "operationId": "save_companies_profile_companies_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Companies"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/pace": {
+      "put": {
+        "summary": "Save Pace",
+        "description": "Replaces the signed-in person's pace and answers the profile as stored.",
+        "operationId": "save_pace_profile_pace_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Pace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/own-rules": {
+      "put": {
+        "summary": "Save Own Rules",
+        "description": "Replaces the signed-in person's own rules and answers the profile as stored.",
+        "operationId": "save_own_rules_profile_own_rules_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnRules"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "Application": {
+        "properties": {
+          "company": {
+            "type": "string",
+            "title": "Company",
+            "description": "The company's name, up to 100 characters."
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "The title of the role applied for, up to 100 characters."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "company",
+          "title"
+        ],
+        "title": "Application",
+        "description": "One job a person has applied to: the company and the title of the role."
+      },
+      "Companies": {
+        "properties": {
+          "watch": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Watch",
+            "description": "Companies whose postings they want to see, each up to 100 characters; at most 30."
+          },
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/Application"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Applied",
+            "description": "Jobs they have already applied to, so a posting for one is not suggested again; at most 50, the same company with another title being another job."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "watch",
+          "applied"
+        ],
+        "title": "Companies",
+        "description": "Companies a person keeps an eye on, and the jobs they have already applied to."
+      },
       "DealBreakers": {
         "properties": {
           "industries": {
@@ -818,6 +1032,59 @@
         "title": "Office",
         "description": "A city a person would go into an office in, and how often."
       },
+      "OwnRules": {
+        "properties": {
+          "rules": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Rules",
+            "description": "Anything else a posting must or must not be, in their words, each up to 300 characters; at most 20."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rules"
+        ],
+        "title": "OwnRules",
+        "description": "Rules of a person's own, in their words, that no other section covers."
+      },
+      "Pace": {
+        "properties": {
+          "leads_per_day": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Leads Per Day",
+            "description": "Postings to show a day, from 1 to 50."
+          },
+          "brief_from_score": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brief From Score",
+            "description": "The lowest score, from 1 to 5, at which a posting gets a written brief; null for no briefs."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "leads_per_day",
+          "brief_from_score"
+        ],
+        "title": "Pace",
+        "description": "How many postings a person wants a day, and which deserve a written brief."
+      },
       "Pay": {
         "properties": {
           "floor_usd": {
@@ -970,6 +1237,39 @@
               }
             ],
             "description": "Null until the person saves this section."
+          },
+          "companies": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Companies"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "pace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pace"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "own_rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OwnRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
           }
         },
         "type": "object",
@@ -980,7 +1280,10 @@
           "pay",
           "skills",
           "gaps",
-          "deal_breakers"
+          "deal_breakers",
+          "companies",
+          "pace",
+          "own_rules"
         ],
         "title": "Profile",
         "description": "The whole profile, as stored and as answered."

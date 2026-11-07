@@ -24,6 +24,9 @@ NEW_PROFILE: dict[str, Any] = {
     "skills": None,
     "gaps": None,
     "deal_breakers": None,
+    "companies": None,
+    "pace": None,
+    "own_rules": None,
 }
 
 

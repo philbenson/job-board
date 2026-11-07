@@ -217,10 +217,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Companies
+         * @description Replaces the companies the signed-in person watches and answers the profile as stored.
+         */
+        put: operations["save_companies_profile_companies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/pace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Pace
+         * @description Replaces the signed-in person's pace and answers the profile as stored.
+         */
+        put: operations["save_pace_profile_pace_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/own-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Own Rules
+         * @description Replaces the signed-in person's own rules and answers the profile as stored.
+         */
+        put: operations["save_own_rules_profile_own_rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Application
+         * @description One job a person has applied to: the company and the title of the role.
+         */
+        Application: {
+            /**
+             * Company
+             * @description The company's name, up to 100 characters.
+             */
+            company: string;
+            /**
+             * Title
+             * @description The title of the role applied for, up to 100 characters.
+             */
+            title: string;
+        };
+        /**
+         * Companies
+         * @description Companies a person keeps an eye on, and the jobs they have already applied to.
+         */
+        Companies: {
+            /**
+             * Watch
+             * @description Companies whose postings they want to see, each up to 100 characters; at most 30.
+             */
+            watch: string[];
+            /**
+             * Applied
+             * @description Jobs they have already applied to, so a posting for one is not suggested again; at most 50, the same company with another title being another job.
+             */
+            applied: components["schemas"]["Application"][];
+        };
         /**
          * DealBreakers
          * @description What rules a posting out for a person whatever else it offers.
@@ -321,6 +413,33 @@ export interface components {
             days_a_week: number;
         };
         /**
+         * OwnRules
+         * @description Rules of a person's own, in their words, that no other section covers.
+         */
+        OwnRules: {
+            /**
+             * Rules
+             * @description Anything else a posting must or must not be, in their words, each up to 300 characters; at most 20.
+             */
+            rules: string[];
+        };
+        /**
+         * Pace
+         * @description How many postings a person wants a day, and which deserve a written brief.
+         */
+        Pace: {
+            /**
+             * Leads Per Day
+             * @description Postings to show a day, from 1 to 50.
+             */
+            leads_per_day: number;
+            /**
+             * Brief From Score
+             * @description The lowest score, from 1 to 5, at which a posting gets a written brief; null for no briefs.
+             */
+            brief_from_score: number | null;
+        };
+        /**
          * Pay
          * @description What a person will be paid: annual base pay in whole US dollars, before bonus or equity.
          */
@@ -386,6 +505,12 @@ export interface components {
             gaps: components["schemas"]["Gaps"] | null;
             /** @description Null until the person saves this section. */
             deal_breakers: components["schemas"]["DealBreakers"] | null;
+            /** @description Null until the person saves this section. */
+            companies: components["schemas"]["Companies"] | null;
+            /** @description Null until the person saves this section. */
+            pace: components["schemas"]["Pace"] | null;
+            /** @description Null until the person saves this section. */
+            own_rules: components["schemas"]["OwnRules"] | null;
         };
         /** Refused */
         Refused: {
@@ -956,6 +1081,132 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DealBreakers"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_companies_profile_companies_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Companies"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_pace_profile_pace_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Pace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_own_rules_profile_own_rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnRules"];
             };
         };
         responses: {

@@ -7,7 +7,17 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from job_board.profile_sections import DealBreakers, Gaps, Pay, Places, Skills, TitleRange
+from job_board.profile_sections import (
+    Companies,
+    DealBreakers,
+    Gaps,
+    OwnRules,
+    Pace,
+    Pay,
+    Places,
+    Skills,
+    TitleRange,
+)
 
 TITLE_RANGE = {"nearby_titles": ["Designer"], "lower_level_ok": False}
 PLACES = {
@@ -21,6 +31,12 @@ PAY = {"floor_usd": 120_000, "ask_usd": 150_000}
 SKILLS = {"skills": [{"name": "Python", "years": 5}]}
 GAPS = {"apply_with": ["No degree"], "trade_offs": ["A longer commute"]}
 DEAL_BREAKERS = {"industries": ["Gambling"], "company_sizes": ["1-10"], "no_agencies": True}
+COMPANIES = {
+    "watch": ["Example Company"],
+    "applied": [{"company": "Example Company", "title": "Designer"}],
+}
+PACE = {"leads_per_day": 10, "brief_from_score": 4}
+OWN_RULES = {"rules": ["No roles that need a car"]}
 COMPANY_SIZES = [
     "1-10",
     "11-50",
@@ -114,6 +130,31 @@ TEXTS = {
         "An industry",
         100,
     ),
+    "watched company": Text(
+        Companies,
+        COMPANIES,
+        lambda text: {**COMPANIES, "watch": [text]},
+        ("watch", 0),
+        "A company",
+        100,
+    ),
+    "company applied to": Text(
+        Companies,
+        COMPANIES,
+        lambda text: {**COMPANIES, "applied": [{"company": text, "title": "Designer"}]},
+        ("applied", 0, "company"),
+        "A company",
+        100,
+    ),
+    "job title applied for": Text(
+        Companies,
+        COMPANIES,
+        lambda text: {**COMPANIES, "applied": [{"company": "Example Company", "title": text}]},
+        ("applied", 0, "title"),
+        "A job title",
+        100,
+    ),
+    "rule": Text(OwnRules, OWN_RULES, lambda text: {"rules": [text]}, ("rules", 0), "A rule", 300),
 }
 
 
@@ -287,6 +328,29 @@ LISTS = {
         "huge",
         choices_only=True,
     ),
+    "watched companies": Listed(
+        Companies,
+        COMPANIES,
+        "watch",
+        lambda n: f"Company {n}",
+        lambda n: f"COMPANY {n}",
+        30,
+        "companies",
+        " ",
+    ),
+    "jobs applied to": Listed(
+        Companies,
+        COMPANIES,
+        "applied",
+        lambda n: {"company": f"Company {n}", "title": "Designer"},
+        lambda n: {"company": f"company {n} ", "title": "DESIGNER"},
+        50,
+        "jobs applied to",
+        {},
+    ),
+    "rules": Listed(
+        OwnRules, OWN_RULES, "rules", lambda n: f"Rule {n}", lambda n: f"RULE {n}", 20, "rules", " "
+    ),
 }
 
 
@@ -348,8 +412,17 @@ def test_each_list_past_ten_times_its_cap_is_refused_before_any_item_is_checked(
             0,
             60,
         ),
+        (Pace, lambda leads: {**PACE, "leads_per_day": leads}, ("leads_per_day",), 1, 50),
+        (Pace, lambda score: {**PACE, "brief_from_score": score}, ("brief_from_score",), 1, 5),
     ],
-    ids=["days in the office", "pay floor", "pay ask", "years of a skill"],
+    ids=[
+        "days in the office",
+        "pay floor",
+        "pay ask",
+        "years of a skill",
+        "leads a day",
+        "lowest score for a brief",
+    ],
 )
 def test_each_number_takes_its_range_and_refuses_past_either_end(
     model: type[BaseModel],
@@ -404,3 +477,18 @@ def test_deal_breakers_take_every_company_size_and_refuse_any_other() -> None:
         == COMPANY_SIZES
     )
     assert (error["type"], error["loc"]) == ("literal_error", ("company_sizes", 1))
+
+
+def test_companies_applied_to_are_the_same_job_only_when_company_and_title_both_match() -> None:
+    applied = [
+        {"company": "Example Company", "title": "Designer"},
+        {"company": "Example Company", "title": "Writer"},
+        {"company": "EXAMPLE COMPANY", "title": "designer"},
+    ]
+
+    assert saved(Companies, {**COMPANIES, "applied": applied})["applied"] == applied[:2]
+
+
+def test_pace_takes_no_lowest_score_as_never_writing_a_brief() -> None:
+    assert saved(Pace, {**PACE, "brief_from_score": None})["brief_from_score"] is None
+    assert refusal(Pace, {"leads_per_day": 10})["type"] == "missing"
