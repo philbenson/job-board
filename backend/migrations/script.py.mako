@@ -9,12 +9,19 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-${imports if imports else ""}
+% if imports:
+${imports}
+% endif
 
-revision: str = ${repr(up_revision)}
-down_revision: str | Sequence[str] | None = ${repr(down_revision)}
-branch_labels: str | Sequence[str] | None = ${repr(branch_labels)}
-depends_on: str | Sequence[str] | None = ${repr(depends_on)}
+<%
+    def quoted(value):
+        # repr() with the double quotes ruff format writes
+        return repr(value).replace("'", '"')
+%>\
+revision: str = ${quoted(up_revision)}
+down_revision: str | Sequence[str] | None = ${quoted(down_revision)}
+branch_labels: str | Sequence[str] | None = ${quoted(branch_labels)}
+depends_on: str | Sequence[str] | None = ${quoted(depends_on)}
 
 
 def upgrade() -> None:

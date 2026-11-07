@@ -9,16 +9,25 @@ from sqlalchemy import create_engine, text
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
-def recorded_revisions(database_url: str) -> list[str]:
+def query(database_url: str, sql: str) -> list[str]:
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        revisions = connection.execute(text("SELECT version_num FROM alembic_version")).scalars()
-        result = list(revisions)
+        result = list(connection.execute(text(sql)).scalars())
     engine.dispose()
     return result
 
 
-def test_upgrades_to_head_and_back_to_base(
+def recorded_revisions(database_url: str) -> list[str]:
+    return query(database_url, "SELECT version_num FROM alembic_version")
+
+
+def public_tables(database_url: str) -> list[str]:
+    return query(
+        database_url, "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1"
+    )
+
+
+def test_upgrades_to_head_back_to_base_and_to_head_again(
     database_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The migrations read their URL from the settings, as the service does.
@@ -30,5 +39,11 @@ def test_upgrades_to_head_and_back_to_base(
     command.upgrade(config, "head")
     assert recorded_revisions(database_url) == [head]
 
+    # Every downgrade undoes its upgrade: nothing is left behind at base, so a
+    # second upgrade does not trip over a table the first one created.
     command.downgrade(config, "base")
     assert recorded_revisions(database_url) == []
+    assert public_tables(database_url) == ["alembic_version"]
+
+    command.upgrade(config, "head")
+    assert recorded_revisions(database_url) == [head]
