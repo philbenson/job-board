@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/react'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   fetchLeads,
   type Lead,
@@ -39,7 +39,9 @@ type Reading = 'first' | 'retry' | null
  * say, so a screen reader hears each change of their words. Retry stays on
  * the page while the read it asked for runs, held with aria-disabled rather
  * than disabled, which would drop keyboard focus to the page, and its handler
- * does nothing meanwhile.
+ * does nothing meanwhile. When a list loads, Retry leaves the page: if it
+ * held focus, focus goes to the heading rather than to the page; otherwise
+ * focus stays where it is.
  */
 export function LeadsPanel() {
   const { getToken } = useAuth()
@@ -51,6 +53,8 @@ export function LeadsPanel() {
   // Bumped by Retry, to run the loading effect again.
   const [attempt, setAttempt] = useState(0)
   const headingId = useId()
+  const heading = useRef<HTMLHeadingElement>(null)
+  const retryButton = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     let controller: AbortController | undefined
@@ -78,6 +82,14 @@ export function LeadsPanel() {
         } else {
           setFailed(false)
           setLoaded(read)
+          // Retry leaves the page with this answer. The heading stays, so it
+          // can take focus now, before Retry goes.
+          const retryFocused =
+            retryButton.current !== null &&
+            document.activeElement === retryButton.current
+          if (retryFocused) {
+            heading.current?.focus()
+          }
         }
       })
     }
@@ -112,11 +124,18 @@ export function LeadsPanel() {
 
   return (
     <section aria-labelledby={headingId}>
-      <h2 id={headingId}>Your leads</h2>
+      <h2 id={headingId} ref={heading} tabIndex={-1}>
+        Your leads
+      </h2>
       <p role="status">{reading === null ? '' : LOADING}</p>
       <p role="alert">{problem}</p>
       {(failed || reading === 'retry') && (
-        <button type="button" aria-disabled={reading !== null} onClick={retry}>
+        <button
+          ref={retryButton}
+          type="button"
+          aria-disabled={reading !== null}
+          onClick={retry}
+        >
           Retry
         </button>
       )}

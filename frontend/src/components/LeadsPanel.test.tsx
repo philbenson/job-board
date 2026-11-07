@@ -250,7 +250,7 @@ describe('LeadsPanel', () => {
     expect(screen.getByText('Showing the best 2 of 140.')).toBeInTheDocument()
   })
 
-  it('says it could not load the leads, and asks again on Retry', async () => {
+  it('says it could not load the leads, asks again on Retry, and moves focus to the heading once it loads', async () => {
     const user = userEvent.setup()
     const retried = laterAnswer()
     service(
@@ -266,6 +266,10 @@ describe('LeadsPanel', () => {
     expect(screen.queryByText(NOT_LOADED)).not.toBeInTheDocument()
     retried.send(leads(PLATFORM_LEAD))
     expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
+    // Retry has left the page; focus goes to the heading, not to the page.
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { level: 2, name: 'Your leads' }),
+    )
   })
 
   it('keeps Retry on the page and focused while a retry reads, held, and through a second failure', async () => {
@@ -316,7 +320,7 @@ describe('LeadsPanel', () => {
     expect(alert).toBeEmptyDOMElement()
   })
 
-  it('keeps the list shown when a refresh fails, says so under the heading, and asks again on Retry', async () => {
+  it('keeps the list shown when a refresh fails, says so under the heading, asks again on Retry, and moves focus to the heading once it loads', async () => {
     const user = userEvent.setup()
     service(
       () => leads(PLATFORM_LEAD),
@@ -345,9 +349,58 @@ describe('LeadsPanel', () => {
     expect(titlesShown(await shownLeads())).toEqual(['Staff Engineer'])
     expect(screen.getByRole('alert')).toBeEmptyDOMElement()
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { level: 2, name: 'Your leads' }),
+    )
   })
 
-  it('keeps the list shown while it asks again as the page comes back into view, then shows the new one', async () => {
+  it('moves focus to the heading when a refresh loads while Retry holds focus, unpressed', async () => {
+    service(
+      () => answer(503, { detail: 'down' }),
+      () => leads(PLATFORM_LEAD),
+    )
+
+    render(<LeadsPanel />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_LOADED)
+    act(() => {
+      screen.getByRole('button', { name: 'Retry' }).focus()
+    })
+    showPage('visible')
+    await settle()
+
+    expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(document.activeElement).toBe(
+      screen.getByRole('heading', { level: 2, name: 'Your leads' }),
+    )
+  })
+
+  it('leaves focus where it is when Retry leaves the page without holding it', async () => {
+    service(
+      () => answer(503, { detail: 'down' }),
+      () => leads(PLATFORM_LEAD),
+    )
+
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <LeadsPanel />
+      </>,
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_LOADED)
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    act(() => {
+      elsewhere.focus()
+    })
+    showPage('visible')
+    await settle()
+
+    expect(titlesShown(await shownLeads())).toEqual(['Platform Lead'])
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('keeps the list shown while it asks again as the page comes back into view, then shows the new one, leaving focus alone', async () => {
     const refreshed = laterAnswer()
     const fetchMock = service(
       () => leads(PLATFORM_LEAD),
@@ -368,6 +421,7 @@ describe('LeadsPanel', () => {
     refreshed.send(leads(STAFF_ENGINEER))
     await settle()
     expect(titlesShown(await shownLeads())).toEqual(['Staff Engineer'])
+    expect(screen.getByRole('heading', { level: 2, name: 'Your leads' })).not.toHaveFocus()
   })
 
   it('cancels a request still out when the page comes into view again, and shows only the newest answer', async () => {
