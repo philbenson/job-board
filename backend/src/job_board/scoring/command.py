@@ -41,7 +41,8 @@ def refuse_the_environment() -> bool:
     if variable is not None:
         log.error(
             "refusing to start: %s turns on LangSmith tracing, which would send postings, "
-            "titles and the model's replies to LangSmith; unset it or set it to false",
+            "each person's profile and the model's replies to LangSmith; unset it or set it "
+            "to false",
             variable,
         )
         refused = True

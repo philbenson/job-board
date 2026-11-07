@@ -5,7 +5,6 @@ run's context rather than its state, so it is never part of what the graph
 reads, returns or could keep.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, TypedDict
 
@@ -28,7 +27,7 @@ class Context:
 
 
 class State(TypedDict, total=False):
-    titles: list[str]
+    profile: str
     text: str
     rating: Rating | NoRating
 
@@ -41,7 +40,9 @@ async def _rate(state: State, runtime: Runtime[Context]) -> State:
     reply, so it is dropped here, never logged. A failed request raises.
     """
     try:
-        reply = await runtime.context.model.ainvoke(prompt_messages(state["titles"], state["text"]))
+        reply = await runtime.context.model.ainvoke(
+            prompt_messages(state["profile"], state["text"])
+        )
     except ReplyCutOff:
         return {"rating": "cut-off"}
     except OutputParserException, ModelRefusalError:
@@ -60,10 +61,10 @@ def _build() -> CompiledStateGraph[State, Context, State, State]:
 RATING_GRAPH = _build()
 
 
-async def rate(model: RatingModel, titles: Sequence[str], text: str) -> Rating | NoRating:
-    """The model's rating of one posting's ``text`` against ``titles``, or why there is none."""
+async def rate(model: RatingModel, profile: str, text: str) -> Rating | NoRating:
+    """The model's rating of one posting's ``text`` against the rendered ``profile``, or why not."""
     result = await RATING_GRAPH.ainvoke(
-        {"titles": list(titles), "text": text}, context=Context(model=model)
+        {"profile": profile, "text": text}, context=Context(model=model)
     )
     rating: Rating | NoRating = result["rating"]
     return rating

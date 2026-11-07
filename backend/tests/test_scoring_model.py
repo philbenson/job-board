@@ -73,10 +73,10 @@ async def test_the_real_model_sends_the_key_the_model_id_the_effort_the_cap_and_
     None
 ):
     key = fake_key()
-    with canned_anthropic(rating(4, "A close match for the titles.")) as server:
+    with canned_anthropic(rating(4, "A close match for the profile.")) as server:
         result = await anthropic_model(key, base_url=server.url).ainvoke("Rate this.")
 
-    assert result == Rating(score=4, reason="A close match for the titles.")
+    assert result == Rating(score=4, reason="A close match for the profile.")
     [request] = server.received
     assert request.path == "/v1/messages"
     assert request.headers["authorization"] == f"Bearer {key}"

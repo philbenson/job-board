@@ -36,6 +36,7 @@ from job_board.scoring.graph import rate
 from job_board.scoring.model import SCORING_MODEL, ModelFactory, Rating
 from job_board.scoring.people import PROVIDER, candidate, eligible_people, unscored_postings
 from job_board.scoring.posting_text import posting_text
+from job_board.scoring.profile_text import profile_text
 
 BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run costs them
 # The first key of every lock scoring takes, the person's id the second. Its bytes spell "SCOR".
@@ -202,12 +203,15 @@ async def _rate_batch(
     model = model_factory(key)
     del key
 
+    # Rendered once, from the profile read above, so every posting in the batch
+    # is sent the same system block and all but the first can read it cached.
+    profile = profile_text(found.profile)
     for posting_id, title, company_name, location, content_html in postings:
         text = posting_text(
             title=title, company_name=company_name, location=location, content_html=content_html
         )
         try:
-            rating = await rate(model, found.titles, text)
+            rating = await rate(model, profile, text)
         except anthropic.APIError as error:
             reason, failure = _why(error)
             if failure is not None:

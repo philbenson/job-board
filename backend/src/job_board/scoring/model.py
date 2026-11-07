@@ -54,7 +54,7 @@ class ReplyCutOff(Exception):
 
 
 class Rating(BaseModel):
-    """How well one posting fits the titles a person seeks, and why.
+    """How well one posting fits the person's profile, and why.
 
     The schema sent to the model carries the bounds only as descriptions, so
     these validators are what hold a reply to them. Strict, so a score sent as
@@ -65,7 +65,7 @@ class Rating(BaseModel):
 
     score: int = Field(
         description=(
-            f"How well the posting fits the titles sought: a whole number from {MIN_SCORE}, "
+            f"How well the posting fits the person's profile: a whole number from {MIN_SCORE}, "
             f"a poor fit, to {MAX_SCORE}, a strong fit."
         )
     )
