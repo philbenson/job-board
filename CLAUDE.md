@@ -18,7 +18,7 @@ Backend, from `backend/`:
 Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer):
 
 - `npm ci` installs from the lock file
-- `npm ci --prefix codegen` once installs the type generator; `npm run api:types` then regenerates `src/api/schema.ts` from `backend/openapi.json`
+- `npm ci --prefix codegen` installs the type generator, again after each change to `codegen/package-lock.json`; `npm run api:types` then regenerates `src/api/schema.ts` from `backend/openapi.json`
 - CI runs `npm ci`, regenerates the API types and fails if they differ from the committed file, then `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`, in that order
 - `npm run dev` serves the app and passes `/api/…` to the backend on port 8000
 

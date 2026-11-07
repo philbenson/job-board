@@ -64,7 +64,7 @@ npm test
 npm run build
 ```
 
-The backend's OpenAPI description is committed as `backend/openapi.json`, the contract between the two parts: a backend test fails when the file falls behind the routes, and the web app's request and response types are generated from it, so a change on one side that the other has not taken up fails CI. After changing a route, rewrite the file from `backend/` with `uv run python -m job_board.openapi_description`, then regenerate the types from `frontend/` with `npm run api:types` (after a one-time `npm ci --prefix codegen`).
+The backend's OpenAPI description is committed as `backend/openapi.json`, the contract between the two parts: a backend test fails when the file falls behind the routes, and the web app's request and response types are generated from it, so a change on one side that the other has not taken up fails CI. After changing a route, rewrite the file from `backend/` with `uv run python -m job_board.openapi_description`, then regenerate the types from `frontend/` with `npm run api:types` (after installing the generator with `npm ci --prefix codegen`, and again after each change to `frontend/codegen/package-lock.json`).
 
 From the repository root, the public-content check and its tests (see [tools/README.md](tools/README.md)):
 

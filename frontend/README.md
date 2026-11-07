@@ -18,7 +18,7 @@ npm ci
 | `npm test` | Runs the tests once with Vitest and Testing Library on jsdom. Tests replace the network, so no backend is needed. |
 | `npm run build` | Type checks, then writes the production build to `dist/`. |
 | `npm run preview` | Serves the production build locally. |
-| `npm run api:types` | Regenerates `src/api/schema.ts`, the request and response types, from the backend's OpenAPI description in `../backend/openapi.json`. Run it after the backend rewrites that file, and commit both together. Install the generator once first with `npm ci --prefix codegen`. |
+| `npm run api:types` | Regenerates `src/api/schema.ts`, the request and response types, from the backend's OpenAPI description in `../backend/openapi.json`. Run it after the backend rewrites that file, and commit both together. Install the generator first with `npm ci --prefix codegen`, and again after each change to `codegen/package-lock.json`, since an older install writes different output. |
 
 ## The API types
 

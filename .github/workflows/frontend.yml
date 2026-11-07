@@ -49,7 +49,7 @@ jobs:
           npm ci --prefix codegen
           npm run api:types
           if ! git diff --exit-code -- src/api/schema.ts; then
-            echo "::error file=frontend/src/api/schema.ts::src/api/schema.ts does not match backend/openapi.json: run npm run api:types from frontend/ and commit the result"
+            echo "::error file=frontend/src/api/schema.ts::src/api/schema.ts does not match backend/openapi.json: run npm ci --prefix codegen && npm run api:types from frontend/ and commit the result"
             exit 1
           fi
       - run: npm run lint
