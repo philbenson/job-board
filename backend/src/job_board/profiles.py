@@ -70,15 +70,14 @@ async def read_profile(
     return Profile() if document is None else Profile.model_validate(document)
 
 
-@router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
-async def save_target_titles(
-    body: TargetTitles,
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+async def _save_section(
+    session: AsyncSession, person: Person, section: str, value: object
 ) -> Profile:
-    """Replaces the signed-in person's target titles and answers the profile as stored."""
-    section = "target_titles"  # the Profile field this route owns
-    new_row = insert(ProfileRow).values(person_id=person.id, document={section: body.titles})
+    """Sets one section of the person's stored document and answers the profile as stored.
+
+    ``section`` is the Profile field the caller owns and ``value`` its JSON form.
+    """
+    new_row = insert(ProfileRow).values(person_id=person.id, document={section: value})
     # One statement, so two saves at once cannot interleave a read and a write:
     # the row is added holding only this section, or the stored document gets
     # this one key set with jsonb_set and keeps every other key it holds.
@@ -96,3 +95,13 @@ async def save_target_titles(
     document = await session.scalar(save)
     await session.commit()
     return Profile.model_validate(document)
+
+
+@router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
+async def save_target_titles(
+    body: TargetTitles,
+    person: Annotated[Person, Depends(current_person)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Profile:
+    """Replaces the signed-in person's target titles and answers the profile as stored."""
+    return await _save_section(session, person, "target_titles", body.titles)
