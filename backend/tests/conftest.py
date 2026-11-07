@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import boto3
+import botocore.config
 import botocore.session
 import pytest
 from alembic import command
@@ -67,7 +68,7 @@ def local_s3() -> Iterator[str]:
 def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
     """A bucket of one test's own on the local S3 server, emptied and removed after."""
     # Built as the service builds its own, reading nothing from the shell's
-    # AWS_ variables or ~/.aws, which a test may also set.
+    # AWS_ variables, ~/.aws or proxy variables, which a test may also set.
     session = botocore.session.Session(session_vars=SETTINGS_FROM_NOWHERE)
     client = boto3.session.Session(botocore_session=session).client(
         "s3",
@@ -75,6 +76,7 @@ def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
         region_name="us-east-1",
         aws_access_key_id="local-s3-owner",
         aws_secret_access_key="local-s3-owner-secret",
+        config=botocore.config.Config(proxies={}),
     )
     bucket = LocalBucket(f"resumes-{secrets.token_hex(6)}", client)
     client.create_bucket(Bucket=bucket.name)

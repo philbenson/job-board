@@ -50,6 +50,10 @@ ENDPOINT_REFUSAL = (
     "S3_ENDPOINT_URL must be the https origin of an S3-compatible store, such as "
     "https://s3.us-east-1.amazonaws.com, with no path; http only to 127.0.0.1, ::1 or localhost"
 )
+REGION_REFUSAL = (
+    "S3_REGION must be a region name such as auto or us-east-1: up to 63 letters, "
+    "digits and hyphens, not only digits, and neither starting nor ending with a hyphen"
+)
 BUCKET_REFUSAL = (
     "S3_BUCKET must be 3 to 63 lowercase letters, digits, dots and hyphens, "
     "starting and ending with a letter or digit"
@@ -58,6 +62,9 @@ BUCKET_REFUSAL = (
 # clear; on this machine it reaches only a local store, which the tests run.
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 BUCKET_NAME = re.compile(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")  # S3's rule, which R2 shares
+# botocore's own rule for a region, a host label, copied from validate_region_name
+# in botocore/utils.py, which raises on any other when the client is built.
+REGION_NAME = re.compile(r"^(?![0-9]+$)(?!-)[a-zA-Z0-9-]{,63}(?<!-)$")
 
 
 def sqlalchemy_url(url: str) -> str:
@@ -232,6 +239,13 @@ class Settings(DatabaseSettings):
         # Kept as given rather than as origin() writes it, which drops the
         # brackets around an IPv6 address.
         return value.rstrip("/")
+
+    @field_validator("s3_region")
+    @classmethod
+    def _region_name(cls, value: str | None) -> str | None:
+        if value is not None and REGION_NAME.fullmatch(value) is None:
+            raise ValueError(REGION_REFUSAL)
+        return value
 
     @field_validator("s3_bucket")
     @classmethod

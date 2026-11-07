@@ -1,6 +1,8 @@
 from itertools import combinations
 
 import pytest
+from botocore.exceptions import InvalidRegionError
+from botocore.utils import validate_region_name
 from pydantic import ValidationError
 from settings_for_tests import (
     ISSUER,
@@ -11,7 +13,7 @@ from settings_for_tests import (
     make_settings,
 )
 
-from job_board.settings import BUCKET_REFUSAL, ENDPOINT_REFUSAL, Settings
+from job_board.settings import BUCKET_REFUSAL, ENDPOINT_REFUSAL, REGION_REFUSAL, Settings
 
 STORAGE = {
     "s3_endpoint_url": "https://account.r2.example.com",
@@ -114,6 +116,29 @@ def test_refuses_a_bucket_name_s3_refuses_without_repeating_it(bucket: str) -> N
     message = str(raised.value)
     assert BUCKET_REFUSAL in message
     assert bucket not in message.replace(BUCKET_REFUSAL, "")
+
+
+REGIONS_TAKEN = ["auto", "us-east-1", "eu-central-2", "WNAM", "r" * 63, "1a"]
+REGIONS_REFUSED = ["us east 1", "-us-east-1", "us-east-1-", "12345", "r" * 64, "us_east_1", "a/b"]
+
+
+@pytest.mark.parametrize("region", REGIONS_TAKEN)
+def test_takes_a_region_botocore_takes(region: str) -> None:
+    validate_region_name(region)  # the rule the settings copy, so a drift shows here
+    storage = make_settings(**{**STORAGE, "s3_region": region}).resume_storage()
+    assert storage is not None
+    assert storage.region == region
+
+
+@pytest.mark.parametrize("region", REGIONS_REFUSED)
+def test_refuses_a_region_botocore_refuses_without_repeating_it(region: str) -> None:
+    with pytest.raises(InvalidRegionError):
+        validate_region_name(region)
+    with pytest.raises(ValidationError) as raised:
+        make_settings(**{**STORAGE, "s3_region": region})
+    message = str(raised.value)
+    assert REGION_REFUSAL in message
+    assert region not in message.replace(REGION_REFUSAL, "")
 
 
 def test_never_shows_the_credentials() -> None:

@@ -4,7 +4,9 @@ Invariant: the store's address, region and credentials come from the five
 storage settings and nowhere else. boto3 would otherwise also read them from
 ``AWS_`` environment variables and the shared AWS config and credentials files,
 so a variable set in the shell for another project could send resumes to
-another store; the client here is built on a session that reads neither.
+another store; the client here is built on a session that reads neither. Nor
+does it read the ``HTTP_PROXY``, ``HTTPS_PROXY`` and ``NO_PROXY`` variables:
+its requests go straight to the store, never through a proxy the shell names.
 
 Every call to the store runs in a worker thread, since boto3 blocks, and a
 store that does not answer, or refuses, raises ``StoreDidNotAnswer`` after one
@@ -44,6 +46,13 @@ CLIENT_CONFIG = Config(
     # Tries in all, the first included. Its "max_attempts" would count retries,
     # one try more (botocore/config.py, the retries parameter).
     retries={"total_max_attempts": 2, "mode": "standard"},
+    # One pooled connection for each of the 40 worker threads a store call can
+    # run in (anyio's default thread limiter, which run_in_threadpool takes).
+    # botocore keeps 10 by default; a call past them opens a connection of its
+    # own, and urllib3 logs the store's address as it throws that one away.
+    max_pool_connections=40,
+    # No proxy: botocore reads the proxy variables only when this is not given.
+    proxies={},
     # Checksums only where an operation requires one: some S3-compatible stores
     # refuse the checksum headers that boto3 now sends by default.
     request_checksum_calculation="when_required",

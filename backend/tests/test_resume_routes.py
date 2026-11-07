@@ -569,6 +569,7 @@ async def test_reaches_the_store_named_by_its_settings_whatever_the_aws_environm
     someone: Someone,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    closed_port: int,
 ) -> None:
     config_file = tmp_path / "aws-config"
     config_file.write_text(
@@ -588,8 +589,16 @@ async def test_reaches_the_store_named_by_its_settings_whatever_the_aws_environm
         "AWS_USE_DUALSTACK_ENDPOINT": "true",
         "AWS_USE_FIPS_ENDPOINT": "true",
         "AWS_CA_BUNDLE": str(tmp_path / "no-such-bundle.pem"),
+        "HTTP_PROXY": f"http://127.0.0.1:{closed_port}",
+        "HTTPS_PROXY": f"http://127.0.0.1:{closed_port}",
+        # Empty, so that no bypass for this machine's own address hides a
+        # client that reads the proxy variables.
+        "NO_PROXY": "",
     }.items():
         monkeypatch.setenv(name, value)
+    # The lower case spellings, which Python reads before these, are the shell's.
+    for name in ("http_proxy", "https_proxy", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
 
     settings = storage_settings(local_s3, s3_bucket.name)
     async with service_for(migrated_database_url, **settings) as service:
