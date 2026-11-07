@@ -2,9 +2,12 @@ import { useAuth } from '@clerk/react'
 import { useEffect, useId, useState } from 'react'
 import { fetchProfile, type ProfileBody, type ProfileRead } from '../api/profile.ts'
 import { withToken } from '../api/withToken.ts'
+import { CompaniesPart } from './CompaniesPart.tsx'
 import { DealBreakersPart } from './DealBreakersPart.tsx'
 import { GapsPart } from './GapsPart.tsx'
 import { NearbyTitlesPart } from './NearbyTitlesPart.tsx'
+import { OwnRulesPart } from './OwnRulesPart.tsx'
+import { PacePart } from './PacePart.tsx'
 import { PayPart } from './PayPart.tsx'
 import { PlacesPart } from './PlacesPart.tsx'
 import { SkillsPart } from './SkillsPart.tsx'
@@ -66,6 +69,9 @@ export function ProfilePanel() {
           <SkillsPart stored={loading.profile.skills} />
           <GapsPart stored={loading.profile.gaps} />
           <DealBreakersPart stored={loading.profile.deal_breakers} />
+          <CompaniesPart stored={loading.profile.companies} />
+          <PacePart stored={loading.profile.pace} />
+          <OwnRulesPart stored={loading.profile.own_rules} />
         </>
       )}
     </section>

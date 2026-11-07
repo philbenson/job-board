@@ -476,6 +476,9 @@ describe('ProfilePanel, as parts', () => {
       'Skills',
       'Gaps and trade-offs',
       'Deal-breakers',
+      'Companies',
+      'Pace',
+      'Your own rules',
     ])
     expect(
       screen.getByText(
@@ -582,6 +585,9 @@ describe('ProfilePanel, as parts', () => {
       'Skills',
       'Gaps and trade-offs',
       'Deal-breakers',
+      'Companies',
+      'Pace',
+      'Your own rules',
     ]) {
       const region = screen.getByRole('region', { name: heading })
       for (const control of [

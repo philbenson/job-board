@@ -26,3 +26,16 @@ export const DAY_CHOICES: readonly Choice<string>[] = [
 export const SIZE_CHOICES: readonly Choice<CompanySize>[] = Object.entries(
   COMPANY_SIZE_NAMES,
 ) as [CompanySize, string][]
+
+/**
+ * The lowest score that gets a written brief, from 1 to the backend's top
+ * score of 5, after no briefs at all, sent as null.
+ */
+export const BRIEF_CHOICES: readonly Choice<string>[] = [
+  ['', 'No briefs'],
+  ['1', '1'],
+  ['2', '2'],
+  ['3', '3'],
+  ['4', '4'],
+  ['5', '5'],
+]

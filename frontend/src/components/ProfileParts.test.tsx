@@ -206,6 +206,80 @@ describe('the profile parts', () => {
         { industries: ['Gambling'], company_sizes: ['10001+', '1-10'], no_agencies: true },
       ])
     })
+
+    it('companies', async () => {
+      const sent = await sentBy(
+        '/profile/companies',
+        async () => {
+          await type('Companies', 'Add a company to watch', 'Example Corp{Enter}')
+          await type('Companies', 'Company', 'Example Corp')
+          await type('Companies', 'Job title', ' Data Analyst {Enter}')
+          await type('Companies', 'Company', 'Example Corp')
+          await type('Companies', 'Job title', 'Data Scientist{Enter}')
+          expect(shownIn('Companies', 'Your applications')).toEqual([
+            'Data Analyst at Example Corp',
+            'Data Scientist at Example Corp',
+          ])
+          expect(
+            part('Companies').getByRole('button', { name: 'Remove Data Analyst at Example Corp' }),
+          ).toBeInTheDocument()
+        },
+        'Companies',
+      )
+
+      expect(sent).toEqual([
+        {
+          watch: ['Example Corp'],
+          applied: [
+            { company: 'Example Corp', title: 'Data Analyst' },
+            { company: 'Example Corp', title: 'Data Scientist' },
+          ],
+        },
+      ])
+    })
+
+    it('pace, no briefs sent as none', async () => {
+      const sent = await sentBy(
+        '/profile/pace',
+        async () => {
+          await type('Pace', 'Leads a day', '12')
+          expect(
+            part('Pace').getByRole('combobox', { name: 'Write a brief for postings scored at least' }),
+          ).toHaveValue('')
+        },
+        'Pace',
+      )
+
+      expect(sent).toEqual([{ leads_per_day: 12, brief_from_score: null }])
+    })
+
+    it('pace, with a score for briefs', async () => {
+      const sent = await sentBy(
+        '/profile/pace',
+        async () => {
+          await type('Pace', 'Leads a day', '5')
+          await user.selectOptions(
+            part('Pace').getByRole('combobox', { name: 'Write a brief for postings scored at least' }),
+            '4',
+          )
+        },
+        'Pace',
+      )
+
+      expect(sent).toEqual([{ leads_per_day: 5, brief_from_score: 4 }])
+    })
+
+    it('your own rules', async () => {
+      const sent = await sentBy(
+        '/profile/own-rules',
+        async () => {
+          await type('Your own rules', 'Add a rule', 'No on-call rota{Enter}')
+        },
+        'Your own rules',
+      )
+
+      expect(sent).toEqual([{ rules: ['No on-call rota'] }])
+    })
   })
 
   it('holds a save whose number is blank or not whole, saying which', async () => {
@@ -240,6 +314,36 @@ describe('the profile parts', () => {
     expect(sentTo(fetchMock, '/profile/skills')).toEqual([{ skills: [] }])
   })
 
+  it('holds a pace save whose leads a day is blank or not whole', async () => {
+    const fetchMock = stubProfileService(profileWith([]))
+    render(<ProfilePanel />)
+    await loaded()
+    const [notice] = part('Pace').getAllByRole('status')
+
+    await save('Pace')
+    expect(notice).toHaveTextContent('Enter leads a day as a whole number')
+    await type('Pace', 'Leads a day', 'ten')
+    await save('Pace')
+    expect(notice).toHaveTextContent('Enter leads a day as a whole number')
+
+    expect(sentTo(fetchMock, '/profile/pace')).toEqual([])
+  })
+
+  it('refuses a job applied to twice, by company and title together', async () => {
+    stubProfileService(profileWith([]))
+    render(<ProfilePanel />)
+    await loaded()
+    const [notice] = part('Companies').getAllByRole('status')
+
+    await type('Companies', 'Company', 'Example Corp')
+    await type('Companies', 'Job title', 'Data Analyst{Enter}')
+    await type('Companies', 'Company', 'example corp')
+    await type('Companies', 'Job title', 'DATA ANALYST{Enter}')
+
+    expect(notice).toHaveTextContent('Data Analyst at Example Corp is already in your list')
+    expect(shownIn('Companies', 'Your applications')).toEqual(['Data Analyst at Example Corp'])
+  })
+
   it('shows each section as stored, its numbers grouped, once read', async () => {
     stubProfileService(fullProfile())
     render(<ProfilePanel />)
@@ -259,6 +363,11 @@ describe('the profile parts', () => {
     expect(part('Deal-breakers').getByRole('checkbox', { name: '1 to 10 people' })).toBeChecked()
     expect(part('Deal-breakers').getByRole('checkbox', { name: '11 to 50 people' })).not.toBeChecked()
     expect(part('Deal-breakers').getByRole('checkbox', { name: 'No recruiting agencies' })).toBeChecked()
+    expect(shownIn('Companies', 'Companies you watch')).toEqual(['Example Corp'])
+    expect(shownIn('Companies', 'Your applications')).toEqual(['Data Analyst at Example Corp'])
+    expect(part('Pace').getByRole('textbox', { name: 'Leads a day' })).toHaveValue('10')
+    expect(part('Pace').getByRole('combobox', { name: 'Write a brief for postings scored at least' })).toHaveValue('4')
+    expect(shownIn('Your own rules', 'Your rules')).toEqual(['No on-call rota'])
     expect(screen.queryByText('Not answered yet.')).not.toBeInTheDocument()
   })
 
@@ -335,6 +444,22 @@ describe('the profile parts', () => {
 
     expect(
       await part('Skills').findByText('Input should be less than or equal to 60: SQL'),
+    ).toBeInTheDocument()
+  })
+
+  it("names a job applied to by its company when a refusal points into it", async () => {
+    stubProfileService(profileWith([]), {
+      '/profile/companies': () =>
+        answer(422, refusal(['body', 'applied', 0, 'title'], 'A job title cannot be blank')),
+    })
+    render(<ProfilePanel />)
+    await loaded()
+
+    await type('Companies', 'Company', 'Example Corp{Enter}')
+    await save('Companies')
+
+    expect(
+      await part('Companies').findByText('A job title cannot be blank: Example Corp'),
     ).toBeInTheDocument()
   })
 

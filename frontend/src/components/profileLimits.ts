@@ -18,3 +18,7 @@ export const MAX_GAPS = 20 // MAX_GAPS, for gaps and for trade-offs alike
 export const MAX_GAP_LENGTH = 200 // MAX_GAP_LENGTH
 export const MAX_INDUSTRIES = 30 // MAX_INDUSTRIES
 export const MAX_INDUSTRY_LENGTH = 100 // MAX_INDUSTRY_LENGTH
+export const MAX_WATCHED = 30 // MAX_WATCHED
+export const MAX_APPLIED = 50 // MAX_APPLIED
+export const MAX_RULES = 20 // MAX_RULES
+export const MAX_RULE_LENGTH = 300 // MAX_RULE_LENGTH
