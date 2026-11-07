@@ -27,8 +27,7 @@ SCRIPT = TOOLS / "public_check.py"
 
 MADE_UP_NAME = ("alpha", "bravo", "charlie")
 MADE_UP_HASHES = frozenset(
-    hashlib.sha256(separator.join(MADE_UP_NAME).encode()).hexdigest()
-    for separator in ("-", "")
+    hashlib.sha256(separator.join(MADE_UP_NAME).encode()).hexdigest() for separator in ("-", "")
 )
 
 
@@ -65,7 +64,12 @@ class PrivateNameTest(unittest.TestCase):
                 self.assertEqual(rules(spelling), ["private-name"])
 
     def test_ignores_near_misses(self) -> None:
-        for text in ["alpha bravo delta", "alpha-bravo", "bravo charlie alpha", "alphabet bravo charlie"]:
+        for text in [
+            "alpha bravo delta",
+            "alpha-bravo",
+            "bravo charlie alpha",
+            "alphabet bravo charlie",
+        ]:
             with self.subTest(text=text):
                 self.assertEqual(rules(text), [])
 
@@ -82,7 +86,10 @@ class PrivateNameTest(unittest.TestCase):
             name_hashes=MADE_UP_HASHES,
             name_words=len(MADE_UP_NAME),
         )
-        self.assertEqual([str(finding) for finding in findings], ["docs/***/plan.md (path): private-name: (withheld)"])
+        self.assertEqual(
+            [str(finding) for finding in findings],
+            ["docs/***/plan.md (path): private-name: (withheld)"],
+        )
 
     def test_reports_the_line_the_name_starts_on(self) -> None:
         findings = scan("first line\nsecond alpha-bravo-charlie\n")
@@ -90,9 +97,7 @@ class PrivateNameTest(unittest.TestCase):
 
     def test_the_real_hashes_are_the_default(self) -> None:
         self.assertEqual(len(public_check.PRIVATE_NAME_HASHES), 2)
-        self.assertEqual(
-            public_check.scan_text("alpha-bravo-charlie", "sample.txt"), []
-        )
+        self.assertEqual(public_check.scan_text("alpha-bravo-charlie", "sample.txt"), [])
 
 
 class EmailTest(unittest.TestCase):
@@ -239,12 +244,15 @@ class RepositoryTestCase(unittest.TestCase):
         environment = dict(self.environment, **identity)
         tree = self.git("write-tree")
         parents = []
-        if subprocess.run(
-            ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
-            cwd=self.repository,
-            env=self.environment,
-            capture_output=True,
-        ).returncode == 0:
+        if (
+            subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+                cwd=self.repository,
+                env=self.environment,
+                capture_output=True,
+            ).returncode
+            == 0
+        ):
             parents = ["-p", self.git("rev-parse", "HEAD")]
         commit = self.git("commit-tree", tree, *parents, "-m", message, environment=environment)
         self.git("update-ref", "HEAD", commit)
@@ -361,7 +369,9 @@ class HistoryModeTest(RepositoryTestCase):
         self.commit(joined("third commit, call 212", "-555-0234"))
         result = self.check("--history")
         self.assertEqual(result.returncode, 1)
-        self.assertRegex(result.stdout, r"commit [0-9a-f]{12} author: email-address: j\*\*\*@m\*\*\*")
+        self.assertRegex(
+            result.stdout, r"commit [0-9a-f]{12} author: email-address: j\*\*\*@m\*\*\*"
+        )
         self.assertRegex(result.stdout, r"commit [0-9a-f]{12} message:1: phone-number: \*\*\*34")
         self.assertIn("0 files, 3 commits, 2 findings", result.stdout)
 

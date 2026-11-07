@@ -68,7 +68,8 @@ FICTIONAL_EXCHANGE = "555"
 FICTIONAL_LINES = range(100, 200)  # 555-0100 to 555-0199 are reserved for fiction
 
 _WORD = re.compile(r"[A-Za-z0-9]+")
-SCISSORS = "------------------------ >8 ------------------------"  # git commit --verbose puts the diff below this
+# git commit --verbose puts the diff below this line
+SCISSORS = "------------------------ >8 ------------------------"
 
 
 @dataclass(frozen=True)
@@ -106,7 +107,10 @@ def _name_matches(text: str, name_hashes: frozenset[str], name_words: int) -> It
             spellings = ["".join(word for word, _, _ in window)]
             if size == name_words:
                 spellings.append("-".join(word for word, _, _ in window))
-            if any(hashlib.sha256(spelling.encode()).hexdigest() in name_hashes for spelling in spellings):
+            if any(
+                hashlib.sha256(spelling.encode()).hexdigest() in name_hashes
+                for spelling in spellings
+            ):
                 yield Match(window[0][1], window[-1][2], "private-name", "(withheld)")
                 break
 
@@ -117,14 +121,18 @@ def _email_allowed(local: str, domain: str) -> bool:
         return True
     if domain == ALLOWED_EMAIL_SUFFIX or domain.endswith("." + ALLOWED_EMAIL_SUFFIX):
         return True
-    return any(domain == allowed or domain.endswith("." + allowed) for allowed in ALLOWED_EMAIL_DOMAINS)
+    return any(
+        domain == allowed or domain.endswith("." + allowed) for allowed in ALLOWED_EMAIL_DOMAINS
+    )
 
 
 def _email_matches(text: str) -> Iterator[Match]:
     for email in EMAIL.finditer(text):
         local, domain = email.group("local"), email.group("domain")
         if not _email_allowed(local, domain):
-            yield Match(email.start(), email.end(), "email-address", f"{local[0]}***@{domain[0]}***")
+            yield Match(
+                email.start(), email.end(), "email-address", f"{local[0]}***@{domain[0]}***"
+            )
 
 
 def _phone_allowed(digits: str) -> bool:
@@ -175,7 +183,11 @@ def scan_text(
     """Every finding in the text, located as ``location:line``."""
     line_starts = [0] + [index + 1 for index, character in enumerate(text) if character == "\n"]
     return [
-        Finding(f"{location}:{bisect.bisect_right(line_starts, match.start)}", match.rule, match.redacted)
+        Finding(
+            f"{location}:{bisect.bisect_right(line_starts, match.start)}",
+            match.rule,
+            match.redacted,
+        )
         for match in _matches(text, name_hashes, name_words)
     ]
 
@@ -267,7 +279,7 @@ def check_tracked(tally: Tally) -> Iterator[Finding]:
 
 
 def message_text(raw: str) -> str:
-    """A commit message as git will record it: comment lines and the diff below the scissors dropped."""
+    """A commit message as git records it: no comment lines, nothing below the scissors."""
     lines = []
     for line in raw.splitlines():
         if line.startswith("#") and line[1:].strip() == SCISSORS:
@@ -313,8 +325,14 @@ def _parse(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--staged", action="store_true", help="the files staged for the next commit")
-    mode.add_argument("--message-file", metavar="PATH", help="a commit message, as the commit-msg hook receives it")
-    mode.add_argument("--tracked", action="store_true", help="every tracked file in the working tree")
+    mode.add_argument(
+        "--message-file",
+        metavar="PATH",
+        help="a commit message, as the commit-msg hook receives it",
+    )
+    mode.add_argument(
+        "--tracked", action="store_true", help="every tracked file in the working tree"
+    )
     mode.add_argument("--history", action="store_true", help="every commit reachable from HEAD")
     return parser.parse_args(argv)
 
