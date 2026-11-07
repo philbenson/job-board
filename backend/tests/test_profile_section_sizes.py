@@ -38,6 +38,7 @@ from job_board.profile_sections import (
     TOP_SCORE,
     US_STATES,
 )
+from job_board.profiles import Profile
 
 # The first of a run of letters each four bytes in UTF-8, unchanged by folding
 # case or composition, so every text below is kept exactly as sent.
@@ -141,3 +142,7 @@ async def test_each_sections_largest_body_fits_under_the_body_cap_and_saves(
 
     assert response.status_code == 200
     assert response.json()[key] == body
+
+
+def test_every_section_but_the_target_titles_has_a_largest_body_here() -> None:
+    assert {key for _, key, _ in LARGEST.values()} == set(Profile.model_fields) - {"target_titles"}

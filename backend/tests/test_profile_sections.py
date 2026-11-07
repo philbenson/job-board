@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from job_board import profile_sections
 from job_board.profile_sections import (
     Application,
     Companies,
@@ -532,3 +533,17 @@ def test_places_publishes_the_state_codes_it_takes_in_its_schema() -> None:
         states = Places.model_json_schema(mode=mode)["properties"]["states"]
 
         assert states["items"] == {"type": "string", "enum": sorted(US_STATES)}, mode
+
+
+def test_places_takes_exactly_the_fifty_states_and_dc_in_any_case() -> None:
+    assert len(US_STATES) == 51
+    assert set(US_STATES) == profile_sections.US_STATES
+    lower = [code.lower() for code in US_STATES]
+
+    assert saved(Places, {**PLACES, "states": lower})["states"] == US_STATES
+
+
+def test_places_takes_every_state_sent_twice_since_its_cap_counts_after_repeats() -> None:
+    twice = [*US_STATES, *(code.lower() for code in US_STATES)]
+
+    assert saved(Places, {**PLACES, "states": twice})["states"] == US_STATES

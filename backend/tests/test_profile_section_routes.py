@@ -11,6 +11,7 @@ from profile_requests import NEW_PROFILE, REFUSED_BODY, Someone, client_for, run
 from settings_for_tests import make_settings
 
 from job_board.app import create_app
+from job_board.profiles import Profile
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,13 @@ SECTIONS = {
         {"rules": ["No roles that need a car"]},
     ),
 }
+
+
+def test_every_section_but_the_target_titles_is_in_these_tests() -> None:
+    # The target titles have their own route tests.
+    assert {section.key for section in SECTIONS.values()} == (
+        set(Profile.model_fields) - {"target_titles"}
+    )
 
 
 @pytest.fixture
