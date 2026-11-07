@@ -1,8 +1,8 @@
 /** No usable answer in time, or the ask failed. */
-export type Unavailable = 'unavailable'
+type Unavailable = 'unavailable'
 
 /** The caller aborted, so nobody wants the answer. */
-export type Aborted = 'aborted'
+type Aborted = 'aborted'
 
 /**
  * Runs `ask` under a time limit and the caller's signal. Resolves to its
@@ -30,13 +30,13 @@ export function askWithin<T>(
 
   return new Promise((resolve) => {
     // The first outcome wins; a later one finds the promise settled.
-    const finish = (outcome: T | Unavailable): void => {
+    const finish = (outcome: T | Unavailable | Aborted): void => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       resolve(signal?.aborted ? 'aborted' : outcome)
     }
     const onAbort = (): void => {
-      finish('unavailable')
+      finish('aborted')
     }
     const timer = setTimeout(() => {
       timeout.abort()
@@ -44,8 +44,14 @@ export function askWithin<T>(
     }, limitMs)
     signal?.addEventListener('abort', onAbort)
 
-    ask(askSignal).then(finish, () => {
+    const failed = (): void => {
       finish('unavailable')
-    })
+    }
+    try {
+      ask(askSignal).then(finish, failed)
+    } catch {
+      // Thrown before it returned a promise, which an async ask never does.
+      failed()
+    }
   })
 }

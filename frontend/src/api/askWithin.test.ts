@@ -27,6 +27,19 @@ describe('askWithin', () => {
     )
   })
 
+  it('reports unavailable when the ask throws before it returns a promise', async () => {
+    vi.useFakeTimers()
+    const throws = (): Promise<string> => {
+      throw new TypeError('not a function')
+    }
+
+    await expect(askWithin(5_000, undefined, throws)).resolves.toBe(
+      'unavailable',
+    )
+    // Its time limit went with it.
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('gives up at the time limit even when the ask never settles', async () => {
     vi.useFakeTimers()
     let result: string | undefined
