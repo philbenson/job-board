@@ -35,7 +35,7 @@ describe('Account', () => {
     render(<Account />)
 
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Target titles' }),
+      screen.getByRole('heading', { level: 2, name: 'Your profile' }),
     ).toBeInTheDocument()
     expect(
       screen.getByText('Confirming your sign-in with the service…'),
@@ -50,7 +50,7 @@ describe('Account', () => {
     const headings = screen
       .getAllByRole('heading', { level: 2 })
       .map((heading) => heading.textContent)
-    expect(headings.slice(-2)).toEqual(['Target titles', 'Resume'])
+    expect(headings.slice(-2)).toEqual(['Your profile', 'Resume'])
   })
 
   it('shows no target titles when signed out', () => {
@@ -59,6 +59,6 @@ describe('Account', () => {
     render(<Account />)
 
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Target titles' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Your profile' })).not.toBeInTheDocument()
   })
 })

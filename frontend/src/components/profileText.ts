@@ -20,3 +20,22 @@ export function lengthOf(text: string): number {
 export function repeatKey(text: string): string {
   return text.normalize('NFC').toLowerCase()
 }
+
+/**
+ * The whole number typed, with any commas dropped; null when it is blank or
+ * not a whole number. Range is the backend's to check.
+ */
+export function wholeNumberFrom(typed: string): number | null {
+  const digits = typed.trim().replaceAll(',', '')
+  if (!/^\d+$/.test(digits)) {
+    return null
+  }
+  const number = Number(digits)
+  // Past this a number loses digits, and the backend would read another one.
+  return Number.isSafeInteger(number) ? number : null
+}
+
+/** A stored amount as a person reads it, its thousands grouped: "120,000". */
+export function grouped(amount: number): string {
+  return amount.toLocaleString('en-US')
+}
