@@ -146,7 +146,7 @@ async def save_model_key(
         last_four=key[-4:],
         checked_at=func.now(),
     )
-    row = await session.scalar(
+    upserted = await session.scalars(
         upsert.on_conflict_do_update(
             index_elements=[ModelKey.person_id, ModelKey.provider],
             set_={
@@ -157,8 +157,8 @@ async def save_model_key(
             },
         ).returning(ModelKey)
     )
+    row = upserted.one()  # an upsert always returns its row
     await session.commit()
-    assert row is not None  # an upsert always returns its row
     return saved(row)
 
 
@@ -167,6 +167,8 @@ async def remove_model_key(
     person: Annotated[Person, Depends(current_person)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
-    await session.execute(delete(ModelKey).where(ModelKey.person_id == person.id))
+    await session.execute(
+        delete(ModelKey).where(ModelKey.person_id == person.id, ModelKey.provider == "anthropic")
+    )
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
