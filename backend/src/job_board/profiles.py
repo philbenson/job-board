@@ -12,7 +12,7 @@ written by another route, or by newer code, survives it untouched.
 """
 
 import unicodedata
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
 from job_board.models import Person, ProfileRow
-from job_board.people import Refused, current_person
+from job_board.people import SIGN_IN_REQUIRED, current_person
 
 MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a different search
 MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line
@@ -156,12 +156,9 @@ router = APIRouter()
 
 # Without a valid sign-in, a request whose body is well-formed JSON, of any
 # shape, gets the one 401, before its body is checked against the model. A
-# body that is not JSON at all is refused first, with FastAPI's 422, because
+# body that is not JSON at all is refused first, with the app's 422, because
 # FastAPI decodes the body before any dependency runs; that answer names the
 # decoding error and where it is, and says nothing of the person or the token.
-SIGN_IN_REQUIRED: dict[int | str, dict[str, Any]] = {
-    401: {"model": Refused, "description": "No valid session token"}
-}
 
 
 @router.get("/profile", responses=SIGN_IN_REQUIRED)
