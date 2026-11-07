@@ -1,8 +1,11 @@
-"""Every section's largest body fits under the body cap, so a full section can always be saved.
+"""Every section's largest body fits under the body cap, as a browser sends it.
 
 Each body is built from the section's own limits: every list at its cap, every
 text at its longest, in characters four bytes long in UTF-8, the widest any
-character is. Raising a limit past what the body cap allows fails here.
+character is, and sent as a browser sends it, with text unescaped in UTF-8.
+An encoder that escapes non-ASCII text, as Python's json.dumps does by default,
+makes a body up to three times larger, and a full section sent that way can be
+refused. Raising a limit past what the body cap allows fails here.
 """
 
 import json
