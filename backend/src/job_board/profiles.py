@@ -133,6 +133,11 @@ class TargetTitles(BaseModel):
 
 router = APIRouter()
 
+# Without a valid sign-in, a request whose body is well-formed JSON, of any
+# shape, gets the one 401, before its body is checked against the model. A
+# body that is not JSON at all is refused first, with FastAPI's 422, because
+# FastAPI decodes the body before any dependency runs; that answer names the
+# decoding error and where it is, and says nothing of the person or the token.
 SIGN_IN_REQUIRED: dict[int | str, dict[str, Any]] = {
     401: {"model": Refused, "description": "No valid session token"}
 }

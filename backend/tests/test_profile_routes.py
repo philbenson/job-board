@@ -249,6 +249,47 @@ async def test_refuses_a_request_without_a_session_token_before_the_database(
     assert response.content == REFUSED_BODY
 
 
+@pytest.mark.parametrize("authorization", [None, "Bearer not-a-session-token"], ids=["none", "bad"])
+@pytest.mark.parametrize(
+    "body",
+    [b'{"titles": 5}', b'{"titles": ["   "]}', b'{"salary": 1}', b"[]"],
+    ids=["not a list", "a blank title", "another key", "not an object"],
+)
+async def test_refuses_well_formed_json_without_a_valid_sign_in_with_the_one_401(
+    body: bytes, authorization: str | None, closed_port: int
+) -> None:
+    unreachable = f"postgresql://job_board:s3cret@127.0.0.1:{closed_port}/job_board"
+    headers = {"Content-Type": "application/json"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    async with client_for(unreachable) as client:
+        response = await client.put("/profile/target-titles", content=body, headers=headers)
+
+    assert response.status_code == 401
+    assert response.content == REFUSED_BODY
+
+
+@pytest.mark.parametrize("authorization", [None, "Bearer not-a-session-token"], ids=["none", "bad"])
+async def test_refuses_a_body_that_is_not_json_before_the_sign_in_saying_nothing_of_either(
+    authorization: str | None, closed_port: int
+) -> None:
+    unreachable = f"postgresql://job_board:s3cret@127.0.0.1:{closed_port}/job_board"
+    headers = {"Content-Type": "application/json"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    async with client_for(unreachable) as client:
+        response = await client.put("/profile/target-titles", content=b"{", headers=headers)
+
+    # FastAPI decodes the body before any dependency runs, so this answer comes
+    # first; it names the decoding error and its place, and nothing else.
+    assert response.status_code == 422
+    (error,) = response.json()["detail"]
+    assert error["type"] == "json_invalid"
+    assert error["loc"] == ["body", 1]
+    assert "not-a-session-token" not in response.text
+    assert "sign-in" not in response.text
+
+
 def test_the_description_says_both_routes_need_a_bearer_token() -> None:
     paths = create_app(make_settings()).openapi()["paths"]
     read = paths["/profile"]["get"]
