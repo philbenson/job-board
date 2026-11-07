@@ -65,10 +65,111 @@
           }
         ]
       }
+    },
+    "/profile": {
+      "get": {
+        "summary": "Read Profile",
+        "description": "The signed-in person's profile; an empty one, written nowhere, before their first save.",
+        "operationId": "read_profile_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/target-titles": {
+      "put": {
+        "summary": "Save Target Titles",
+        "description": "Replaces the signed-in person's target titles and answers the profile as stored.",
+        "operationId": "save_target_titles_profile_target_titles_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetTitles"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -108,6 +209,23 @@
         ],
         "title": "Me"
       },
+      "Profile": {
+        "properties": {
+          "target_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Titles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_titles"
+        ],
+        "title": "Profile",
+        "description": "The whole profile, as stored and as answered."
+      },
       "Refused": {
         "properties": {
           "detail": {
@@ -120,6 +238,64 @@
           "detail"
         ],
         "title": "Refused"
+      },
+      "TargetTitles": {
+        "properties": {
+          "titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Titles"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "titles"
+        ],
+        "title": "TargetTitles",
+        "description": "The body that replaces the target titles. An empty list means none chosen."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
       }
     },
     "securitySchemes": {

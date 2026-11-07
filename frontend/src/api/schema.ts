@@ -38,10 +38,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Profile
+         * @description The signed-in person's profile; an empty one, written nowhere, before their first save.
+         */
+        get: operations["read_profile_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/target-titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Target Titles
+         * @description Replaces the signed-in person's target titles and answers the profile as stored.
+         */
+        put: operations["save_target_titles_profile_target_titles_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /** Health */
         Health: {
             /**
@@ -60,10 +105,39 @@ export interface components {
             /** Id */
             id: number;
         };
+        /**
+         * Profile
+         * @description The whole profile, as stored and as answered.
+         */
+        Profile: {
+            /** Target Titles */
+            target_titles: string[];
+        };
         /** Refused */
         Refused: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * TargetTitles
+         * @description The body that replaces the target titles. An empty list means none chosen.
+         */
+        TargetTitles: {
+            /** Titles */
+            titles: string[];
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -128,6 +202,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    read_profile_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    save_target_titles_profile_target_titles_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TargetTitles"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
