@@ -1,7 +1,7 @@
 """Alembic's entry point, using the async engine the service uses.
 
 The database URL comes from the application settings, never from alembic.ini,
-so the service, the migrations and the tests all read one setting.
+so the service and the migrations read one setting and convert it one way.
 """
 
 import asyncio

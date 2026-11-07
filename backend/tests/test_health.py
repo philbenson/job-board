@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 
@@ -13,7 +14,7 @@ UNAVAILABLE = {"status": "unavailable", "database": "unreachable"}
 
 
 def unreachable_url(port: int) -> str:
-    return f"postgresql+psycopg://job_board:s3cret@127.0.0.1:{port}/job_board"
+    return f"postgresql://job_board:s3cret@127.0.0.1:{port}/job_board"
 
 
 async def get_health(database_url: str) -> httpx.Response:
@@ -43,7 +44,8 @@ async def test_unavailable_within_the_ceiling_when_the_server_hangs(
 ) -> None:
     monkeypatch.setattr(health, "HEALTH_CHECK_TIMEOUT_SECONDS", 0.3)
     started = time.monotonic()
-    response = await get_health(unreachable_url(silent_port))
+    # Without a working ceiling, psycopg would wait minutes; fail in seconds instead.
+    response = await asyncio.wait_for(get_health(unreachable_url(silent_port)), 5)
     assert time.monotonic() - started < 1.5
     assert response.status_code == 503
     assert response.json() == UNAVAILABLE
