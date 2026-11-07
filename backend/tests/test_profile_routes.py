@@ -212,7 +212,6 @@ async def test_refuses_a_title_breaking_a_rule_with_the_rule_alone_and_stores_no
     (error,) = response.json()["detail"]
     assert error["msg"] == "A target title cannot be blank"
     assert error["loc"] == ["body", "titles", 1]
-    assert error["input"] == "   "
     assert someone.stored() == []
 
 

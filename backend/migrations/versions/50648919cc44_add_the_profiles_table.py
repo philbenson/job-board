@@ -4,7 +4,7 @@ One row per person, holding their whole profile as one JSON document that is
 written a section at a time; it goes when the person does.
 
 Revision ID: 50648919cc44
-Revises: 9fe5638962f4
+Revises: 95bda4472598
 Create Date: 2026-11-07 12:44:22.266071
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "50648919cc44"
-down_revision: str | Sequence[str] | None = "9fe5638962f4"
+down_revision: str | Sequence[str] | None = "95bda4472598"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

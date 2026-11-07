@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from job_board.models import Person
-from job_board.people import current_person
+from job_board.people import SIGN_IN_REQUIRED, current_person
 
 router = APIRouter()
 
@@ -15,10 +15,6 @@ class Me(BaseModel):
     id: int
 
 
-class Refused(BaseModel):
-    detail: str
-
-
-@router.get("/me", responses={401: {"model": Refused, "description": "No valid session token"}})
+@router.get("/me", responses={**SIGN_IN_REQUIRED})
 async def me(person: Annotated[Person, Depends(current_person)]) -> Me:
     return Me(id=person.id)

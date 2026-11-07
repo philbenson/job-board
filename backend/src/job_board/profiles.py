@@ -22,9 +22,8 @@ from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
-from job_board.me import Refused
 from job_board.models import Person, ProfileRow
-from job_board.people import current_person
+from job_board.people import Refused, current_person
 
 MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a different search
 MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line

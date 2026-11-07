@@ -6,13 +6,14 @@ import {
   UserButton,
 } from '@clerk/react'
 import { AccountPanel } from './AccountPanel.tsx'
+import { ModelKeyPanel } from './ModelKeyPanel.tsx'
 import { ProfilePanel } from './ProfilePanel.tsx'
 
 /**
  * Clerk's sign-in button when signed out; its user button, what the backend
- * made of the sign-in, and the person's target titles when signed in. Until
- * Clerk has loaded neither shows, so the area says it is loading, or that
- * Clerk could not load, rather than standing empty.
+ * made of the sign-in, the person's model key and their target titles when
+ * signed in. Until Clerk has loaded neither shows, so the area says it is
+ * loading, or that Clerk could not load, rather than standing empty.
  */
 export function Account() {
   return (
@@ -31,6 +32,7 @@ export function Account() {
       <Show when="signed-in">
         <UserButton />
         <AccountPanel />
+        <ModelKeyPanel />
         <ProfilePanel />
       </Show>
     </section>

@@ -4,13 +4,14 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the first part of the profile, and the posting fetcher:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, and the posting fetcher:
 
-- a FastAPI service with four routes: `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
+- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
-- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of profiles, of postings and of fetch runs);
+- the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings and of fetch runs);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
-- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person and lets them list, add, remove and save their target titles;
+- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, and lets them list, add, remove and save their target titles;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
@@ -29,7 +30,9 @@ Sign-in needs a [Clerk](https://clerk.com/) application; a development instance 
 
 Sign-up is by invitation: in the Clerk dashboard, set the application's sign-up mode to Invite-only, then invite each person who will use it by email. Left at Open, anyone who finds the page can make an account.
 
-The service will not start without the three backend values, and names whichever is missing or malformed. The web app runs without its key, and says sign-in is not configured.
+The model key needs one more backend value, `MODEL_KEY_ENCRYPTION_KEY`, in `backend/.env`: 32 random bytes in URL-safe base64, which seals each person's key in the database. Make one with `python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Keep it safe and keep it fixed: if it is lost or changed, no saved key can be opened, and the model key panel asks each person to enter theirs again.
+
+The service will not start without the four backend values, and names whichever is missing or malformed. The web app runs without its key, and says sign-in is not configured.
 
 ```sh
 git clone https://github.com/philbenson/job-board.git
@@ -37,7 +40,7 @@ cd job-board
 docker compose up -d --wait db        # PostgreSQL 18 on 127.0.0.1:55432
 
 cd backend
-cp .env.example .env                  # the local database URL; add the three Clerk values
+cp .env.example .env                  # the local database URL; add the Clerk values and the encryption key
 uv sync
 uv run alembic upgrade head           # apply the migrations
 uv run uvicorn job_board.app:create_app --factory --reload
@@ -76,7 +79,7 @@ uv run ruff format --check
 uv run mypy
 ```
 
-`DATABASE_URL` takes the plain form `postgresql://user:password@host:port/database` (`postgres://` works too). The service reads it, or `backend/.env`. The tests read it, or else the URL in `backend/.env.example`, which is the compose database; they never read `.env`, so a `.env` pointed at another database is never touched by a test run. The tests need no Clerk application: they sign their own session tokens with a key each run generates.
+`DATABASE_URL` takes the plain form `postgresql://user:password@host:port/database` (`postgres://` works too). The service reads it, or `backend/.env`. The tests read it, or else the URL in `backend/.env.example`, which is the compose database; they never read `.env`, so a `.env` pointed at another database is never touched by a test run. The tests need no Clerk application: they sign their own session tokens with a key each run generates. Nor do they need an Anthropic key or reach Anthropic: the routes' tests stand in for the key check, and the check's own tests answer it through a fake transport.
 
 Web app, from `frontend/` (the tests replace the network, so they need no backend; see [frontend/README.md](frontend/README.md)):
 
@@ -114,6 +117,7 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 - **The profile as one document per person**: the profile grows a section at a time, so each person's is one JSON document in PostgreSQL rather than a table per section, and a new section needs no migration. A save sets only its own section inside the stored document, in the statement that adds the row when there is none, so two saves of different sections never undo each other.
 - **Async SQLAlchemy on psycopg 3**: the service waits on the database without holding up other requests, through a query layer that stays readable as the schema grows.
 - **Clerk, with tokens checked in the service**: sign-in, accounts and their security are a product of their own, so Clerk runs them, and the service keeps only its own row per person. The service checks each session token itself, against the public key, the issuer and the permitted origins it was started with, so checking a request costs no call to Clerk and no wait on one.
+- **Each person's own model key, checked and sealed**: scoring runs on the person's own Anthropic key, so the service keeps it sealed with AES-256-GCM, bound to its owner and provider so a sealed key copied to another row will not open, and checks it before saving by reading the metadata of the model the app runs, which Anthropic answers only for a working key allowed that model and which generates nothing, so the check costs nothing.
 - **uv, ruff and strict mypy**: one tool and one lock file for Python and its dependencies, so every machine and every CI run installs the same thing; lint, formatting and strict typing catch mistakes before the tests run.
 - **React and TypeScript, built with Vite**: typed components from the API's edge to the screen, with a dev server that reloads in place and passes API requests to the backend under its own origin, so the backend never has to allow requests from another one.
 - **A committed OpenAPI contract**: the web app's types are generated from the backend's own description instead of written by hand, so renaming a field fails a type check rather than the page.
