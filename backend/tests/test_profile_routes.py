@@ -1,3 +1,4 @@
+import asyncio
 import json
 import secrets
 from collections.abc import AsyncIterator, Iterator
@@ -80,6 +81,13 @@ def someone_else(migrated_database_url: str) -> Iterator[Someone]:
     person.remove()
 
 
+@pytest.fixture
+def a_third_person(migrated_database_url: str) -> Iterator[Someone]:
+    person = Someone(migrated_database_url)
+    yield person
+    person.remove()
+
+
 async def test_reads_an_empty_profile_without_writing_one(
     someone: Someone, migrated_database_url: str
 ) -> None:
@@ -131,8 +139,8 @@ async def test_saving_titles_changes_no_other_section_and_touches_the_update_tim
     assert row.updated_at > row.created_at
 
 
-async def test_each_person_saves_only_their_own_row(
-    someone: Someone, someone_else: Someone, migrated_database_url: str
+async def test_each_person_reads_and_saves_only_their_own_profile(
+    someone: Someone, someone_else: Someone, a_third_person: Someone, migrated_database_url: str
 ) -> None:
     async with client_for(migrated_database_url) as client:
         await client.put(
@@ -144,11 +152,37 @@ async def test_each_person_saves_only_their_own_row(
         await client.put(
             "/profile/target-titles", json={"titles": ["Mine, again"]}, headers=someone.headers
         )
+        mine = await client.get("/profile", headers=someone.headers)
         theirs = await client.get("/profile", headers=someone_else.headers)
+        # The third person has saved nothing while two rows exist, so a read
+        # that lost its filter answers them someone else's titles.
+        none_yet = await client.get("/profile", headers=a_third_person.headers)
 
+    assert mine.json() == {"target_titles": ["Mine, again"]}
+    assert theirs.json() == {"target_titles": ["Theirs"]}
+    assert none_yet.json() == {"target_titles": []}
     assert [row.document for row in someone.stored()] == [{"target_titles": ["Mine, again"]}]
     assert [row.document for row in someone_else.stored()] == [{"target_titles": ["Theirs"]}]
-    assert theirs.json() == {"target_titles": ["Theirs"]}
+    assert a_third_person.stored() == []
+
+
+async def test_first_saves_at_once_make_one_row_holding_one_of_the_lists(
+    someone: Someone, migrated_database_url: str
+) -> None:
+    lists = [[f"Title {number}"] for number in range(4)]
+    async with client_for(migrated_database_url) as client:
+        answers = await asyncio.gather(
+            *(
+                client.put(
+                    "/profile/target-titles", json={"titles": titles}, headers=someone.headers
+                )
+                for titles in lists
+            )
+        )
+
+    assert [answer.status_code for answer in answers] == [200] * len(lists)
+    (row,) = someone.stored()
+    assert row.document["target_titles"] in lists
 
 
 async def test_saving_an_empty_list_clears_the_titles(
