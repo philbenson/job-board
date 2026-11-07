@@ -331,6 +331,32 @@ describe('the profile parts', () => {
     expect(sentTo(fetchMock, '/profile/pace')).toEqual([])
   })
 
+  it('says a number past what can be sent exactly is too large, not that it is not whole', async () => {
+    const fetchMock = stubProfileService(profileWith([]))
+    render(<ProfilePanel />)
+    await loaded()
+    const tooLarge = '99999999999999999'
+
+    await type('Pay', 'Lowest base pay you would take, in US dollars a year', tooLarge)
+    await save('Pay')
+    expect(noticeOf('Pay')).toHaveTextContent('The lowest base pay is too large')
+    await user.clear(part('Pay').getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' }))
+    await type('Pay', 'Lowest base pay you would take, in US dollars a year', '90000')
+    await type('Pay', 'Base pay you would ask for, in US dollars a year', tooLarge)
+    await save('Pay')
+    expect(noticeOf('Pay')).toHaveTextContent('The base pay you would ask for is too large')
+    await type('Pace', 'Leads a day', tooLarge)
+    await save('Pace')
+    expect(noticeOf('Pace')).toHaveTextContent('Leads a day is too large')
+    await type('Skills', 'Skill', 'Python')
+    await type('Skills', 'Years', `${tooLarge}{Enter}`)
+    expect(noticeOf('Skills')).toHaveTextContent('The years are too large')
+
+    expect(sentTo(fetchMock, '/profile/pay')).toEqual([])
+    expect(sentTo(fetchMock, '/profile/pace')).toEqual([])
+    expect(part('Skills').queryByRole('list')).not.toBeInTheDocument()
+  })
+
   it('refuses a job applied to twice, by company and title together', async () => {
     stubProfileService(profileWith([]))
     render(<ProfilePanel />)

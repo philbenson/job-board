@@ -49,7 +49,7 @@ function Offices({
         }
         itemFrom={(city, days) => {
           const days_a_week = wholeNumberFrom(days)
-          return days_a_week === null
+          return typeof days_a_week !== 'number'
             ? { notice: 'Enter days a week as a whole number' }
             : { item: { city, days_a_week } }
         }}

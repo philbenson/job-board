@@ -50,9 +50,13 @@ export function SkillsPart({ stored }: { stored: StoredSection<'/profile/skills'
             return { notice: `A skill can be at most ${MAX_SKILL_LENGTH} characters: ${name}` }
           }
           const years = wholeNumberFrom(typedYears)
-          return years === null
-            ? { notice: 'Enter years as a whole number' }
-            : { item: { name, years } }
+          if (years === 'not whole') {
+            return { notice: 'Enter years as a whole number' }
+          }
+          if (years === 'too large') {
+            return { notice: 'The years are too large' }
+          }
+          return { item: { name, years } }
         }}
         keyOf={(skill) => repeatKey(skill.name)}
         nameOf={(skill) => skill.name}

@@ -68,8 +68,15 @@ describe('the single fields', () => {
     expect(wholeNumberFrom('120,000')).toBe(120_000)
     expect(wholeNumberFrom(' 7 ')).toBe(7)
     expect(wholeNumberFrom('0')).toBe(0)
-    for (const typed of ['', '  ', '1.5', '-3', '1e5', '12 000', 'ten', '99999999999999999999']) {
-      expect(wholeNumberFrom(typed), typed).toBeNull()
+    for (const typed of ['', '  ', '1.5', '-3', '1e5', '12 000', 'ten']) {
+      expect(wholeNumberFrom(typed), typed).toBe('not whole')
+    }
+  })
+
+  it('tells a whole number too large to send exactly from one that is not whole', () => {
+    expect(wholeNumberFrom('9,007,199,254,740,991')).toBe(Number.MAX_SAFE_INTEGER)
+    for (const typed of ['9007199254740992', '99999999999999999999']) {
+      expect(wholeNumberFrom(typed), typed).toBe('too large')
     }
   })
 

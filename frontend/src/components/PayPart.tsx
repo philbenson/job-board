@@ -31,10 +31,14 @@ export function PayPart({ stored }: { stored: Pay | null }) {
     }
     const floorUsd = wholeNumberFrom(floor)
     const askUsd = wholeNumberFrom(ask)
-    if (floorUsd === null) {
+    if (floorUsd === 'not whole') {
       part.say('Enter the lowest base pay as a whole number')
-    } else if (askUsd === null) {
+    } else if (floorUsd === 'too large') {
+      part.say('The lowest base pay is too large')
+    } else if (askUsd === 'not whole') {
       part.say('Enter the base pay you would ask for as a whole number')
+    } else if (askUsd === 'too large') {
+      part.say('The base pay you would ask for is too large')
     } else {
       part.send({ floor_usd: floorUsd, ask_usd: askUsd }, { floor_usd: FLOOR, ask_usd: ASK }, show)
     }

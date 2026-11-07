@@ -36,8 +36,12 @@ export function PacePart({ stored }: { stored: Pace | null }) {
       return
     }
     const leadsPerDay = wholeNumberFrom(leads)
-    if (leadsPerDay === null) {
+    if (leadsPerDay === 'not whole') {
       part.say('Enter leads a day as a whole number')
+      return
+    }
+    if (leadsPerDay === 'too large') {
+      part.say('Leads a day is too large')
       return
     }
     part.send(
