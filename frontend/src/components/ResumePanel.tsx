@@ -119,12 +119,21 @@ export function ResumePanel() {
       say('A resume can be at most 5 MB')
       return
     }
+    const file = chosen
     const signal = begin('uploading')
-    if (!(await startsAsAPdf(chosen))) {
+    let startsRight: boolean
+    try {
+      startsRight = await startsAsAPdf(file)
+    } catch {
+      // The browser cannot read a file that changed or went on disk after it
+      // was chosen, until it is chosen again.
+      say('Could not read that file; choose it again')
+      return
+    }
+    if (!startsRight) {
       say('That file is not a PDF')
       return
     }
-    const file = chosen
     const uploaded: ResumeUpload = await withToken(
       getToken,
       RESUME_UPLOAD_TIMEOUT_MS,
@@ -140,8 +149,9 @@ export function ResumePanel() {
       return
     }
     setLoading({ kind: 'loaded', resume: uploaded.resume })
-    setChosen(null)
-    if (chooser.current !== null) {
+    // A file chosen while this one went up is kept, to be sent next.
+    setChosen((current) => (current === file ? null : current))
+    if (chooser.current?.files?.[0] === file) {
       chooser.current.value = ''
     }
     say('Resume uploaded')
@@ -168,6 +178,8 @@ export function ResumePanel() {
     }
     setLoading({ kind: 'loaded', resume: null })
     say('Resume removed')
+    // The Remove button goes with the resume, and would take focus with it.
+    chooser.current?.focus()
   }
 
   return (
@@ -191,8 +203,11 @@ export function ResumePanel() {
             accept="application/pdf,.pdf"
             aria-disabled={held}
             onChange={(event) => {
+              // aria-disabled does not stop a file input opening, so a choice
+              // made while a request is out is taken too: what the input
+              // shows is what is sent next.
+              setChosen(event.target.files?.[0] ?? null)
               if (!held) {
-                setChosen(event.target.files?.[0] ?? null)
                 setShown({ kind: 'idle' })
               }
             }}

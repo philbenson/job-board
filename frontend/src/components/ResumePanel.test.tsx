@@ -31,6 +31,7 @@ const NOT_SET_UP = 'Resume storage is not set up on this service yet'
 const STORAGE_DOWN = 'Could not reach resume storage; try again later'
 const NOT_UPLOADED = 'Could not upload your resume'
 const NOT_REMOVED = 'Could not remove your resume'
+const NOT_READ = 'Could not read that file; choose it again'
 
 const EARLIER = '2026-11-01T09:30:00Z'
 const LATER = '2026-11-07T20:29:59.747970Z'
@@ -269,6 +270,69 @@ describe('ResumePanel', () => {
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
   })
 
+  it.each([
+    ['fails', () => answer(503, { detail: 'down' }), NOT_UPLOADED, EARLIER],
+    ['succeeds', () => answer(200, held(2064, LATER)), UPLOADED, LATER],
+  ])('sends a file chosen while an upload is out when the first %s', async (_case, first, said, shownAt) => {
+    let answerFirst: () => void = () => {}
+    const fetchMock = service(() => answer(200, held(2064, EARLIER)), {
+      upload: () => {
+        if (sent(fetchMock, 'PUT').length > 1) {
+          return answer(200, held(4096, LATER))
+        }
+        return new Promise<Response>((resolve) => {
+          answerFirst = () => {
+            void first().then(resolve)
+          }
+        })
+      },
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel />)
+    await loaded()
+    const second = pdf(4096, 'second.pdf')
+
+    await user.upload(chooser(), pdf(2064, 'first.pdf'))
+    await user.click(screen.getByRole('button', { name: 'Replace' }))
+    await screen.findByText(UPLOADING)
+    await user.upload(chooser(), second)
+    // Choosing while a request is out leaves its status line alone.
+    expect(status()).toHaveTextContent(UPLOADING)
+    await act(async () => {
+      answerFirst()
+      await Promise.resolve()
+    })
+    expect(await screen.findByText(said)).toBeInTheDocument()
+    expect(screen.getByText(`2 KB, uploaded ${shownTime(shownAt)}`)).toBeInTheDocument()
+    expect(chooser().files?.[0]).toBe(second)
+    await user.click(screen.getByRole('button', { name: 'Replace' }))
+
+    expect(await screen.findByText(`4 KB, uploaded ${shownTime(LATER)}`)).toBeInTheDocument()
+    const puts = sent(fetchMock, 'PUT')
+    expect(puts).toHaveLength(2)
+    expect(puts[1]?.body).toBe(second)
+  })
+
+  it('says so when the chosen file can no longer be read, sending nothing', async () => {
+    const fetchMock = service(() => answer(200, NONE))
+    const user = userEvent.setup()
+    render(<ResumePanel />)
+    await loaded()
+    // What a browser does when the file changed or went on disk after it was chosen.
+    const changed = pdf(2064)
+    changed.slice = () =>
+      ({
+        arrayBuffer: () => Promise.reject(new DOMException('changed on disk', 'NotReadableError')),
+      }) as unknown as Blob
+
+    await user.upload(chooser(), changed)
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+
+    expect(await screen.findByText(NOT_READ)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upload' })).toHaveAttribute('aria-disabled', 'false')
+    expect(sent(fetchMock, 'PUT')).toEqual([])
+  })
+
   it('asks for a file when Upload is pressed before one is chosen', async () => {
     const fetchMock = service(() => answer(200, NONE))
     const user = userEvent.setup()
@@ -331,6 +395,21 @@ describe('ResumePanel', () => {
     expect(screen.getByRole('button', { name: 'Upload' })).toHaveAttribute('aria-disabled', 'false')
     const [init] = sent(fetchMock, 'DELETE')
     expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${SESSION_TOKEN}`)
+  })
+
+  it('moves focus to the file chooser once the resume is removed', async () => {
+    service(() => answer(200, held(2064, EARLIER)), {
+      remove: () => Promise.resolve(new Response(null, { status: 204 })),
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel />)
+    await loaded()
+
+    screen.getByRole('button', { name: 'Remove' }).focus()
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByText(REMOVED)).toBeInTheDocument()
+    expect(chooser()).toHaveFocus()
   })
 
   it.each([
