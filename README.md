@@ -8,7 +8,7 @@ It is early. What exists today is the skeleton of the backend and the web app, s
 
 - a FastAPI service with two routes: `GET /health`, which reports whether the database answers, and `GET /me`, which answers the signed-in person's id;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
-- PostgreSQL for local development in Docker, with Alembic migrations (so far, the table of people);
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of postings and of fetch runs);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
 - a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
