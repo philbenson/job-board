@@ -1,3 +1,5 @@
+import { ServiceStatus } from './components/ServiceStatus.tsx'
+
 function App() {
   return (
     <main>
@@ -6,6 +8,7 @@ function App() {
         Describe the work you want, and get job postings scored against it,
         best first.
       </p>
+      <ServiceStatus />
     </main>
   )
 }

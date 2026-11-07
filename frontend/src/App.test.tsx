@@ -1,9 +1,18 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 
 describe('App', () => {
-  it('names the app and says what it is for', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('names the app, says what it is for and shows the service status', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => {})),
+    )
+
     render(<App />)
 
     expect(
@@ -12,5 +21,8 @@ describe('App', () => {
     expect(
       screen.getByText(/job postings scored against it, best first/),
     ).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Checking the service…',
+    )
   })
 })
