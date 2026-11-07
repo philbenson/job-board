@@ -23,9 +23,10 @@ def render() -> str:
     """The description as the committed file holds it: indented JSON in FastAPI's key order.
 
     The settings are built without validation or the environment, so the
-    description needs no database and no real setting. That holds as long as
-    building the app reads no setting outside its lifespan; a read there fails
-    here at once, since an unvalidated settings object has no fields set.
+    description needs no database and no real setting. Required settings are
+    absent, and reading one while building the app fails here at once.
+    Defaulted settings take their defaults, so the description is the app as
+    built with defaults: no route may be registered on a setting's value.
     """
     app = create_app(Settings.model_construct())
     return json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n"
