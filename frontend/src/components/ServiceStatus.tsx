@@ -16,9 +16,10 @@ export function ServiceStatus() {
   useEffect(() => {
     const controller = new AbortController()
     void fetchHealth(controller.signal).then((health) => {
-      // An aborted request resolves as "unavailable"; it belongs to a
-      // component that is gone, so its answer is dropped.
-      if (!controller.signal.aborted) {
+      // An aborted check belongs to an effect that has been cleaned up. Strict
+      // mode's rehearsal unmount and remount keeps this component and its
+      // state, so showing that answer would replace the live check's.
+      if (health !== 'aborted') {
         setShown(health)
       }
     })
