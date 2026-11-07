@@ -429,7 +429,7 @@ describe('ResumePanel', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toHaveAttribute('aria-disabled', 'false')
   })
 
-  it('gives up on an upload after a minute, the session token included', async () => {
+  it('gives up on an upload after two minutes, the session token included', async () => {
     vi.useFakeTimers()
     service(() => answer(200, NONE))
     render(<ResumePanel />)
@@ -439,7 +439,7 @@ describe('ResumePanel', () => {
 
     fireEvent.change(chooser(), { target: { files: [pdf(2064)] } })
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
-    await act(() => vi.advanceTimersByTimeAsync(59_999))
+    await act(() => vi.advanceTimersByTimeAsync(119_999))
     expect(status()).toHaveTextContent(UPLOADING)
     await act(() => vi.advanceTimersByTimeAsync(1))
 

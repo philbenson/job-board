@@ -34,10 +34,14 @@ export type ResumeRemoval = 'removed' | NotSetUp | StorageDown | 'unavailable' |
 
 // Reading answers from one row, as the profile does.
 export const RESUME_READ_TIMEOUT_MS = 5_000
-// Up to 5 MB on a slow line, then the store's answer.
-export const RESUME_UPLOAD_TIMEOUT_MS = 60_000
-// The store's answer, which the service waits on for up to half a minute.
-export const RESUME_REMOVE_TIMEOUT_MS = 30_000
+// The service waits on the store for up to about 51 seconds: two tries, each
+// up to 5 seconds to connect and 20 to answer, and a pause of at most a second
+// between them (CLIENT_CONFIG in the backend's resumes/store.py).
+// Up to 5 MB on a line as slow as about 600 kilobits a second, which takes the
+// other 69 seconds, then the store's answer.
+export const RESUME_UPLOAD_TIMEOUT_MS = 120_000
+// The store's answer, with room to spare for the request and the database.
+export const RESUME_REMOVE_TIMEOUT_MS = 60_000
 
 // The backend's sentences for its two storage answers, both 503.
 const NOT_SET_UP_DETAIL = 'Resume storage is not set up'

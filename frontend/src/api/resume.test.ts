@@ -194,12 +194,12 @@ describe('uploadResume', () => {
     await expect(uploadResume(TOKEN, A_PDF)).resolves.toBe('unavailable')
   })
 
-  it('waits a minute for a slow line before it gives up', async () => {
+  it('waits two minutes for a slow line before it gives up', async () => {
     vi.useFakeTimers()
     stubFetch(answerOnlyAbort)
     const upload = watched(() => uploadResume(TOKEN, A_PDF))
 
-    await vi.advanceTimersByTimeAsync(59_999)
+    await vi.advanceTimersByTimeAsync(119_999)
     expect(upload.result).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     expect(upload.result).toBe('unavailable')
@@ -242,12 +242,12 @@ describe('removeResume', () => {
     await expect(removeResume(TOKEN)).resolves.toBe('unavailable')
   })
 
-  it('gives up after thirty seconds and reports unavailable', async () => {
+  it('gives up after a minute and reports unavailable', async () => {
     vi.useFakeTimers()
     stubFetch(answerOnlyAbort)
     const removal = watched(() => removeResume(TOKEN))
 
-    await vi.advanceTimersByTimeAsync(29_999)
+    await vi.advanceTimersByTimeAsync(59_999)
     expect(removal.result).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     expect(removal.result).toBe('unavailable')

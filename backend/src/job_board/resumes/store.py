@@ -31,10 +31,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# A store that never answers is given up on after about 51 seconds at worst:
+# two tries, each up to 5 seconds to connect and 20 to answer, and one pause
+# between them of at most a second. Standard mode retries a read or connect
+# timeout (botocore/retries/standard.py, _TRANSIENT_EXCEPTION_CLS), and its
+# first pause is random() * min(2 ** 0, 20) seconds, or 0.05 of that where
+# AWS_NEW_RETRIES_2026 is true (ExponentialBackoff.delay_amount). The panel
+# waits longer than this on an upload and a removal.
 CLIENT_CONFIG = Config(
     connect_timeout=5,  # seconds; a store that cannot be reached is not waited on
-    read_timeout=30,  # seconds; 5 MiB to a store that is slow to answer
-    retries={"max_attempts": 3, "mode": "standard"},
+    read_timeout=20,  # seconds; 5 MiB to a store that is slow to answer
+    # Tries in all, the first included. Its "max_attempts" would count retries,
+    # one try more (botocore/config.py, the retries parameter).
+    retries={"total_max_attempts": 2, "mode": "standard"},
     # Checksums only where an operation requires one: some S3-compatible stores
     # refuse the checksum headers that boto3 now sends by default.
     request_checksum_calculation="when_required",
