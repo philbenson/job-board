@@ -1,4 +1,18 @@
-export type ServiceHealth = 'ok' | 'unavailable'
+import type { paths } from './schema.ts'
+
+/** The health route's body, as the backend's OpenAPI description defines it. */
+export type HealthBody =
+  paths['/health']['get']['responses'][200]['content']['application/json']
+
+/**
+ * What the service says about itself. Taken from the body, so a status the
+ * backend adds or renames fails the type check wherever a state is handled.
+ */
+export type ServiceHealth = HealthBody['status']
+
+// Typed against the body, so renaming the value in the backend fails the type
+// check here instead of showing a healthy service as unavailable.
+const OK_STATUS: ServiceHealth = 'ok'
 
 /** The caller aborted the check, so nobody wants its answer. */
 export type HealthCheck = ServiceHealth | 'aborted'
@@ -46,10 +60,11 @@ async function askService(signal: AbortSignal): Promise<ServiceHealth> {
 }
 
 function isOkBody(body: unknown): boolean {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    'status' in body &&
-    body.status === 'ok'
-  )
+  if (typeof body !== 'object' || body === null) {
+    return false
+  }
+  // Every field may be missing or of any type until checked; naming the field
+  // through the body's type ties it to the backend's name for it.
+  const { status } = body as Partial<Record<keyof HealthBody, unknown>>
+  return status === OK_STATUS
 }

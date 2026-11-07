@@ -1,10 +1,18 @@
 import { act, render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { HealthBody } from '../api/health.ts'
 import { ServiceStatus } from './ServiceStatus.tsx'
 
-function answer(status: number, body: string): Response {
-  return new Response(body, {
+const OK = { status: 'ok', database: 'ok' } satisfies HealthBody
+const UNAVAILABLE = {
+  status: 'unavailable',
+  database: 'unreachable',
+} satisfies HealthBody
+
+// Typed against the generated contract, so the bodies change with the backend's.
+function answer(status: number, body: HealthBody): Response {
+  return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
@@ -31,7 +39,7 @@ describe('ServiceStatus', () => {
   it('says the service is up once it answers ok', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => answer(200, '{"status": "ok", "database": "ok"}')),
+      vi.fn(async () => answer(200, OK)),
     )
 
     render(<ServiceStatus />)
@@ -44,9 +52,7 @@ describe('ServiceStatus', () => {
   it('says the service is unavailable when it does not answer ok', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        answer(503, '{"status": "unavailable", "database": "unreachable"}'),
-      ),
+      vi.fn(async () => answer(503, UNAVAILABLE)),
     )
 
     render(<ServiceStatus />)
