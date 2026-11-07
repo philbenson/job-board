@@ -26,7 +26,7 @@ const REPLACED =
 const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
   found:
     'Here is the text read from your resume. Check it, put anything out of order back in order, and save it.',
-  cut: "Your resume's text is longer than 15,000 characters, so only the first 15,000 are here. Check them and save.",
+  cut: 'Your resume is longer than 15,000 characters or 50 pages, so only its start is here. Check it and save.',
   none_found:
     'No text could be read from your resume; it may be a scanned image. Type or paste its text here and save it.',
   failed: "Your resume's text could not be read. Type or paste its text here and save it.",

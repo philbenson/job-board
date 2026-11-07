@@ -30,6 +30,9 @@ from pydantic_core import PydanticCustomError
 from job_board.profile_rules import DIRECTION_CONTROLS, _shows_something, _trimmed
 
 MAX_RESUME_TEXT_LENGTH = 15_000  # twice a dense two-page resume; the table checks the same bound
+# A resume has a handful of pages; the cap bounds what a crafted file of
+# thousands costs the reading, since each page costs it some processor time.
+MAX_RESUME_PAGES = 50
 FEWEST_LETTERS = 50  # fewer than a short paragraph: page numbers and stray marks, not a resume
 
 type ReadState = Literal["found", "cut", "none_found", "failed"]
@@ -64,16 +67,34 @@ def _is_refused(character: str) -> bool:
     )
 
 
+def _laid_out(text: str) -> str:
+    """Rules 3 to 5, for a text that holds no refused character."""
+    composed = unicodedata.normalize("NFC", text)
+    return BLANK_RUNS.sub("\n\n", LINE_ENDS.sub("", composed))
+
+
 def _after_the_refused(text: str) -> str:
     """Rules 3 to 6, for a text that holds no refused character."""
-    composed = unicodedata.normalize("NFC", text)
-    return _trimmed(BLANK_RUNS.sub("\n\n", LINE_ENDS.sub("", composed)))
+    return _trimmed(_laid_out(text))
+
+
+def cleaned_page(text: str) -> str:
+    """A page of a longer text as rules 1 to 5 leave it: every rule but the trim.
+
+    A page's ends are not the text's, so they keep what the trim would take.
+    Pages cleaned so and joined by line breaks, then cleaned whole, give the
+    text that cleaning the pages joined raw gives: no rule reaches across a
+    line break, and the whole's cleaning only joins up blank lines where pages
+    meet and trims the ends, so it is never longer than the pages and the
+    line breaks between them.
+    """
+    kept = "".join(character for character in _line_breaks(text) if not _is_refused(character))
+    return _laid_out(kept)
 
 
 def cleaned(text: str) -> str:
     """The text as every rule above leaves it, with the refused characters dropped."""
-    kept = "".join(character for character in _line_breaks(text) if not _is_refused(character))
-    return _after_the_refused(kept)
+    return _trimmed(cleaned_page(text))
 
 
 def checked_resume_text(text: str) -> str:
@@ -107,15 +128,17 @@ def checked_resume_text(text: str) -> str:
     return shown
 
 
-def reading_of(text: str) -> Reading:
+def reading_of(text: str, *, pages_unread: bool = False) -> Reading:
     """What a cleaned text read from a file gives.
 
     Over the cap, it keeps the first ``MAX_RESUME_TEXT_LENGTH`` characters,
-    cleaned again so the cut ends trimmed. Letters are counted in what is
-    kept, so a reading that gives text gives some a save takes.
+    cleaned again so the cut ends trimmed. A file with pages left unread, past
+    ``MAX_RESUME_PAGES``, is cut too, its text kept whole.
+    Letters are counted in what is kept, so a reading that gives text gives
+    some a save takes.
     """
-    cut = len(text) > MAX_RESUME_TEXT_LENGTH
-    kept = cleaned(text[:MAX_RESUME_TEXT_LENGTH]) if cut else text
+    too_long = len(text) > MAX_RESUME_TEXT_LENGTH
+    kept = cleaned(text[:MAX_RESUME_TEXT_LENGTH]) if too_long else text
     if sum(character.isalpha() for character in kept) < FEWEST_LETTERS:
         return Reading("none_found", None)
-    return Reading("cut" if cut else "found", kept)
+    return Reading("cut" if too_long or pages_unread else "found", kept)

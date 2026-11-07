@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import io
 import json
 import logging
 import os
@@ -8,10 +9,26 @@ import sys
 from pathlib import Path
 
 import pytest
-from pdf_files import bomb_page, costly_page, encrypted, image_page, pdf, resume_lines
+from pdf_files import (
+    bomb_page,
+    costly_page,
+    encrypted,
+    image_page,
+    one_page_many_times,
+    pdf,
+    resume_lines,
+)
+from pypdf import PdfReader
 
+from job_board.resumes.text_child import text_of
 from job_board.resumes.text_reading import LONGEST_ANSWER_BYTES, ResumeTextReader
-from job_board.resumes.text_rules import MAX_RESUME_TEXT_LENGTH, Reading, cleaned
+from job_board.resumes.text_rules import (
+    MAX_RESUME_PAGES,
+    MAX_RESUME_TEXT_LENGTH,
+    Reading,
+    cleaned,
+    reading_of,
+)
 from job_board.resumes.upload import MAX_RESUME_BYTES
 
 FAILED = Reading("failed", None)
@@ -95,6 +112,74 @@ async def test_text_past_the_cap_is_cut_and_the_pages_after_it_are_never_read() 
     assert reading.text is not None
     assert len(reading.text) <= MAX_RESUME_TEXT_LENGTH
     assert reading.text == cleaned("\n\n".join(["\n".join(page)] * 3)[:MAX_RESUME_TEXT_LENGTH])
+
+
+async def test_pages_past_the_page_cap_are_never_read_and_make_a_cut() -> None:
+    words = [f"Word{number}" for number in range(1, MAX_RESUME_PAGES + 2)]
+
+    reading = await ResumeTextReader().read(pdf(*[[word] for word in words]))
+
+    assert reading == Reading("cut", "\n\n".join(words[:MAX_RESUME_PAGES]))
+
+
+async def test_a_file_listing_one_page_twenty_thousand_times_reads_within_a_second() -> None:
+    reader = ResumeTextReader(cpu_seconds=1)
+
+    assert await reader.read(one_page_many_times(20_000)) == Reading("none_found", None)
+
+
+def text_before_the_page_cap(file: bytes) -> str:
+    """The text the reading gave before it capped its pages and cleaned each page once.
+
+    It joined every page read so far and cleaned them all again after each
+    page. Kept here to check the reading still gives the same text.
+    """
+    reader = PdfReader(io.BytesIO(file))
+    if reader.is_encrypted:
+        reader.decrypt("")
+    pages: list[str] = []
+    text = ""
+    for page in reader.pages:
+        pages.append(page.extract_text(extraction_mode="plain"))
+        text = cleaned("\n\n".join(pages))
+        if len(text) > MAX_RESUME_TEXT_LENGTH:
+            break
+    return text
+
+
+# A page whose lines take the text within 70 characters of the cap: with the
+# line breaks around forty empty pages it passes the cap, which the cleaned
+# text, losing those blank lines, does not, so a reading stopping there stops
+# early and misses the last page.
+NEAR_THE_CAP = [FILLER] * 237
+
+READ_BOTH_WAYS = {
+    "one page": pdf(resume_lines()),
+    "two pages": pdf(resume_lines()[:4], resume_lines()[4:]),
+    "a scanned page": pdf(image_page()),
+    "a page number alone": pdf(["1"]),
+    "page numbers and a scan": pdf(["1"], ["2"], image_page()),
+    "past the length cap": pdf([FILLER] * 100, [FILLER] * 100, [FILLER] * 100, bomb_page()),
+    "locked only against changes": encrypted(pdf(resume_lines()), user_password=""),
+    "forty pages": pdf(*[[FILLER, f"Page {number}", ""] for number in range(40)]),
+    "blank lines and line ends": pdf(
+        ["", "Avery Example   ", "", "", "", "\tExperience\t"], [" ", FILLER, "  "], ["", ""]
+    ),
+    "near the cap after empty pages": pdf(
+        *[image_page()] * 40, NEAR_THE_CAP, ["Last line of the resume"]
+    ),
+}
+
+
+@pytest.mark.parametrize("file", READ_BOTH_WAYS.values(), ids=READ_BOTH_WAYS.keys())
+def test_cleaning_each_page_once_reads_what_cleaning_all_after_each_page_did(file: bytes) -> None:
+    before = text_before_the_page_cap(file)
+
+    text, pages_unread = text_of(file)
+
+    assert reading_of(text, pages_unread=pages_unread) == reading_of(before)
+    if len(before) <= MAX_RESUME_TEXT_LENGTH:
+        assert (text, pages_unread) == (before, False)
 
 
 async def test_a_file_locked_only_against_changes_reads() -> None:

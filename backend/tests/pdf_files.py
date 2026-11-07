@@ -77,6 +77,18 @@ def pdf(*pages: list[str] | bytes) -> bytes:
     return _file(objects)
 
 
+def one_page_many_times(times: int) -> bytes:
+    """A PDF whose page tree lists one empty page ``times`` times, as a crafted file can."""
+    return _file(
+        [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [%s] /Count %d >>" % (b" ".join([b"4 0 R"] * times), times),
+            _stream(b""),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 3 0 R >>",
+        ]
+    )
+
+
 def image_page() -> bytes:
     """A page's content that paints one image and draws no text, as a scanned page does."""
     return _stream(b"q 612 0 0 792 0 0 cm /Im1 Do Q")

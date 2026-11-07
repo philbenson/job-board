@@ -19,7 +19,14 @@ import json
 import resource
 import sys
 
-from job_board.resumes.text_rules import MAX_RESUME_TEXT_LENGTH, Reading, cleaned, reading_of
+from job_board.resumes.text_rules import (
+    MAX_RESUME_PAGES,
+    MAX_RESUME_TEXT_LENGTH,
+    Reading,
+    cleaned,
+    cleaned_page,
+    reading_of,
+)
 
 PAGES_APART = "\n\n"
 
@@ -37,8 +44,14 @@ def limited(cpu_seconds: int, address_space_bytes: int) -> None:
         resource.setrlimit(resource.RLIMIT_AS, (address_space_bytes, address_space_bytes))
 
 
-def text_of(file: bytes) -> str:
-    """The file's text, page by page, read no further than the page that runs past the cap."""
+def text_of(file: bytes) -> tuple[str, bool]:
+    """The file's text, cleaned, and whether pages were left unread.
+
+    It reads at most ``MAX_RESUME_PAGES`` pages, and no further than the page
+    that takes the text past the length cap. Each page is cleaned once, and
+    the whole only once the pages are long enough to pass the cap, so a file
+    of many pages costs the cleaning no more than one page of its length.
+    """
     from pypdf import PasswordType, PdfReader
 
     reader = PdfReader(io.BytesIO(file))
@@ -47,13 +60,19 @@ def text_of(file: bytes) -> str:
     if reader.is_encrypted and reader.decrypt("") == PasswordType.NOT_DECRYPTED:
         raise ValueError("the file needs a password")
     pages: list[str] = []
-    text = ""
-    for page in reader.pages:
-        pages.append(page.extract_text(extraction_mode="plain"))
-        text = cleaned(PAGES_APART.join(pages))
-        if len(text) > MAX_RESUME_TEXT_LENGTH:
-            break
-    return text
+    length = -len(PAGES_APART)  # the pages read so far and the breaks between them
+    for number, page in enumerate(reader.pages):
+        if number == MAX_RESUME_PAGES:
+            return cleaned(PAGES_APART.join(pages)), True
+        pages.append(cleaned_page(page.extract_text(extraction_mode="plain")))
+        length += len(PAGES_APART) + len(pages[-1])
+        # The cleaned text is never longer than this, and can be shorter, so
+        # only its own length says it is past the cap and the reading stops.
+        if length > MAX_RESUME_TEXT_LENGTH:
+            text = cleaned(PAGES_APART.join(pages))
+            if len(text) > MAX_RESUME_TEXT_LENGTH:
+                return text, number + 1 < len(reader.pages)
+    return cleaned(PAGES_APART.join(pages)), False
 
 
 def main(arguments: list[str]) -> int:
@@ -62,7 +81,8 @@ def main(arguments: list[str]) -> int:
     file = sys.stdin.buffer.read(largest_file_bytes + 1)
     if len(file) > largest_file_bytes:
         return 1
-    reading: Reading = reading_of(text_of(file))
+    text, pages_unread = text_of(file)
+    reading: Reading = reading_of(text, pages_unread=pages_unread)
     answer = json.dumps(
         {"state": reading.state, "text": reading.text}, ensure_ascii=False, separators=(",", ":")
     )
