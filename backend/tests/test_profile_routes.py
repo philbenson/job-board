@@ -200,18 +200,34 @@ async def test_saving_an_empty_list_clears_the_titles(
     assert [row.document for row in someone.stored()] == [{"target_titles": []}]
 
 
-async def test_refuses_a_title_breaking_a_rule_with_the_rule_alone_and_stores_nothing(
-    someone: Someone, migrated_database_url: str
+@pytest.mark.parametrize(
+    ("title", "rule"),
+    [
+        ("   ", "A target title cannot be blank"),
+        ("Quoted " + "x" * 100, "A target title can be at most 100 characters"),
+        ("Quoted\tanalyst", "A target title cannot contain control characters"),
+        ("‮Quoted", "A target title cannot contain text direction controls"),
+    ],
+    ids=["blank", "too long", "a control character", "a direction control"],
+)
+async def test_refuses_a_title_breaking_a_rule_quoting_nothing_that_was_sent(
+    someone: Someone, migrated_database_url: str, title: str, rule: str
 ) -> None:
     async with client_for(migrated_database_url) as client:
         response = await client.put(
-            "/profile/target-titles", json={"titles": ["Designer", "   "]}, headers=someone.headers
+            "/profile/target-titles",
+            json={"titles": ["Designer", title, "Writer"]},
+            headers=someone.headers,
         )
 
     assert response.status_code == 422
     (error,) = response.json()["detail"]
-    assert error["msg"] == "A target title cannot be blank"
+    # The rule and where it applies, and no input or context to quote the body.
+    assert set(error) == {"type", "loc", "msg"}
+    assert error["msg"] == rule
     assert error["loc"] == ["body", "titles", 1]
+    for sent in ("Designer", "Quoted", "Writer"):
+        assert sent not in response.text
     assert someone.stored() == []
 
 
@@ -229,8 +245,10 @@ async def test_refuses_a_title_that_is_not_valid_text_as_a_rule_not_a_failure(
 
     assert response.status_code == 422
     (error,) = response.json()["detail"]
+    assert set(error) == {"type", "loc", "msg"}
     assert error["msg"] == "A target title must be valid text"
     assert error["loc"] == ["body", "titles", 0]
+    assert "Engineer" not in response.text
     assert someone.stored() == []
 
 

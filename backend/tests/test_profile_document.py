@@ -120,12 +120,12 @@ def test_keeps_the_variation_selector_that_ends_an_emoji() -> None:
         "a direction control at the end",
     ],
 )
-def test_refuses_a_title_naming_the_rule_and_echoing_only_that_title(title: str, rule: str) -> None:
+def test_refuses_a_title_naming_the_rule_and_where_it_is(title: str, rule: str) -> None:
+    # The route's answer quotes nothing of the body; the route tests check that.
     error = refusal({"titles": ["Designer", title, "Writer"]})
 
     assert error["msg"] == rule
     assert error["loc"] == ("titles", 1)
-    assert error["input"] == title
 
 
 def test_refuses_more_than_twenty_after_repeats_are_dropped() -> None:
