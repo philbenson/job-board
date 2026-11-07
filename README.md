@@ -4,18 +4,19 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, and the posting fetcher:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, the posting fetcher, and scoring:
 
 - a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
 - the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
-- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings and of fetch runs);
+- scoring: a command that rates each open posting from 1 to 5, with a one-line reason, for each person with a working key and at least one target title, on that person's own key, up to 25 new postings per person each run, and exits; when Anthropic refuses a key, it stops using that key and the model key panel tells the person why, until they save a new one;
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings, of fetch runs and of scores);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
 - a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, and lets them list, add, remove and save their target titles;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Fetching on a schedule, the rest of the profile and scoring come next.
+Running the fetcher and scoring on a schedule, showing the scores, and the rest of the profile come next.
 
 ## Running it
 
@@ -68,6 +69,13 @@ GREENHOUSE_BOARDS=<token>,<another token> \
 go run ./cmd/fetcher
 ```
 
+Scoring is a command meant to be started on a schedule: each run rates up to 25 unscored open postings for each person who has saved a working key and chosen at least one target title, on that person's own key, then exits. It needs only `DATABASE_URL` and `MODEL_KEY_ENCRYPTION_KEY`, read from the environment or from `.env` in the folder it runs in, and no Clerk values. It refuses to start while LangSmith tracing is on (`LANGSMITH_TRACING`, `LANGCHAIN_TRACING`, or either with `_V2`, set to `true`, `1` or `yes`), since a trace would send postings, titles and the model's replies to LangSmith. It exits 0 when every person's batch finished or had nothing to do, 1 when any stopped on a failure, such as a key Anthropic refused, and 2 when it refused to start; it logs one line per person. To run it once by hand, with the backend's `.env` in place and the database migrated:
+
+```sh
+cd backend
+uv run python -m job_board.scoring
+```
+
 ## Testing it
 
 Backend, from `backend/`, with the database running:
@@ -79,7 +87,7 @@ uv run ruff format --check
 uv run mypy
 ```
 
-`DATABASE_URL` takes the plain form `postgresql://user:password@host:port/database` (`postgres://` works too). The service reads it, or `backend/.env`. The tests read it, or else the URL in `backend/.env.example`, which is the compose database; they never read `.env`, so a `.env` pointed at another database is never touched by a test run. The tests need no Clerk application: they sign their own session tokens with a key each run generates. Nor do they need an Anthropic key or reach Anthropic: the routes' tests stand in for the key check, and the check's own tests answer it through a fake transport.
+`DATABASE_URL` takes the plain form `postgresql://user:password@host:port/database` (`postgres://` works too). The service reads it, or `backend/.env`. The tests read it, or else the URL in `backend/.env.example`, which is the compose database; they never read `.env`, so a `.env` pointed at another database is never touched by a test run. The tests need no Clerk application: they sign their own session tokens with a key each run generates. Nor do they need an Anthropic key or reach Anthropic: the routes' tests stand in for the key check, the check's own tests answer it through a fake transport, scoring's tests rate postings with a stand-in model, and the real model is tested against a small server the tests run on this machine.
 
 Web app, from `frontend/` (the tests replace the network, so they need no backend; see [frontend/README.md](frontend/README.md)):
 
@@ -118,6 +126,7 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 - **Async SQLAlchemy on psycopg 3**: the service waits on the database without holding up other requests, through a query layer that stays readable as the schema grows.
 - **Clerk, with tokens checked in the service**: sign-in, accounts and their security are a product of their own, so Clerk runs them, and the service keeps only its own row per person. The service checks each session token itself, against the public key, the issuer and the permitted origins it was started with, so checking a request costs no call to Clerk and no wait on one.
 - **Each person's own model key, checked and sealed**: scoring runs on the person's own Anthropic key, so the service keeps it sealed with AES-256-GCM, bound to its owner and provider so a sealed key copied to another row will not open, and checks it before saving by reading the metadata of the model the app runs, which Anthropic answers only for a working key allowed that model and which generates nothing, so the check costs nothing.
+- **Scoring as a scheduled command on each person's own key**: rating postings costs model calls, so each person pays for their own on their own key, in a small batch per run that bounds what one run can cost them; a command that a schedule starts, works through everyone once and exits keeps that work out of the web service, so a slow or failing model never holds up a page, and a posting whose request fails is simply left for the next run.
 - **uv, ruff and strict mypy**: one tool and one lock file for Python and its dependencies, so every machine and every CI run installs the same thing; lint, formatting and strict typing catch mistakes before the tests run.
 - **React and TypeScript, built with Vite**: typed components from the API's edge to the screen, with a dev server that reloads in place and passes API requests to the backend under its own origin, so the backend never has to allow requests from another one.
 - **A committed OpenAPI contract**: the web app's types are generated from the backend's own description instead of written by hand, so renaming a field fails a type check rather than the page.
