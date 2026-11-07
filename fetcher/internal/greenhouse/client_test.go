@@ -50,6 +50,29 @@ func TestFetchRefusesAnAnswerOtherThanOK(t *testing.T) {
 	}
 }
 
+func TestFetchRefusesARedirectAsAStatusAndDoesNotFollowIt(t *testing.T) {
+	fixture := readFixture(t)
+	followed := false
+	client := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/boards/larkspur/jobs" {
+			followed = true
+			_, _ = w.Write(fixture)
+			return
+		}
+		http.Redirect(w, r, "/v1/boards/larkspur/jobs?content=true", http.StatusFound)
+	})
+
+	postings, err := client.Fetch(context.Background(), "ottermere")
+
+	var status *StatusError
+	if !errors.As(err, &status) || status.Code != http.StatusFound || !errors.Is(err, ErrStatus) {
+		t.Errorf("Fetch gave %d postings and error %v, want ErrStatus with 302", len(postings), err)
+	}
+	if followed {
+		t.Error("Fetch followed the redirect to another board")
+	}
+}
+
 func TestFetchRefusesABodyOverTheCap(t *testing.T) {
 	body := `{"jobs": [], "meta": {"total": 0}, "padding": "` + strings.Repeat("x", 200) + `"}`
 	cases := map[string]http.HandlerFunc{

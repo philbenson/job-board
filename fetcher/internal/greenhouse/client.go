@@ -42,6 +42,15 @@ type StatusError struct {
 func (e *StatusError) Error() string { return fmt.Sprintf("%v: %d", ErrStatus, e.Code) }
 func (e *StatusError) Unwrap() error { return ErrStatus }
 
+// httpClient is the fetcher's own, rather than the process-wide default. It
+// never follows a redirect: a board that answers with one is a status
+// failure, so a retired or renamed token is corrected rather than stored
+// under another board's name, and no answer is fetched over plain HTTP from a
+// host other than the one asked.
+var httpClient = &http.Client{
+	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
 // Client fetches boards. Its zero value asks Greenhouse itself, with the
 // default time limit and size cap.
 type Client struct {
@@ -65,7 +74,7 @@ func (c *Client) Fetch(ctx context.Context, board string) ([]posting.Posting, er
 	request.Header.Set("User-Agent", UserAgent)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := http.DefaultClient.Do(request)
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrRequest, err)
 	}
