@@ -7,7 +7,16 @@ from alembic import command
 from alembic.config import Config
 from per_run_database import per_run_database, server_url
 
+from job_board.scoring.tracing import TRACING_VARIABLES
+
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+
+
+@pytest.fixture(autouse=True)
+def no_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test runs with LangSmith tracing unset, so none can send a trace."""
+    for name in TRACING_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(scope="session")
