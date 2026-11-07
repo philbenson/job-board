@@ -73,6 +73,20 @@ def test_keeps_a_zero_width_joiner_inside_a_title() -> None:
     assert titles_of([title]) == [title]
 
 
+def test_trims_invisible_format_characters_from_either_end() -> None:
+    # A zero-width space before and a word joiner after.
+    assert titles_of(["​Designer⁠"]) == ["Designer"]
+
+
+def test_a_title_differing_only_by_invisible_ends_is_a_repeat() -> None:
+    assert titles_of(["Designer", "​Designer⁠"]) == ["Designer"]
+
+
+def test_keeps_the_variation_selector_that_ends_an_emoji() -> None:
+    # U+FE0F asks for the emoji's colour form; it is a mark, not a format character.
+    assert titles_of(["Barista ☕️"]) == ["Barista ☕️"]
+
+
 @pytest.mark.parametrize(
     ("title", "rule"),
     [
@@ -88,6 +102,7 @@ def test_keeps_a_zero_width_joiner_inside_a_title() -> None:
         (" \u200b\u0301\u200d ", "A target title cannot be blank"),
         ("\u202eenigne", "A target title cannot contain text direction controls"),
         ("Data \u2066analyst\u2069", "A target title cannot contain text direction controls"),
+        ("Data analyst\u202c", "A target title cannot contain text direction controls"),
     ],
     ids=[
         "empty",
@@ -102,6 +117,7 @@ def test_keeps_a_zero_width_joiner_inside_a_title() -> None:
         "only invisible marks",
         "a right-to-left override",
         "a directional isolate",
+        "a direction control at the end",
     ],
 )
 def test_refuses_a_title_naming_the_rule_and_echoing_only_that_title(title: str, rule: str) -> None:

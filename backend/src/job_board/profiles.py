@@ -55,15 +55,37 @@ def _shows_something(character: str) -> bool:
     return not character.isspace() and unicodedata.category(character) not in {"Cf", "Mn"}
 
 
+def _trims_away(character: str) -> bool:
+    # Whitespace and the invisible format characters (Cf: zero-width spaces,
+    # joiners, byte order marks) at an end show nothing and join nothing.
+    # Direction controls stay, to be refused: dropping one would change how
+    # the rest of the title shows. Marks (Mn) stay too: a variation selector,
+    # U+FE0F, ends many emoji.
+    return character.isspace() or (
+        unicodedata.category(character) == "Cf" and character not in DIRECTION_CONTROLS
+    )
+
+
+def _trimmed(title: str) -> str:
+    start, end = 0, len(title)
+    while start < end and _trims_away(title[start]):
+        start += 1
+    while end > start and _trims_away(title[end - 1]):
+        end -= 1
+    return title[start:end]
+
+
 def _checked_title(title: str) -> str:
     """The title trimmed and in its composed form, or the rule it breaks.
 
-    The title is stored as the person sees it, so it is normalised to NFC
-    first and every rule measures that: an accented letter counts as one
-    character however it was typed. Each refusal's message is the rule alone,
-    so the person reads it as given.
+    Whitespace and invisible format characters are trimmed from both ends, so
+    a title pasted with a zero-width space is the title the person sees. The
+    title is stored as the person sees it, so it is then normalised to NFC and
+    every rule measures that: an accented letter counts as one character
+    however it was typed. Each refusal's message is the rule alone, so the
+    person reads it as given.
     """
-    shown = unicodedata.normalize("NFC", title.strip())
+    shown = unicodedata.normalize("NFC", _trimmed(title))
     # Half of a surrogate pair is no character at all: JSON can spell one, but
     # no text encoding holds it, and the database would refuse the document.
     if any(unicodedata.category(character) == "Cs" for character in shown):
