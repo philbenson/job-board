@@ -48,7 +48,7 @@ func emptyTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, "TRUNCATE postings, fetch_runs"); err != nil {
+	if _, err := conn.Exec(ctx, "TRUNCATE postings, fetch_runs CASCADE"); err != nil {
 		t.Error(err)
 	}
 }

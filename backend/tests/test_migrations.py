@@ -8,7 +8,16 @@ from sqlalchemy import create_engine, text
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 # Every table the migrations create, in name order; base holds alembic_version alone.
-HEAD_TABLES = ["alembic_version", "fetch_runs", "model_keys", "people", "postings", "profiles"]
+HEAD_TABLES = [
+    "alembic_version",
+    "fetch_runs",
+    "model_keys",
+    "people",
+    "postings",
+    "profiles",
+    "resumes",
+    "scores",
+]
 # The key, unique and check constraints of the fetcher's tables, in name order,
 # each named by the models' naming convention.
 FETCHER_CONSTRAINTS = [

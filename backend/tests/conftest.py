@@ -1,19 +1,45 @@
+import secrets
 import socket
 from collections.abc import Iterator
 from pathlib import Path
 
+import boto3
+import botocore.config
+import botocore.session
 import pytest
 from alembic import command
 from alembic.config import Config
+from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
 
+from job_board.resumes.store import SETTINGS_FROM_NOWHERE
+from job_board.scoring.tracing import TRACING_VARIABLES
+
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
+
+
+@pytest.fixture(autouse=True)
+def no_tracing_or_custom_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test runs with LangSmith tracing and the SDK's custom headers unset.
+
+    So none can send a trace, and none sends a header the environment added.
+    """
+    for name in (*TRACING_VARIABLES, "ANTHROPIC_CUSTOM_HEADERS"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     """The URL of a database that exists for this test run only."""
     with per_run_database(server_url()) as url:
+        yield url
+
+
+def _migrated_database() -> Iterator[str]:
+    with per_run_database(server_url()) as url:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
+            command.upgrade(Config(ALEMBIC_INI), "head")
         yield url
 
 
@@ -24,11 +50,17 @@ def migrated_database_url() -> Iterator[str]:
     Its own, so the migration tests can take theirs down to nothing and back
     without touching rows another test is reading.
     """
-    with per_run_database(server_url()) as url:
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
-            command.upgrade(Config(ALEMBIC_INI), "head")
-        yield url
+    yield from _migrated_database()
+
+
+@pytest.fixture(scope="module")
+def module_database_url() -> Iterator[str]:
+    """A database at the migrations' head for one test module alone.
+
+    For tests that read every row of a table, such as all open postings, and
+    so may empty the tables between tests without touching another module's.
+    """
+    yield from _migrated_database()
 
 
 @pytest.fixture
@@ -48,3 +80,35 @@ def silent_port() -> Iterator[int]:
         server.listen()
         port: int = server.getsockname()[1]
         yield port
+
+
+@pytest.fixture(scope="session")
+def local_s3() -> Iterator[str]:
+    """The address of an S3 server on this machine, running for this test run only."""
+    with local_s3_server() as address:
+        yield address
+
+
+@pytest.fixture
+def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
+    """A bucket of one test's own on the local S3 server, emptied and removed after."""
+    # Built as the service builds its own, reading nothing from the shell's
+    # AWS_ variables, ~/.aws or proxy variables, which a test may also set.
+    session = botocore.session.Session(session_vars=SETTINGS_FROM_NOWHERE)
+    client = boto3.session.Session(botocore_session=session).client(
+        "s3",
+        endpoint_url=local_s3,
+        region_name="us-east-1",
+        aws_access_key_id="local-s3-owner",
+        aws_secret_access_key="local-s3-owner-secret",
+        config=botocore.config.Config(proxies={}),
+    )
+    bucket = LocalBucket(f"resumes-{secrets.token_hex(6)}", client)
+    client.create_bucket(Bucket=bucket.name)
+    try:
+        yield bucket
+    finally:
+        for key in bucket.stored_keys():
+            client.delete_object(Bucket=bucket.name, Key=key)
+        client.delete_bucket(Bucket=bucket.name)
+        client.close()

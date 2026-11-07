@@ -77,7 +77,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	t.Cleanup(func() {
 		server.Close()
-		if _, err := conn.Exec(ctx, "TRUNCATE postings, fetch_runs"); err != nil {
+		if _, err := conn.Exec(ctx, "TRUNCATE postings, fetch_runs CASCADE"); err != nil {
 			t.Error(err)
 		}
 		_ = s.Close(ctx)

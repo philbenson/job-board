@@ -78,7 +78,9 @@ async def service_for(database_url: str) -> AsyncIterator[Service]:
     sessions: list[AsyncSession] = []
 
     async def recorded_session(request: Request) -> AsyncIterator[AsyncSession]:
-        async for session in get_session(request):
+        # The session get_session gives, opened here rather than by iterating
+        # get_session, which would leave its session open when a route refuses.
+        async with request.app.state.sessionmaker() as session:
             sessions.append(session)
             yield session
 
@@ -137,7 +139,15 @@ async def test_saves_a_checked_key_sealed_to_its_owner_and_shows_only_its_last_f
 
     assert saved.status_code == 200
     assert saved.json() == read.json()
-    assert set(saved.json()) == {"provider", "last_four", "checked_at", "usable"}
+    assert set(saved.json()) == {
+        "provider",
+        "last_four",
+        "checked_at",
+        "usable",
+        "failure",
+        "failed_at",
+    }
+    assert (saved.json()["failure"], saved.json()["failed_at"]) == (None, None)
     assert saved.json()["provider"] == "anthropic"
     assert saved.json()["usable"] is True
     assert saved.json()["last_four"] == key[-4:]
@@ -170,6 +180,51 @@ async def test_reads_a_key_sealed_under_another_service_key_as_unusable(
     assert read.status_code == 200
     assert read.json()["usable"] is False
     assert read.json()["last_four"] == key[-4:]
+
+
+def fail_the_key(database_url: str, person_id: int, failure: str) -> None:
+    """Record a failure on the key, as scoring does when Anthropic refuses it."""
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE model_keys SET failure = :failure, failed_at = now() "
+                "WHERE person_id = :person"
+            ),
+            {"failure": failure, "person": person_id},
+        )
+    engine.dispose()
+
+
+@pytest.mark.parametrize("failure", ["rejected", "not-permitted", "no-credit"])
+async def test_reads_the_failure_scoring_recorded_on_the_key(
+    service: Service, migrated_database_url: str, failure: str
+) -> None:
+    person = new_person()
+    await service.client.put("/model-key", headers=person, json=save(fake_key()))
+    (row,) = stored_rows(migrated_database_url, person)
+    fail_the_key(migrated_database_url, row.person_id, failure)
+
+    read = await service.client.get("/model-key", headers=person)
+
+    assert read.status_code == 200
+    assert read.json()["failure"] == failure
+    assert datetime.fromisoformat(read.json()["failed_at"]).tzinfo is not None
+
+
+async def test_saving_a_key_clears_its_failure(
+    service: Service, migrated_database_url: str
+) -> None:
+    person = new_person()
+    await service.client.put("/model-key", headers=person, json=save(fake_key()))
+    (row,) = stored_rows(migrated_database_url, person)
+    fail_the_key(migrated_database_url, row.person_id, "rejected")
+
+    replaced = await service.client.put("/model-key", headers=person, json=save(fake_key()))
+    read = await service.client.get("/model-key", headers=person)
+
+    assert (replaced.json()["failure"], replaced.json()["failed_at"]) == (None, None)
+    assert (read.json()["failure"], read.json()["failed_at"]) == (None, None)
 
 
 async def test_answers_404_when_no_key_is_saved(service: Service) -> None:
@@ -276,6 +331,16 @@ async def test_refuses_a_malformed_key_without_asking_anthropic(key: str, servic
     assert response.json() == {"detail": MALFORMED, "reason": "malformed"}
     assert service.checker.asked == []
     assert (await service.client.get("/model-key", headers=person)).status_code == 404
+
+
+async def test_a_route_that_refuses_gives_its_connection_back_before_the_answer(
+    service: Service,
+) -> None:
+    # The read of a key no one saved is answered 404 from inside its transaction.
+    response = await service.client.get("/model-key", headers=new_person())
+
+    assert response.status_code == 404
+    assert service.app.state.engine.pool.checkedout() == 0
 
 
 async def test_takes_a_key_of_exactly_the_shortest_length(service: Service) -> None:
@@ -458,5 +523,17 @@ def test_the_description_declares_each_answer() -> None:
         "check-running",
         "too-many-checks",
     ]
-    assert schemas["SavedModelKey"]["required"] == ["provider", "last_four", "checked_at", "usable"]
+    assert schemas["SavedModelKey"]["required"] == [
+        "provider",
+        "last_four",
+        "checked_at",
+        "usable",
+        "failure",
+        "failed_at",
+    ]
+    failure = schemas["SavedModelKey"]["properties"]["failure"]
+    assert failure["anyOf"] == [
+        {"type": "string", "enum": ["rejected", "not-permitted", "no-credit"]},
+        {"type": "null"},
+    ]
     assert schemas["ModelKeyToSave"]["required"] == ["provider", "key"]

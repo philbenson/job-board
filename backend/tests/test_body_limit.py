@@ -82,3 +82,56 @@ async def test_the_service_refuses_an_oversized_body_before_asking_who_sent_it()
 
     assert response.status_code == 413  # not the 401 an unsigned request gets
     assert response.json() == TOO_LARGE
+
+
+def resume_routes_app() -> tuple[FastAPI, list[tuple[str, str, int]]]:
+    """An app with resume-like routes that each read the body and keep its length."""
+    app = FastAPI()
+    app.add_middleware(BodyLimit)
+    received: list[tuple[str, str, int]] = []
+
+    async def count(request: Request) -> None:
+        received.append((request.method, request.url.path, len(await request.body())))
+
+    app.add_api_route("/resume", count, methods=["PUT", "POST"])
+    app.add_api_route("/resume/", count, methods=["PUT"])
+    return app, received
+
+
+ONE_MEBIBYTE = b"x" * (1024 * 1024)
+
+
+async def test_passes_the_resume_upload_through_unread_whatever_its_size() -> None:
+    app, received = resume_routes_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put("/resume", content=ONE_MEBIBYTE)
+
+    assert response.status_code == 200
+    assert received == [("PUT", "/resume", len(ONE_MEBIBYTE))]
+
+
+async def test_caps_every_other_method_and_path_beside_the_resume_upload() -> None:
+    app, received = resume_routes_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        posted = await client.post("/resume", content=ONE_MEBIBYTE)
+        slashed = await client.put("/resume/", content=ONE_MEBIBYTE)
+
+    assert (posted.status_code, posted.json()) == (413, TOO_LARGE)
+    assert (slashed.status_code, slashed.json()) == (413, TOO_LARGE)
+    assert received == []
+
+
+async def test_passes_the_resume_upload_through_unread_under_a_root_path() -> None:
+    # Served under a root path, as uvicorn's --root-path serves it, the scope's
+    # path carries the root path in front of the route's own.
+    app, received = resume_routes_app()
+    transport = httpx.ASGITransport(app=app, root_path="/jobs")
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        uploaded = await client.put("/jobs/resume", content=ONE_MEBIBYTE)
+        posted = await client.post("/jobs/resume", content=ONE_MEBIBYTE)
+
+    assert uploaded.status_code == 200
+    assert (posted.status_code, posted.json()) == (413, TOO_LARGE)
+    assert received == [("PUT", "/jobs/resume", len(ONE_MEBIBYTE))]

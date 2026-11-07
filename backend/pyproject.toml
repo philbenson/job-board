@@ -6,8 +6,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.1",
     "anthropic>=2.6.0",
+    "boto3>=1.43.126",
     "cryptography>=50.0.2",
     "fastapi>=0.162.2",
+    "langchain>=1.4.9",
+    "langchain-anthropic>=1.7.10",
+    "langchain-core>=1.7.6",
+    "langgraph>=1.2.20",
     "psycopg[binary]>=3.3.8",
     "pydantic-settings>=2.16.2",
     "pyjwt[crypto]>=2.15.1",
@@ -22,10 +27,12 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "moto[s3,server]>=5.2.5",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1.post1",
     "ruff>=0.17.4",
+    "types-boto3[s3]>=1.43.126",
 ]
 
 [tool.ruff]
@@ -45,7 +52,14 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest]
 testpaths = ["tests"]
+# LangSmith's plugin reports test runs to LangSmith; no test may reach it.
+addopts = ["-p", "no:langsmith_plugin"]
 strict = true
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # LangSmith's client, which LangChain imports, calls an asyncio function
+    # Python 3.14 deprecates; the warning is LangSmith's to fix.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning:langsmith",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
