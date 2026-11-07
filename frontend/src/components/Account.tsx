@@ -6,6 +6,7 @@ import {
   UserButton,
 } from '@clerk/react'
 import { AccountPanel } from './AccountPanel.tsx'
+import { ModelKeyPanel } from './ModelKeyPanel.tsx'
 
 /**
  * Clerk's sign-in button when signed out; its user button and what the
@@ -30,6 +31,7 @@ export function Account() {
       <Show when="signed-in">
         <UserButton />
         <AccountPanel />
+        <ModelKeyPanel />
       </Show>
     </section>
   )
