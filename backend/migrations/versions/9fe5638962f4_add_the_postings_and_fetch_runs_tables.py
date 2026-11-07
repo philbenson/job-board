@@ -27,7 +27,7 @@ TIMESTAMP = sa.DateTime(timezone=True)
 def upgrade() -> None:
     op.create_table(
         "postings",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("board", sa.Text(), nullable=False),
         sa.Column("external_id", sa.BigInteger(), nullable=False),
@@ -41,8 +41,9 @@ def upgrade() -> None:
         sa.Column("first_seen_at", TIMESTAMP, nullable=False),
         sa.Column("last_seen_at", TIMESTAMP, nullable=False),
         sa.Column("closed_at", TIMESTAMP, nullable=True),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_postings")),
         sa.UniqueConstraint(
-            "source", "board", "external_id", name="postings_source_board_external_id_key"
+            "source", "board", "external_id", name=op.f("uq_postings_source_board_external_id")
         ),
     )
     # Serves open postings newest first, without reading closed ones. Newest
@@ -50,9 +51,11 @@ def upgrade() -> None:
     # saw it: a board's first fetch gives all its postings one first_seen_at,
     # while their publish times tell them apart. Postings without a publish time
     # sort after every dated one; first sight and then the id break ties, so the
-    # order is total and the same on every read.
+    # order is total and the same on every read. Named here rather than by the
+    # naming convention, whose name for three columns runs past PostgreSQL's
+    # 63 characters and would say nothing of the order or the open rows.
     op.create_index(
-        "postings_open_newest_published_idx",
+        op.f("ix_postings_open_newest_published"),
         "postings",
         [
             sa.text("first_published_at DESC NULLS LAST"),
@@ -64,7 +67,7 @@ def upgrade() -> None:
 
     op.create_table(
         "fetch_runs",
-        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
+        sa.Column("id", sa.BigInteger(), sa.Identity(always=True), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column("board", sa.Text(), nullable=False),
         sa.Column("started_at", TIMESTAMP, nullable=False),
@@ -74,11 +77,12 @@ def upgrade() -> None:
         sa.Column("postings_new", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("postings_closed", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("failure", sa.Text(), nullable=True),  # a short code, never raw error text
-        sa.CheckConstraint("outcome IN ('succeeded', 'failed')", name="fetch_runs_outcome_check"),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_fetch_runs")),
+        sa.CheckConstraint("outcome IN ('succeeded', 'failed')", name=op.f("ck_fetch_runs_outcome")),
     )
 
 
 def downgrade() -> None:
     op.drop_table("fetch_runs")
-    op.drop_index("postings_open_newest_published_idx", table_name="postings")
+    op.drop_index(op.f("ix_postings_open_newest_published"), table_name="postings")
     op.drop_table("postings")
