@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 # Every table the migrations create, in name order; base holds alembic_version alone.
-HEAD_TABLES = ["alembic_version", "fetch_runs", "postings"]
+HEAD_TABLES = ["alembic_version", "fetch_runs", "people", "postings"]
 # Open postings, newest published first; undated ones after every dated one;
 # first sight and then the id break ties, so the order is total and stable.
 OPEN_POSTINGS_INDEX = (
