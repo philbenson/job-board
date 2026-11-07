@@ -43,7 +43,8 @@ const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
  * `role="status"` line and one `role="alert"` line stay mounted from the
  * first render, empty, and only their words change, which is what a screen
  * reader announces. Save is held with aria-disabled and a guarded handler, as
- * the resume panel's buttons are, so focus stays on it.
+ * the resume panel's buttons are, so focus stays on it; while a save is out
+ * the box is held too, so what it shows after the answer is what was saved.
  */
 export function ResumeTextCheck() {
   const { getToken } = useAuth()
@@ -145,7 +146,15 @@ export function ResumeTextCheck() {
             value={text}
             rows={20}
             aria-describedby={countId}
+            // Held while a save is out, as ProfilePanel holds its inputs, so
+            // the saved text the answer brings never overwrites words typed
+            // since; readOnly keeps focus where it is.
+            readOnly={saving}
+            aria-disabled={saving}
             onChange={(event) => {
+              if (saving) {
+                return
+              }
               setText(event.target.value)
               // Saved no longer holds once the text differs from what was.
               if (said === SAVED) {

@@ -262,6 +262,47 @@ describe('ResumeTextCheck', () => {
     expect(alertLine()).toHaveTextContent(/^$/)
   })
 
+  it('holds the box while a save is out, keeping focus in it, then shows what was saved', async () => {
+    let answerSave: (response: Response) => void = () => {}
+    service(
+      () => answer(200, read()),
+      () =>
+        new Promise<Response>((resolve) => {
+          answerSave = resolve
+        }),
+    )
+    const user = userEvent.setup()
+    render(<ResumeTextCheck />)
+    await within(check()).findByText(FOUND_LINE)
+    fireEvent.change(box(), { target: { value: CORRECTED } })
+    await user.click(save())
+    expect(status()).toHaveTextContent(SAVING)
+
+    await user.type(box(), ' and a second one')
+    expect(box()).toHaveValue(CORRECTED)
+    expect(box()).toHaveFocus()
+    expect(box()).toHaveAttribute('readonly')
+    expect(box()).toHaveAttribute('aria-disabled', 'true')
+    // A change that gets past the hold, as a script's might, is ignored too.
+    fireEvent.change(box(), { target: { value: 'pasted during the save' } })
+    expect(box()).toHaveValue(CORRECTED)
+
+    await act(async () => {
+      answerSave(
+        new Response(JSON.stringify(read({ text: CORRECTED, checked_at: CHECKED_AT })), {
+          status: 200,
+        }),
+      )
+      await Promise.resolve()
+    })
+
+    expect(await within(check()).findByText(SAVED)).toBe(status())
+    expect(box()).toHaveValue(CORRECTED)
+    expect(box()).not.toHaveAttribute('readonly')
+    expect(box()).toHaveAttribute('aria-disabled', 'false')
+    expect(box()).toHaveFocus()
+  })
+
   it('stops saying saved once the text changes again', async () => {
     service(
       () => answer(200, read()),
