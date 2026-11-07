@@ -166,4 +166,23 @@ describe('PairsEditor', () => {
 
     expect(shown()).toEqual(['Boston, 1 days a week'])
   })
+
+  it('adds nothing typed or chosen before the hold, and changes no choice, while held', async () => {
+    const user = userEvent.setup()
+    const boston = [{ city: 'Boston', days_a_week: 1 }]
+    const { rerender } = render(<Offices initial={boston} />)
+    const city = screen.getByRole('textbox', { name: 'City' })
+    const days = screen.getByRole('combobox', { name: 'Days a week in the office' })
+    await user.type(city, 'Chicago')
+    await user.selectOptions(days, '5 (on site)')
+
+    rerender(<Offices initial={boston} held />)
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(city, '{Enter}')
+    await user.selectOptions(days, '1')
+
+    expect(shown()).toEqual(['Boston, 1 days a week'])
+    expect(city).toHaveValue('Chicago')
+    expect(days).toHaveValue('5')
+  })
 })

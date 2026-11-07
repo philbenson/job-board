@@ -90,4 +90,18 @@ describe('TextListEditor', () => {
     expect(shownRules()).toEqual(['No travel'])
     expect(input).toHaveValue('')
   })
+
+  it('adds nothing typed before the hold, by Add or by Enter, while held', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<Rules initial={['No travel']} />)
+    const input = screen.getByRole('textbox', { name: 'Add a rule' })
+    await user.type(input, 'No nights')
+
+    rerender(<Rules initial={['No travel']} held />)
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.type(input, '{Enter}')
+
+    expect(shownRules()).toEqual(['No travel'])
+    expect(input).toHaveValue('No nights')
+  })
 })

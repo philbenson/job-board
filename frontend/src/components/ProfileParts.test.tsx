@@ -1,12 +1,13 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SaveRefusalBody, SectionRoute } from '../api/profile.ts'
+import type { ProfileBody, SaveRefusalBody, SectionRoute } from '../api/profile.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
 import {
   answer,
   fullProfile,
   profileWith,
+  type Reply,
   sentTo,
   stubProfileService,
 } from '../test/profileAnswers.ts'
@@ -506,5 +507,450 @@ describe('the profile parts', () => {
     expect(shownIn('Nearby titles', 'Your nearby titles')).toEqual([markup])
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(document.querySelector('b')).toBeNull()
+  })
+})
+
+// Loads the panel on `stored`, with each of `saves` answering its route.
+async function panelOn(
+  stored: ProfileBody,
+  saves: Partial<Record<SectionRoute, Reply>> = {},
+): Promise<ReturnType<typeof stubProfileService>> {
+  const fetchMock = stubProfileService(stored, saves)
+  render(<ProfilePanel />)
+  await loaded()
+  return fetchMock
+}
+
+// Pastes rather than types, since a list's longest text runs to hundreds
+// of characters.
+async function paste(heading: string, label: string, text: string): Promise<void> {
+  await user.click(part(heading).getByRole('textbox', { name: label }))
+  await user.paste(text)
+}
+
+async function enter(heading: string, label: string, text: string): Promise<void> {
+  await paste(heading, label, text)
+  await user.keyboard('{Enter}')
+}
+
+function noticeOf(heading: string): HTMLElement {
+  const [notice] = part(heading).getAllByRole('status')
+  if (notice === undefined) {
+    throw new Error(`${heading} has no notice line`)
+  }
+  return notice
+}
+
+describe('the profile parts, past the first visit', () => {
+  beforeEach(() => {
+    clerk.getToken.mockReset()
+    clerk.getToken.mockResolvedValue('header.payload.signature')
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // Each part sends one section and the backend answers another: the part
+  // must show what the backend stored, never what it sent.
+  type StoredCase = {
+    heading: string
+    route: SectionRoute
+    edit: () => Promise<void>
+    answered: Partial<ProfileBody>
+    shows: () => void
+  }
+
+  const storedCases: StoredCase[] = [
+    {
+      heading: 'Places',
+      route: '/profile/places',
+      edit: async () => {
+        await type('Places', 'City', 'boston{Enter}')
+        await tick('Places', 'Ohio')
+      },
+      answered: {
+        places: {
+          remote_ok: true,
+          offices: [{ city: 'Boston', days_a_week: 2 }],
+          states: ['NY'],
+          will_relocate: true,
+          relocate_for: [],
+        },
+      },
+      shows: () => {
+        expect(shownIn('Places', 'Your offices')).toEqual(['Boston, 2 days a week'])
+        expect(part('Places').getByRole('checkbox', { name: 'New York' })).toBeChecked()
+        expect(part('Places').getByRole('checkbox', { name: 'Ohio' })).not.toBeChecked()
+        expect(part('Places').getByRole('checkbox', { name: 'A fully remote role is fine' })).toBeChecked()
+        expect(part('Places').getByRole('checkbox', { name: 'I would move for a role' })).toBeChecked()
+      },
+    },
+    {
+      heading: 'Pay',
+      route: '/profile/pay',
+      edit: async () => {
+        await type('Pay', 'Lowest base pay you would take, in US dollars a year', '90000')
+        await type('Pay', 'Base pay you would ask for, in US dollars a year', '120000')
+      },
+      answered: { pay: { floor_usd: 95_000, ask_usd: 125_000 } },
+      shows: () => {
+        expect(part('Pay').getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' })).toHaveValue('95,000')
+        expect(part('Pay').getByRole('textbox', { name: 'Base pay you would ask for, in US dollars a year' })).toHaveValue('125,000')
+      },
+    },
+    {
+      heading: 'Skills',
+      route: '/profile/skills',
+      edit: async () => {
+        await type('Skills', 'Skill', 'Go')
+        await type('Skills', 'Years', '3{Enter}')
+      },
+      answered: { skills: { skills: [{ name: 'Go', years: 4 }] } },
+      shows: () => {
+        expect(shownIn('Skills', 'Your skills')).toEqual(['Go, 4 years'])
+      },
+    },
+    {
+      heading: 'Gaps and trade-offs',
+      route: '/profile/gaps',
+      edit: async () => {
+        await type('Gaps and trade-offs', 'Add a gap you would apply with', 'No degree{Enter}')
+        await type('Gaps and trade-offs', 'Add a trade-off you would make', 'Less pay{Enter}')
+      },
+      answered: { gaps: { apply_with: ['No degree yet'], trade_offs: [] } },
+      shows: () => {
+        expect(shownIn('Gaps and trade-offs', 'Gaps you would apply with')).toEqual(['No degree yet'])
+        expect(part('Gaps and trade-offs').queryByRole('list', { name: 'Trade-offs you would make' })).not.toBeInTheDocument()
+      },
+    },
+    {
+      heading: 'Deal-breakers',
+      route: '/profile/deal-breakers',
+      edit: async () => {
+        await type('Deal-breakers', 'Add an industry you will not work in', 'Straße{Enter}')
+        await type('Deal-breakers', 'Add an industry you will not work in', 'STRASSE{Enter}')
+        await tick('Deal-breakers', '1 to 10 people')
+      },
+      answered: {
+        deal_breakers: { industries: ['Straße'], company_sizes: ['51-200'], no_agencies: true },
+      },
+      shows: () => {
+        expect(shownIn('Deal-breakers', 'Industries you will not work in')).toEqual(['Straße'])
+        expect(part('Deal-breakers').getByRole('checkbox', { name: '1 to 10 people' })).not.toBeChecked()
+        expect(part('Deal-breakers').getByRole('checkbox', { name: '51 to 200 people' })).toBeChecked()
+        expect(part('Deal-breakers').getByRole('checkbox', { name: 'No recruiting agencies' })).toBeChecked()
+      },
+    },
+    {
+      heading: 'Companies',
+      route: '/profile/companies',
+      edit: async () => {
+        await type('Companies', 'Add a company to watch', 'example corp{Enter}')
+        await type('Companies', 'Company', 'Example Corp')
+        await type('Companies', 'Job title', 'Data Analyst{Enter}')
+      },
+      answered: {
+        companies: {
+          watch: ['Example Corp'],
+          applied: [{ company: 'Example Corp', title: 'Senior Data Analyst' }],
+        },
+      },
+      shows: () => {
+        expect(shownIn('Companies', 'Companies you watch')).toEqual(['Example Corp'])
+        expect(shownIn('Companies', 'Your applications')).toEqual(['Senior Data Analyst at Example Corp'])
+      },
+    },
+    {
+      heading: 'Pace',
+      route: '/profile/pace',
+      edit: async () => {
+        await type('Pace', 'Leads a day', '12')
+      },
+      answered: { pace: { leads_per_day: 10, brief_from_score: 3 } },
+      shows: () => {
+        expect(part('Pace').getByRole('textbox', { name: 'Leads a day' })).toHaveValue('10')
+        expect(part('Pace').getByRole('combobox', { name: 'Write a brief for postings scored at least' })).toHaveValue('3')
+      },
+    },
+    {
+      heading: 'Your own rules',
+      route: '/profile/own-rules',
+      edit: async () => {
+        await type('Your own rules', 'Add a rule', 'No on-call rota{Enter}')
+        await type('Your own rules', 'Add a rule', 'No travel{Enter}')
+      },
+      answered: { own_rules: { rules: ['No on-call rota'] } },
+      shows: () => {
+        expect(shownIn('Your own rules', 'Your rules')).toEqual(['No on-call rota'])
+      },
+    },
+  ]
+
+  it.each(storedCases)('$heading shows the section as stored, not as sent', async (stored) => {
+    await panelOn(profileWith([]), {
+      [stored.route]: () => answer(200, { ...profileWith([]), ...stored.answered }),
+    })
+
+    await stored.edit()
+    await save(stored.heading)
+
+    expect(await part(stored.heading).findByText('Saved')).toBeInTheDocument()
+    stored.shows()
+  })
+
+  // One row per list: the backend's cap and longest length, hard-coded from
+  // profile_sections.py, so a page constant that drifts from it goes red.
+  type ListCase = {
+    list: string
+    heading: string
+    cap: number
+    longest: number
+    capSaid: string
+    tooLong: (text: string) => string
+    filled: (count: number) => Partial<ProfileBody>
+    add: (text: string) => Promise<void>
+  }
+
+  const named = (count: number, stem: string): string[] =>
+    Array.from({ length: count }, (_, at) => `${stem} ${at + 1}`)
+
+  const listCases: ListCase[] = [
+    {
+      list: 'target titles',
+      heading: 'Target titles',
+      cap: 20,
+      longest: 100,
+      capSaid: 'You can list at most 20 target titles',
+      tooLong: (text) => `A target title can be at most 100 characters: ${text}`,
+      filled: (count) => ({ target_titles: named(count, 'Title') }),
+      add: (text) => enter('Target titles', 'Add a target title', text),
+    },
+    {
+      list: 'nearby titles',
+      heading: 'Nearby titles',
+      cap: 20,
+      longest: 100,
+      capSaid: 'You can list at most 20 nearby titles',
+      tooLong: (text) => `A nearby title can be at most 100 characters: ${text}`,
+      filled: (count) => ({ title_range: { nearby_titles: named(count, 'Title'), lower_level_ok: false } }),
+      add: (text) => enter('Nearby titles', 'Add a nearby title', text),
+    },
+    {
+      list: 'offices',
+      heading: 'Places',
+      cap: 20,
+      longest: 100,
+      capSaid: 'You can list at most 20 offices',
+      tooLong: (text) => `A city can be at most 100 characters: ${text}`,
+      filled: (count) => ({
+        places: {
+          remote_ok: false,
+          offices: named(count, 'City').map((city) => ({ city, days_a_week: 1 })),
+          states: [],
+          will_relocate: false,
+          relocate_for: [],
+        },
+      }),
+      add: (text) => enter('Places', 'City', text),
+    },
+    {
+      list: 'companies you would move for',
+      heading: 'Places',
+      cap: 20,
+      longest: 100,
+      capSaid: 'You can list at most 20 companies you would move for',
+      tooLong: (text) => `A company can be at most 100 characters: ${text}`,
+      filled: (count) => ({
+        places: {
+          remote_ok: false,
+          offices: [],
+          states: [],
+          will_relocate: false,
+          relocate_for: named(count, 'Company'),
+        },
+      }),
+      add: (text) => enter('Places', 'Add a company you would move for', text),
+    },
+    {
+      list: 'skills',
+      heading: 'Skills',
+      cap: 100,
+      longest: 60,
+      capSaid: 'You can list at most 100 skills',
+      tooLong: (text) => `A skill can be at most 60 characters: ${text}`,
+      filled: (count) => ({
+        skills: { skills: named(count, 'Skill').map((name) => ({ name, years: 1 })) },
+      }),
+      add: async (text) => {
+        await paste('Skills', 'Skill', text)
+        await type('Skills', 'Years', '1{Enter}')
+      },
+    },
+    {
+      list: 'gaps',
+      heading: 'Gaps and trade-offs',
+      cap: 20,
+      longest: 200,
+      capSaid: 'You can list at most 20 gaps',
+      tooLong: (text) => `A gap can be at most 200 characters: ${text}`,
+      filled: (count) => ({ gaps: { apply_with: named(count, 'Gap'), trade_offs: [] } }),
+      add: (text) => enter('Gaps and trade-offs', 'Add a gap you would apply with', text),
+    },
+    {
+      list: 'trade-offs',
+      heading: 'Gaps and trade-offs',
+      cap: 20,
+      longest: 200,
+      capSaid: 'You can list at most 20 trade-offs',
+      tooLong: (text) => `A trade-off can be at most 200 characters: ${text}`,
+      filled: (count) => ({ gaps: { apply_with: [], trade_offs: named(count, 'Trade-off') } }),
+      add: (text) => enter('Gaps and trade-offs', 'Add a trade-off you would make', text),
+    },
+    {
+      list: 'industries',
+      heading: 'Deal-breakers',
+      cap: 30,
+      longest: 100,
+      capSaid: 'You can list at most 30 industries',
+      tooLong: (text) => `An industry can be at most 100 characters: ${text}`,
+      filled: (count) => ({
+        deal_breakers: { industries: named(count, 'Industry'), company_sizes: [], no_agencies: false },
+      }),
+      add: (text) => enter('Deal-breakers', 'Add an industry you will not work in', text),
+    },
+    {
+      list: 'companies to watch',
+      heading: 'Companies',
+      cap: 30,
+      longest: 100,
+      capSaid: 'You can list at most 30 companies to watch',
+      tooLong: (text) => `A company can be at most 100 characters: ${text}`,
+      filled: (count) => ({ companies: { watch: named(count, 'Company'), applied: [] } }),
+      add: (text) => enter('Companies', 'Add a company to watch', text),
+    },
+    {
+      list: 'jobs applied to, by company',
+      heading: 'Companies',
+      cap: 50,
+      longest: 100,
+      capSaid: 'You can list at most 50 jobs applied to',
+      tooLong: (text) => `A company can be at most 100 characters: ${text}`,
+      filled: (count) => ({
+        companies: {
+          watch: [],
+          applied: named(count, 'Company').map((company) => ({ company, title: 'Analyst' })),
+        },
+      }),
+      add: async (text) => {
+        await paste('Companies', 'Company', text)
+        await type('Companies', 'Job title', 'Analyst{Enter}')
+      },
+    },
+    {
+      list: 'jobs applied to, by title',
+      heading: 'Companies',
+      cap: 50,
+      longest: 100,
+      capSaid: 'You can list at most 50 jobs applied to',
+      tooLong: (text) => `A job title can be at most 100 characters: ${text}`,
+      filled: (count) => ({
+        companies: {
+          watch: [],
+          applied: named(count, 'Title').map((title) => ({ company: 'Example Corp', title })),
+        },
+      }),
+      add: async (text) => {
+        await type('Companies', 'Company', 'Example Corp')
+        await enter('Companies', 'Job title', text)
+      },
+    },
+    {
+      list: 'rules',
+      heading: 'Your own rules',
+      cap: 20,
+      longest: 300,
+      capSaid: 'You can list at most 20 rules',
+      tooLong: (text) => `A rule can be at most 300 characters: ${text}`,
+      filled: (count) => ({ own_rules: { rules: named(count, 'Rule') } }),
+      add: (text) => enter('Your own rules', 'Add a rule', text),
+    },
+  ]
+
+  it.each(listCases)('refuses one past the cap of $list, in its own words', async (row) => {
+    await panelOn({ ...profileWith([]), ...row.filled(row.cap) })
+
+    await row.add('One more')
+
+    expect(noticeOf(row.heading)).toHaveTextContent(row.capSaid)
+  })
+
+  it.each(listCases)('takes $list at the longest length and refuses one past it', async (row) => {
+    await panelOn(profileWith([]))
+    // The last character is outside the basic plane: two UTF-16 units, one
+    // character to the backend.
+    const longest = `${'a'.repeat(row.longest - 1)}😀`
+    const tooLong = `${'b'.repeat(row.longest)}😀`
+
+    await row.add(longest)
+    expect(noticeOf(row.heading)).toHaveTextContent(/^$/)
+    await row.add(tooLong)
+
+    expect(noticeOf(row.heading)).toHaveTextContent(row.tooLong(tooLong))
+  })
+
+  it.each([
+    ['offices', 'Places', 'City', 'Boston', 'BOSTON'],
+    ['skills', 'Skills', 'Skill', 'Python', 'python'],
+  ])('refuses a repeat in %s whatever its case', async (_list, heading, label, first, again) => {
+    await panelOn(profileWith([]))
+    const addPair = async (text: string): Promise<void> => {
+      await type(heading, label, text)
+      if (heading === 'Skills') {
+        await type(heading, 'Years', '1')
+      }
+      await type(heading, label, '{Enter}')
+    }
+
+    await addPair(first)
+    await addPair(again)
+
+    expect(noticeOf(heading)).toHaveTextContent(`${first} is already in your list`)
+  })
+
+  it('shows markup typed into a pair as text', async () => {
+    await panelOn(profileWith([]))
+    const markup = '<img src=x onerror=alert(1)><b>Lead</b>'
+
+    await type('Places', 'City', `${markup}{Enter}`)
+    await type('Companies', 'Company', markup)
+    await type('Companies', 'Job title', `${markup}{Enter}`)
+
+    expect(shownIn('Places', 'Your offices')).toEqual([`${markup}, 1 day a week`])
+    expect(shownIn('Companies', 'Your applications')).toEqual([`${markup} at ${markup}`])
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(document.querySelector('b')).toBeNull()
+  })
+
+  it('clears "Saved" and the notice once the part is edited again', async () => {
+    await panelOn(profileWith([]), {
+      '/profile/title-range': () =>
+        answer(200, {
+          ...profileWith([]),
+          title_range: { nearby_titles: ['Data Scientist'], lower_level_ok: false },
+        }),
+    })
+    const [notice, saveLine] = part('Nearby titles').getAllByRole('status')
+
+    await type('Nearby titles', 'Add a nearby title', 'Data Scientist{Enter}')
+    await save('Nearby titles')
+    expect(await part('Nearby titles').findByText('Saved')).toBe(saveLine)
+    await type('Nearby titles', 'Add a nearby title', 'data scientist{Enter}')
+    expect(notice).toHaveTextContent('Data Scientist is already in your list')
+    expect(saveLine).toHaveTextContent('Saved')
+    await tick('Nearby titles', 'A lower level than my target titles is fine')
+
+    expect(notice).toHaveTextContent(/^$/)
+    expect(saveLine).toHaveTextContent(/^$/)
   })
 })
