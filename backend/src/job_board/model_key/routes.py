@@ -33,6 +33,9 @@ Provider = Literal["anthropic"]
 RefusalReason = Literal["malformed", "rejected", "not-permitted", "unavailable"]
 
 LONGEST_KEY = 512
+# Well above four, so that showing a saved key's last four characters never shows
+# most of it, whatever Anthropic accepts.
+SHORTEST_KEY = 20
 # An HTTP header carries only printable ASCII, and the key travels in one.
 KEY_CHARACTERS = frozenset(chr(code) for code in range(0x21, 0x7F))
 
@@ -42,7 +45,8 @@ REFUSALS: dict[RefusalReason, tuple[int, str]] = {
     "not-permitted": (422, "That key cannot use the model this app runs."),
     "unavailable": (
         503,
-        "Could not reach Anthropic to check the key. Nothing was saved; try again.",
+        "Anthropic did not confirm the key, so nothing was saved. Try again later; "
+        "if it keeps happening, check the key's limits in the Claude Console.",
     ),
 }
 
@@ -72,7 +76,7 @@ def refused(reason: RefusalReason) -> JSONResponse:
 
 
 def well_formed(key: str) -> bool:
-    return 0 < len(key) <= LONGEST_KEY and set(key) <= KEY_CHARACTERS
+    return SHORTEST_KEY <= len(key) <= LONGEST_KEY and set(key) <= KEY_CHARACTERS
 
 
 def saved(row: ModelKey) -> SavedModelKey:
@@ -107,7 +111,7 @@ async def read_model_key(
     responses={
         **SIGN_IN_REQUIRED,
         422: {"model": ModelKeyRefused, "description": "A malformed key, or one Anthropic refused"},
-        503: {"model": ModelKeyRefused, "description": "Anthropic could not be reached"},
+        503: {"model": ModelKeyRefused, "description": "Anthropic did not confirm the key"},
     },
 )
 async def save_model_key(

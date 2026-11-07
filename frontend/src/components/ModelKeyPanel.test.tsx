@@ -207,7 +207,7 @@ describe('ModelKeyPanel', () => {
     [
       503,
       'unavailable',
-      'Could not reach Anthropic to check the key. Nothing was saved; try again.',
+      "Anthropic did not confirm the key, so nothing was saved. Try again later; if it keeps happening, check the key's limits in the Claude Console.",
     ],
   ] as const)(
     'shows the backend sentence for a %i %s refusal',

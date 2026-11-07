@@ -79,6 +79,23 @@ async def test_ignores_an_environment_that_points_the_client_elsewhere(
     assert recorder.requests[0].url.host == "api.anthropic.com"
 
 
+async def test_sends_the_persons_key_whatever_headers_the_environment_adds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "ANTHROPIC_CUSTOM_HEADERS",
+        "Authorization: Bearer sk-ant-operator-key\nX-Api-Key: sk-ant-operator-key",
+    )
+    key = fake_key()
+    recorder = Recorder(lambda: httpx2.Response(200, json=MODEL))
+
+    await run_check(key, recorder)
+
+    (request,) = recorder.requests
+    assert request.headers["authorization"] == f"Bearer {key}"
+    assert "x-api-key" not in request.headers
+
+
 ANSWERS: dict[str, tuple[Callable[[], httpx2.Response], CheckOutcome, int]] = {
     "401": (lambda: error(401, "authentication_error"), "rejected", 1),
     "403": (lambda: error(403, "permission_error"), "not-permitted", 1),
@@ -106,6 +123,21 @@ async def test_maps_each_answer_to_its_outcome(
     assert len(recorder.requests) == attempts  # one retry, and only where it can help
     assert key not in caplog.text
     assert key[:12] not in caplog.text
+
+
+async def test_warns_the_operator_when_the_model_is_not_found(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    recorder = Recorder(lambda: error(404, "not_found_error"))
+
+    with caplog.at_level(logging.WARNING):
+        assert await run_check(fake_key(), recorder) == "not-permitted"
+
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    assert "404" in record.getMessage()
+    assert "NotFoundError" in record.getMessage()
+    assert "refused in a test" not in caplog.text  # the exception's message is never logged
 
 
 FAILURES: dict[str, Exception] = {

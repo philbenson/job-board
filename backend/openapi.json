@@ -153,7 +153,7 @@
             }
           },
           "503": {
-            "description": "Anthropic could not be reached",
+            "description": "Anthropic did not confirm the key",
             "content": {
               "application/json": {
                 "schema": {

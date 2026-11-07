@@ -26,7 +26,10 @@ SERVICE_KEY = base64.urlsafe_b64decode(MODEL_KEY_ENCRYPTION_KEY)
 
 REJECTED = "Anthropic did not accept that key."
 NOT_PERMITTED = "That key cannot use the model this app runs."
-UNAVAILABLE = "Could not reach Anthropic to check the key. Nothing was saved; try again."
+UNAVAILABLE = (
+    "Anthropic did not confirm the key, so nothing was saved. Try again later; "
+    "if it keeps happening, check the key's limits in the Claude Console."
+)
 MALFORMED = "That does not look like an Anthropic API key."
 
 
@@ -222,10 +225,11 @@ MALFORMED_KEYS = {
     "empty": "",
     "only whitespace": " \t\n",
     "too long": "sk-ant-" + "a" * 506,
-    "a space inside": "sk-ant-api03 abcd",
-    "a tab inside": "sk-ant-api03\tabcd",
-    "a control character": "sk-ant-api03\x00abcd",
-    "a character outside ASCII": "sk-ant-api03-ébcd",
+    "one short of the shortest": "sk-ant-api03-abcdef",
+    "a space inside": "sk-ant-api03 abcdefghijkl",
+    "a tab inside": "sk-ant-api03\tabcdefghijkl",
+    "a control character": "sk-ant-api03\x00abcdefghijkl",
+    "a character outside ASCII": "sk-ant-api03-ébcdefghijkl",
 }
 
 
@@ -238,6 +242,13 @@ async def test_refuses_a_malformed_key_without_asking_anthropic(key: str, servic
     assert response.json() == {"detail": MALFORMED, "reason": "malformed"}
     assert service.checker.asked == []
     assert (await service.client.get("/model-key", headers=person)).status_code == 404
+
+
+async def test_takes_a_key_of_exactly_the_shortest_length(service: Service) -> None:
+    key = "sk-ant-api03-abcdefg"
+    assert len(key) == 20
+    response = await service.client.put("/model-key", headers=new_person(), json=save(key))
+    assert response.status_code == 200
 
 
 async def test_takes_a_key_of_exactly_the_longest_length(service: Service) -> None:

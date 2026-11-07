@@ -267,7 +267,7 @@ export interface operations {
                     "application/json": components["schemas"]["ModelKeyRefused"];
                 };
             };
-            /** @description Anthropic could not be reached */
+            /** @description Anthropic did not confirm the key */
             503: {
                 headers: {
                     [name: string]: unknown;
