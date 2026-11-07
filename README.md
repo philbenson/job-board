@@ -4,10 +4,11 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, and the posting fetcher:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the profile, saved through the service, and the posting fetcher:
 
-- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for;
+- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, and `GET /profile`, which reads the signed-in person's profile, with a `PUT` route under `/profile/` for each of its sections;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
+- the profile, in ten sections, each replaced whole through its own route: the job titles they are looking for; nearby titles and whether a role one level down is fine; where they will work; pay; skills and years of each; requirements they lack but would apply without, and what they would give up; deal-breakers among industries, company sizes and recruiting agencies; companies to watch and jobs already applied to; how many postings a day, and from what score a posting gets a written brief; and rules of their own. Every section but the titles reads as null until its first save, each has its own limits, and saving one leaves the rest as they were. Pay is annual base pay in whole US dollars, and places are US states, by postal code, and city names as the person typed them;
 - the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
 - PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings and of fetch runs);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
@@ -15,7 +16,7 @@ It is early. What exists today is the skeleton of the backend and the web app, s
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Fetching on a schedule, the rest of the profile and scoring come next.
+Fetching on a schedule, the screen to edit the rest of the profile, and scoring come next.
 
 ## Running it
 
