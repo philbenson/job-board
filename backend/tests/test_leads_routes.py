@@ -12,6 +12,7 @@ from settings_for_tests import make_settings
 from sqlalchemy import create_engine, text
 
 from job_board.app import create_app
+from job_board.leads import leads_statement
 
 REFUSED_BODY = b'{"detail":"sign-in required"}'
 START = datetime(2026, 9, 1, 12, tzinfo=UTC)
@@ -224,6 +225,16 @@ async def test_orders_best_first_then_newest_published_then_newest_seen_then_hig
         undated,
         worst_and_newest,
     ]
+
+
+def test_breaks_every_remaining_tie_by_the_highest_posting_id() -> None:
+    # Read from the statement, not from an answer: at these sizes PostgreSQL
+    # may happen to list ties by id anyway, so no planted rows could show the
+    # key missing every time.
+    compiled = str(leads_statement(1))
+    order_by = compiled.split("ORDER BY", 1)[1].split("LIMIT", 1)[0].strip()
+
+    assert order_by.endswith("postings.id DESC")
 
 
 async def test_answers_the_best_100_and_counts_every_lead(planted: Planted) -> None:

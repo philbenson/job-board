@@ -9,11 +9,11 @@ after every dated one, then newest first seen, then the highest id.
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
@@ -22,8 +22,9 @@ from job_board.people import SIGN_IN_REQUIRED, current_person
 
 # No index orders the leads: the sort runs over one person's scored rows,
 # which the unique (person_id, posting_id) index finds, and scoring adds at
-# most 25 of those a run. A page of 100 is four runs' worth of new ratings,
-# with the best on top and the total saying how many more there are.
+# most BATCH_SIZE (job_board.scoring.batch, 25 today) of those a run. A page
+# of 100 is four runs' worth of new ratings at that size, with the best on top
+# and the total saying how many more there are.
 MAX_LEADS = 100
 
 
@@ -51,15 +52,11 @@ class Leads(BaseModel):
 router = APIRouter()
 
 
-@router.get("/leads", responses=SIGN_IN_REQUIRED)
-async def read_leads(
-    person: Annotated[Person, Depends(current_person)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> Leads:
-    """The signed-in person's leads: open postings with a rating for them, best first."""
+def leads_statement(person_id: int) -> Select[*tuple[Any, ...]]:
+    """The best MAX_LEADS of the person's leads, each row carrying the count of all."""
     # One statement for the page and the count, so the two always agree. The
     # window counts every row the filter keeps, before the limit cuts the page.
-    rows = await session.execute(
+    return (
         select(
             Posting.id.label("posting_id"),
             Posting.title,
@@ -74,7 +71,7 @@ async def read_leads(
         )
         .join(Score, Score.posting_id == Posting.id)
         .where(
-            Score.person_id == person.id,
+            Score.person_id == person_id,
             Score.outcome == "scored",
             Posting.closed_at.is_(None),
         )
@@ -86,6 +83,15 @@ async def read_leads(
         )
         .limit(MAX_LEADS)
     )
+
+
+@router.get("/leads", responses=SIGN_IN_REQUIRED)
+async def read_leads(
+    person: Annotated[Person, Depends(current_person)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Leads:
+    """The signed-in person's leads: open postings with a rating for them, best first."""
+    rows = await session.execute(leads_statement(person.id))
     found = rows.all()
     return Leads(
         leads=[Lead.model_validate(row, from_attributes=True) for row in found],
