@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.database import get_session
 from job_board.me import Refused
 from job_board.model_key.check import KeyChecker, get_key_checker
-from job_board.model_key.quiet_validation import QuietValidationRoute
 from job_board.model_key.sealing import seal
 from job_board.models import ModelKey, Person
 from job_board.people import current_person, get_settings
@@ -48,7 +47,7 @@ REFUSALS: dict[RefusalReason, tuple[int, str]] = {
     ),
 }
 
-router = APIRouter(route_class=QuietValidationRoute)
+router = APIRouter()
 
 
 class ModelKeyToSave(BaseModel):
@@ -107,7 +106,7 @@ async def read_model_key(
 
 # The declared 422 replaces FastAPI's validation 422 in the API description. A
 # body FastAPI cannot read at all, such as one missing a field, still gets its
-# list-shaped 422, from QuietValidationRoute so that it never quotes the key.
+# list-shaped 422, from the app's one validation answer, which never quotes it.
 @router.put(
     "/model-key",
     response_model=SavedModelKey,  # a refusal is returned as its own response

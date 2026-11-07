@@ -280,6 +280,12 @@ def broken_bodies(key: str) -> list[Any]:
     ]
 
 
+def unreadable_bodies(key: str) -> list[tuple[bytes, str]]:
+    """Bodies that are not JSON objects at all, each carrying the key, with their content type."""
+    whole = f'{{"provider":"anthropic","key":"{key}"}}'.encode()
+    return [(whole[:-1], "application/json"), (whole, "text/plain")]
+
+
 async def test_the_key_never_comes_back_or_reaches_the_logs(
     service: Service, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -296,9 +302,17 @@ async def test_the_key_never_comes_back_or_reaches_the_logs(
         )
         for body in broken_bodies(key):
             answers.append(await service.client.put("/model-key", headers=new_person(), json=body))
+        for content, content_type in unreadable_bodies(key):
+            answers.append(
+                await service.client.put(
+                    "/model-key",
+                    headers={**new_person(), "Content-Type": content_type},
+                    content=content,
+                )
+            )
         answers.append(await service.client.get("/model-key", headers=new_person()))
 
-    assert [answer.status_code for answer in answers] == [200, 422, 422, 503, 422] + [422] * 4 + [
+    assert [answer.status_code for answer in answers] == [200, 422, 422, 503, 422] + [422] * 6 + [
         404
     ]
     for leak in (key, key[:12]):
