@@ -17,6 +17,14 @@ def database_url() -> Iterator[str]:
         yield url
 
 
+def _migrated_database() -> Iterator[str]:
+    with per_run_database(server_url()) as url:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
+            command.upgrade(Config(ALEMBIC_INI), "head")
+        yield url
+
+
 @pytest.fixture(scope="session")
 def migrated_database_url() -> Iterator[str]:
     """A second database for this run, at the migrations' head.
@@ -24,11 +32,17 @@ def migrated_database_url() -> Iterator[str]:
     Its own, so the migration tests can take theirs down to nothing and back
     without touching rows another test is reading.
     """
-    with per_run_database(server_url()) as url:
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("DATABASE_URL", url)  # the migrations read it, as the service does
-            command.upgrade(Config(ALEMBIC_INI), "head")
-        yield url
+    yield from _migrated_database()
+
+
+@pytest.fixture(scope="module")
+def module_database_url() -> Iterator[str]:
+    """A database at the migrations' head for one test module alone.
+
+    For tests that read every row of a table, such as all open postings, and
+    so may empty the tables between tests without touching another module's.
+    """
+    yield from _migrated_database()
 
 
 @pytest.fixture
