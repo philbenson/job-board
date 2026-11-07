@@ -151,25 +151,33 @@ func TestDecodeRefusesWhatIsNotTheFeed(t *testing.T) {
 	}
 }
 
-func TestDecodeRefusesAnInvalidPosting(t *testing.T) {
-	cases := map[string]func(job map[string]any){
-		"no id":                       func(job map[string]any) { delete(job, "id") },
-		"a negative id":               func(job map[string]any) { job["id"] = -4 },
-		"no title":                    func(job map[string]any) { delete(job, "title") },
-		"a blank title":               func(job map[string]any) { job["title"] = " \t " },
-		"a title of NUL characters":   func(job map[string]any) { job["title"] = "\x00 \x00" },
-		"a relative URL":              func(job map[string]any) { job["absolute_url"] = "/ottermere/2001" },
-		"a URL that is not the web":   func(job map[string]any) { job["absolute_url"] = "ftp://jobs.example.com/2001" },
-		"a URL with no host":          func(job map[string]any) { job["absolute_url"] = "https:///2001" },
-		"no URL":                      func(job map[string]any) { delete(job, "absolute_url") },
-		"no update time":              func(job map[string]any) { delete(job, "updated_at") },
-		"an update time not RFC 3339": func(job map[string]any) { job["updated_at"] = "2026-10-02 09:00:00" },
-		"a publish time not RFC 3339": func(job map[string]any) { job["first_published"] = "October 1st" },
+func TestDecodeRefusesAnInvalidPostingNamingTheCheckItFailed(t *testing.T) {
+	cases := []struct {
+		name, check string
+		change      func(job map[string]any)
+	}{
+		{"no id", "id", func(job map[string]any) { delete(job, "id") }},
+		{"a negative id", "id", func(job map[string]any) { job["id"] = -4 }},
+		{"no title", "title", func(job map[string]any) { delete(job, "title") }},
+		{"a blank title", "title", func(job map[string]any) { job["title"] = " \t " }},
+		{"a title of NUL characters", "title", func(job map[string]any) { job["title"] = "\x00 \x00" }},
+		{"a relative URL", "absolute_url", func(job map[string]any) { job["absolute_url"] = "/ottermere/2001" }},
+		{"a URL that is not the web", "absolute_url", func(job map[string]any) { job["absolute_url"] = "ftp://jobs.example.com/2001" }},
+		{"a URL with no host", "absolute_url", func(job map[string]any) { job["absolute_url"] = "https:///2001" }},
+		{"no URL", "absolute_url", func(job map[string]any) { delete(job, "absolute_url") }},
+		{"no update time", "updated_at", func(job map[string]any) { delete(job, "updated_at") }},
+		{"an update time not RFC 3339", "updated_at", func(job map[string]any) { job["updated_at"] = "2026-10-02 09:00:00" }},
+		{"a publish time not RFC 3339", "first_published", func(job map[string]any) { job["first_published"] = "October 1st" }},
 	}
-	for name, change := range cases {
-		t.Run(name, func(t *testing.T) {
-			if _, err := Decode(feedWith(t, change)); !errors.Is(err, ErrInvalidPosting) {
-				t.Errorf("Decode error = %v, want ErrInvalidPosting", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Decode(feedWith(t, c.change))
+			var invalid *InvalidPostingError
+			if !errors.Is(err, ErrInvalidPosting) || !errors.As(err, &invalid) {
+				t.Fatalf("Decode error = %v, want ErrInvalidPosting", err)
+			}
+			if invalid.Check != c.check || invalid.Position != 1 {
+				t.Errorf("failed check %q at position %d, want %q at 1", invalid.Check, invalid.Position, c.check)
 			}
 		})
 	}
