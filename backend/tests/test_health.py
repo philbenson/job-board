@@ -59,7 +59,8 @@ async def test_a_failure_leaks_nothing_about_why(
     for leak in ("127.0.0.1", str(closed_port), "s3cret", "postgresql", "refused", "Error"):
         assert leak not in response.text
     assert [record.getMessage() for record in caplog.records] == [
-        "database health check failed: OperationalError"
+        "resume storage is not set up: the resume routes answer 503",  # logged as the service starts
+        "database health check failed: OperationalError",
     ]
     for leak in ("127.0.0.1", str(closed_port), "s3cret", "postgresql"):
         assert leak not in caplog.text

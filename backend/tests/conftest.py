@@ -1,10 +1,13 @@
+import secrets
 import socket
 from collections.abc import Iterator
 from pathlib import Path
 
+import boto3
 import pytest
 from alembic import command
 from alembic.config import Config
+from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -48,3 +51,32 @@ def silent_port() -> Iterator[int]:
         server.listen()
         port: int = server.getsockname()[1]
         yield port
+
+
+@pytest.fixture(scope="session")
+def local_s3() -> Iterator[str]:
+    """The address of an S3 server on this machine, running for this test run only."""
+    with local_s3_server() as address:
+        yield address
+
+
+@pytest.fixture
+def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
+    """A bucket of one test's own on the local S3 server, emptied and removed after."""
+    # The client is made here, before a test can change the environment it reads.
+    client = boto3.client(
+        "s3",
+        endpoint_url=local_s3,
+        region_name="us-east-1",
+        aws_access_key_id="local-s3-owner",
+        aws_secret_access_key="local-s3-owner-secret",
+    )
+    bucket = LocalBucket(f"resumes-{secrets.token_hex(6)}", client)
+    client.create_bucket(Bucket=bucket.name)
+    try:
+        yield bucket
+    finally:
+        for key in bucket.stored_keys():
+            client.delete_object(Bucket=bucket.name, Key=key)
+        client.delete_bucket(Bucket=bucket.name)
+        client.close()
