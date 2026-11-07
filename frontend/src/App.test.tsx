@@ -8,6 +8,8 @@ import type { MeBody, RefusedBody } from './api/me.ts'
 // Clerk replaced by a stand-in whose sign-in state each test sets, so no test
 // reaches Clerk's servers.
 const clerk = vi.hoisted(() => ({
+  // Clerk's own load status; like Clerk's, Show renders nothing until ready.
+  status: 'ready' as 'loading' | 'ready' | 'error',
   signedIn: false,
   providerKeys: [] as (string | undefined)[],
   getToken: vi.fn<() => Promise<string | null>>(),
@@ -18,12 +20,19 @@ vi.mock('@clerk/react', () => ({
     clerk.providerKeys.push(props.publishableKey)
     return props.children
   },
+  ClerkLoading: (props: { children: ReactNode }) =>
+    clerk.status === 'loading' ? props.children : null,
+  ClerkFailed: (props: { children: ReactNode }) =>
+    clerk.status === 'error' ? props.children : null,
   Show: (props: { when: string; children: ReactNode }) =>
-    (props.when === 'signed-in') === clerk.signedIn ? props.children : null,
+    clerk.status === 'ready' &&
+    (props.when === 'signed-in') === clerk.signedIn
+      ? props.children
+      : null,
   SignInButton: (props: { children: ReactNode }) => props.children,
   UserButton: () => <button type="button" aria-label="Open user menu" />,
   useAuth: () => ({
-    isLoaded: true,
+    isLoaded: clerk.status === 'ready',
     isSignedIn: clerk.signedIn,
     getToken: clerk.getToken,
   }),
@@ -33,6 +42,8 @@ const PUBLISHABLE_KEY = 'pk_test_placeholder'
 
 const SESSION_TOKEN = 'header.payload.signature'
 
+const LOADING = 'Loading sign-in…'
+const FAILED = 'Sign-in could not load'
 const CHECKING = 'Confirming your sign-in with the service…'
 const RECOGNISED = 'Signed in'
 const REFUSED = 'The service did not accept your sign-in'
@@ -88,6 +99,7 @@ function answerOnlyAbort(init?: RequestInit): Promise<Response> {
 
 describe('App', () => {
   beforeEach(() => {
+    clerk.status = 'ready'
     clerk.signedIn = false
     clerk.providerKeys = []
     clerk.getToken.mockReset()
@@ -133,7 +145,26 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toHaveFocus()
     expect(screen.getByText('Checking the service…')).toBeInTheDocument()
     expect(screen.queryByText(/not configured/)).not.toBeInTheDocument()
+    expect(screen.queryByText(LOADING)).not.toBeInTheDocument()
+    expect(screen.queryByText(FAILED)).not.toBeInTheDocument()
   })
+
+  it.each([
+    ['says sign-in is loading while Clerk loads', 'loading', LOADING, FAILED],
+    ['says sign-in could not load when Clerk fails', 'error', FAILED, LOADING],
+  ] as const)(
+    '%s, offering no sign-in yet',
+    (_case, status, shown, notShown) => {
+      serviceNeverAnswers()
+      clerk.status = status
+
+      render(<App publishableKey={PUBLISHABLE_KEY} />)
+
+      expect(screen.getByText(shown)).toBeInTheDocument()
+      expect(screen.queryByText(notShown)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    },
+  )
 
   it("shows Clerk's user button, reachable by Tab, when signed in", async () => {
     serviceNeverAnswers()
