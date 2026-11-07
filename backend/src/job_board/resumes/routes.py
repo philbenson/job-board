@@ -109,9 +109,13 @@ async def upload_resume(
     except StoreDidNotAnswer:
         raise did_not_answer() from None
 
-    # The file is written before the row, each on its own. Two uploads at once
-    # by one person can leave the row describing the other file, until the
-    # next upload; that is accepted for one person's own resume.
+    # The file is written before the row, each on its own, and a removal
+    # deletes the file before the row. So two requests at once by one person,
+    # in two tabs say, can leave the row out of step with the store until the
+    # next upload or removal: two uploads can leave the row describing the
+    # other file, and an upload beside a removal can leave a row whose file
+    # the removal deleted, or a file with no row. That is accepted for one
+    # person's own resume.
     upsert = insert(ResumeRow).values(
         person_id=person.id, object_key=key, size_bytes=len(file), uploaded_at=func.now()
     )

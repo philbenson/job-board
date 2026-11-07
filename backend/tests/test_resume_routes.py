@@ -409,7 +409,7 @@ class WatchedStore:
         checked_out = self.service.app.state.engine.pool.checkedout()
         self.seen.append((operation, session.in_transaction(), checked_out))
 
-    async def put(self, key: str, body: bytes) -> None:
+    async def put(self, key: str, body: bytes | bytearray) -> None:
         self.look("put")
         await self.store.put(key, body)
 

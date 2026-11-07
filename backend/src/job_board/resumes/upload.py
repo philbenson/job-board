@@ -42,20 +42,24 @@ def declared_length(request: Request) -> int:
     return length
 
 
-async def read_pdf(request: Request) -> bytes:
-    """The whole file, at most ``MAX_RESUME_BYTES``, or the refusal that stopped reading it."""
+async def read_pdf(request: Request) -> bytearray:
+    """The whole file, at most ``MAX_RESUME_BYTES``, or the refusal that stopped reading it.
+
+    The file is written into one buffer of its declared length as it arrives,
+    so it is held once; joining the chunks at the end would hold it twice.
+    """
     length = declared_length(request)
-    chunks: list[bytes] = []
+    file = bytearray(length)
     size = 0
     try:
         async for chunk in request.stream():
+            seen_before = size
             size += len(chunk)
             if size > length:  # the declared length is within the cap, so this caps it too
                 raise refused(status.HTTP_413_CONTENT_TOO_LARGE, LONGER_THAN_DECLARED)
-            seen_before = size - len(chunk)
-            chunks.append(chunk)
+            file[seen_before:size] = chunk
             first_five_bytes_in = seen_before < len(PDF_SIGNATURE) <= size
-            if first_five_bytes_in and not b"".join(chunks).startswith(PDF_SIGNATURE):
+            if first_five_bytes_in and not file.startswith(PDF_SIGNATURE):
                 raise refused(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, NOT_A_PDF)
     except ClientDisconnect:
         # The client went away mid-body: nothing is stored, and no one hears this answer.
@@ -64,4 +68,4 @@ async def read_pdf(request: Request) -> bytes:
         raise refused(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, NOT_A_PDF)
     if size < length:
         raise refused(status.HTTP_400_BAD_REQUEST, ENDED_EARLY)
-    return b"".join(chunks)
+    return file

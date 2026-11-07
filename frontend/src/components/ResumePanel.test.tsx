@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ResumeBody, StorageRefusalBody } from '../api/resume.ts'
+import type { ResumeBody, StorageRefusalBody, UploadedBody } from '../api/resume.ts'
 import { ResumePanel } from './ResumePanel.tsx'
 
 // Clerk replaced by a stand-in that hands out a session token, so no test
@@ -49,6 +49,11 @@ function held(sizeBytes: number, uploadedAt: string): ResumeBody {
   return { resume: { size_bytes: sizeBytes, uploaded_at: uploadedAt } }
 }
 
+// What an upload answers, typed by the upload's own answer.
+function recorded(sizeBytes: number, uploadedAt: string): UploadedBody {
+  return { resume: { size_bytes: sizeBytes, uploaded_at: uploadedAt } }
+}
+
 const NONE = { resume: null } satisfies ResumeBody
 const STORAGE_NOT_SET_UP = {
   detail: 'Resume storage is not set up',
@@ -58,7 +63,10 @@ const DID_NOT_ANSWER = {
 } satisfies StorageRefusalBody
 
 // A body the contract allows, typed so it changes when the backend's does.
-function answer(status: number, body: ResumeBody | StorageRefusalBody): Promise<Response> {
+function answer(
+  status: number,
+  body: ResumeBody | UploadedBody | StorageRefusalBody,
+): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
       status,
@@ -213,7 +221,7 @@ describe('ResumePanel', () => {
 
     await act(async () => {
       answerUpload(
-        new Response(JSON.stringify(held(2064, LATER)), {
+        new Response(JSON.stringify(recorded(2064, LATER)), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -233,7 +241,7 @@ describe('ResumePanel', () => {
 
   it('replaces a resume already there', async () => {
     const fetchMock = service(() => answer(200, held(2064, EARLIER)), {
-      upload: () => answer(200, held(LARGEST, LATER)),
+      upload: () => answer(200, recorded(LARGEST, LATER)),
     })
     const user = userEvent.setup()
     render(<ResumePanel />)
@@ -272,13 +280,13 @@ describe('ResumePanel', () => {
 
   it.each([
     ['fails', () => answer(503, { detail: 'down' }), NOT_UPLOADED, EARLIER],
-    ['succeeds', () => answer(200, held(2064, LATER)), UPLOADED, LATER],
+    ['succeeds', () => answer(200, recorded(2064, LATER)), UPLOADED, LATER],
   ])('sends a file chosen while an upload is out when the first %s', async (_case, first, said, shownAt) => {
     let answerFirst: () => void = () => {}
     const fetchMock = service(() => answer(200, held(2064, EARLIER)), {
       upload: () => {
         if (sent(fetchMock, 'PUT').length > 1) {
-          return answer(200, held(4096, LATER))
+          return answer(200, recorded(4096, LATER))
         }
         return new Promise<Response>((resolve) => {
           answerFirst = () => {

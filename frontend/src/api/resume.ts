@@ -2,10 +2,15 @@ import { askWithin } from './askWithin.ts'
 import type { paths } from './schema.ts'
 
 type ReadOperation = paths['/resume']['get']
+type UploadOperation = paths['/resume']['put']
 
 /** The resume, or null, as the backend's OpenAPI description defines it. */
 export type ResumeBody =
   ReadOperation['responses'][200]['content']['application/json']
+
+/** The resume an upload recorded, as the backend's OpenAPI description defines it. */
+export type UploadedBody =
+  UploadOperation['responses'][200]['content']['application/json']
 
 /** The backend's answer when resume storage is why it cannot do what was asked. */
 export type StorageRefusalBody =
@@ -65,7 +70,7 @@ export function fetchResume(token: string, signal?: AbortSignal): Promise<Resume
       if (response.status === 503) {
         return await storageRefusal(response)
       }
-      return await loadedFrom(response)
+      return await loadedFrom<ResumeBody>(response)
     } catch {
       return 'unavailable'
     }
@@ -103,7 +108,7 @@ export function uploadResume(
       if (response.status === 503) {
         return await storageRefusal(response)
       }
-      const loaded = await loadedFrom(response)
+      const loaded = await loadedFrom<UploadedBody>(response)
       return loaded === 'unavailable' || loaded.resume === null
         ? 'unavailable'
         : { kind: 'loaded', resume: loaded.resume }
@@ -151,7 +156,11 @@ async function storageRefusal(
   return detail === DID_NOT_ANSWER_DETAIL ? 'storage down' : 'unavailable'
 }
 
-async function loadedFrom(response: Response): Promise<Loaded | 'unavailable'> {
+// Body names the operation's own answer, so each route's fields are checked
+// against its own description.
+async function loadedFrom<Body extends ResumeBody | UploadedBody>(
+  response: Response,
+): Promise<Loaded | 'unavailable'> {
   if (response.status !== 200) {
     return 'unavailable'
   }
@@ -161,14 +170,14 @@ async function loadedFrom(response: Response): Promise<Loaded | 'unavailable'> {
   }
   // Every field may be missing or of any type until checked; naming the field
   // through the body's type ties it to the backend's name for it.
-  const { resume } = body as Record<keyof ResumeBody, unknown>
+  const { resume } = body as Record<keyof Body, unknown>
   if (resume === null) {
     return { kind: 'loaded', resume: null }
   }
   if (typeof resume !== 'object') {
     return 'unavailable'
   }
-  type Saved = NonNullable<ResumeBody['resume']>
+  type Saved = NonNullable<Body['resume']>
   const { size_bytes: size, uploaded_at: uploaded } = resume as Partial<
     Record<keyof Saved, unknown>
   >

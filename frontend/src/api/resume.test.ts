@@ -5,6 +5,7 @@ import {
   uploadResume,
   type ResumeBody,
   type StorageRefusalBody,
+  type UploadedBody,
 } from './resume.ts'
 
 const TOKEN = 'header.payload.signature'
@@ -14,6 +15,11 @@ const HELD = {
   resume: { size_bytes: 2064, uploaded_at: UPLOADED_AT },
 } satisfies ResumeBody
 const NONE = { resume: null } satisfies ResumeBody
+// What an upload answers, typed by the upload's own answer.
+const RECORDED = {
+  resume: { size_bytes: 2064, uploaded_at: UPLOADED_AT },
+} satisfies UploadedBody
+const RECORDED_NONE = { resume: null } satisfies UploadedBody
 const NOT_SET_UP = {
   detail: 'Resume storage is not set up',
 } satisfies StorageRefusalBody
@@ -24,7 +30,7 @@ const DID_NOT_ANSWER = {
 const A_PDF = new Blob(['%PDF-1.7\n%%EOF\n'], { type: 'application/pdf' })
 
 // A body the contract allows, typed so it changes when the backend's does.
-function answer(status: number, body: ResumeBody | StorageRefusalBody): Response {
+function answer(status: number, body: ResumeBody | UploadedBody | StorageRefusalBody): Response {
   return answerText(status, JSON.stringify(body))
 }
 
@@ -162,7 +168,7 @@ describe('uploadResume', () => {
     let init: RequestInit | undefined
     const fetchMock = stubFetch(async (_url, given) => {
       init = given
-      return answer(200, HELD)
+      return answer(200, RECORDED)
     })
 
     await expect(uploadResume(TOKEN, A_PDF)).resolves.toEqual({
@@ -184,7 +190,7 @@ describe('uploadResume', () => {
   })
 
   it.each([
-    ['a 200 with no resume', () => answer(200, NONE)],
+    ['a 200 with no resume', () => answer(200, RECORDED_NONE)],
     ['a 413', () => answerText(413, '{"detail": "A resume can be at most 5 MB"}')],
     ['a 415', () => answerText(415, '{"detail": "That file is not a PDF"}')],
     ['a 200 that does not parse', () => answerText(200, 'stored')],
@@ -209,7 +215,7 @@ describe('uploadResume', () => {
     const controller = new AbortController()
     stubFetch(async () => {
       controller.abort()
-      return answer(200, HELD)
+      return answer(200, RECORDED)
     })
 
     await expect(uploadResume(TOKEN, A_PDF, controller.signal)).resolves.toBe('aborted')

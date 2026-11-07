@@ -80,14 +80,18 @@ class ResumeStore:
     client: S3Client
     bucket: str
 
-    async def put(self, key: str, body: bytes) -> None:
+    async def put(self, key: str, body: bytes | bytearray) -> None:
         """Writes the file at ``key`` as a PDF, replacing any file already there."""
         try:
             await run_in_threadpool(
                 self.client.put_object,
                 Bucket=self.bucket,
                 Key=key,
-                Body=body,
+                # botocore takes a bytearray as it is (botocore/validate.py,
+                # _validate_blob), though the type stubs name only bytes. It
+                # then sends no "Expect: 100-continue", which it adds only to
+                # a body it can read from (botocore/handlers.py, add_expect_header).
+                Body=body,  # type: ignore[arg-type]
                 ContentType="application/pdf",
             )
         except (BotoCoreError, ClientError) as error:
