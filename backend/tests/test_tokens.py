@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from session_tokens import ABSENT, USER_ID, claims, forged, signed
 from settings_for_tests import make_settings
 
-from job_board.tokens import TOKEN_LEEWAY_SECONDS, TokenRefused, bearer_token, verify_session_token
+from job_board.tokens import TOKEN_LEEWAY_SECONDS, TokenRefused, verify_session_token
 
 SETTINGS = make_settings()
 ANOTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -55,27 +55,4 @@ REFUSALS: dict[str, tuple[Callable[[], str], str]] = {
 def test_refuses_with_a_reason(token: Callable[[], str], reason: str) -> None:
     with pytest.raises(TokenRefused) as raised:
         verify_session_token(token(), SETTINGS)
-    assert raised.value.reason == reason
-
-
-@pytest.mark.parametrize("scheme", ["Bearer", "bearer", "BEARER"])
-def test_takes_the_token_from_a_bearer_header(scheme: str) -> None:
-    assert bearer_token(f"{scheme} abc.def.ghi") == "abc.def.ghi"
-
-
-@pytest.mark.parametrize(
-    ("header", "reason"),
-    [
-        (None, "missing"),
-        ("", "missing"),
-        ("abc.def.ghi", "malformed"),
-        ("Basic dXNlcjpwYXNz", "malformed"),
-        ("Bearer", "malformed"),
-        ("Bearer ", "malformed"),
-        ("Bearer abc def", "malformed"),
-    ],
-)
-def test_refuses_a_header_without_one_bearer_token(header: str | None, reason: str) -> None:
-    with pytest.raises(TokenRefused) as raised:
-        bearer_token(header)
     assert raised.value.reason == reason

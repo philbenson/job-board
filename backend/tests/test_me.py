@@ -74,9 +74,34 @@ async def test_two_first_requests_at_once_make_one_row(migrated_database_url: st
     assert len(rows_for(migrated_database_url, user)) == 1
 
 
+@pytest.mark.parametrize("scheme", ["Bearer", "bearer", "BEARER"])
+async def test_takes_the_scheme_in_any_case(scheme: str, migrated_database_url: str) -> None:
+    async with client_for(migrated_database_url) as client:
+        response = await client.get(
+            "/me", headers={"Authorization": f"{scheme} {signed(claims(sub=new_user_id()))}"}
+        )
+
+    assert response.status_code == 200
+
+
+def test_the_description_says_me_needs_a_bearer_token_and_takes_no_header_parameter() -> None:
+    description = create_app(make_settings()).openapi()
+    me = description["paths"]["/me"]["get"]
+
+    assert me["security"] == [{"HTTPBearer": []}]
+    assert description["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    assert "parameters" not in me
+    assert set(me["responses"]) == {"200", "401"}
+
+
 REFUSALS: dict[str, tuple[Callable[[], dict[str, str]], str]] = {
     "no header": (lambda: {}, "missing"),
+    "an empty header": (lambda: {"Authorization": ""}, "missing"),
     "a header without Bearer": (lambda: {"Authorization": signed(claims())}, "malformed"),
+    "another scheme": (lambda: {"Authorization": "Basic dXNlcjpwYXNz"}, "malformed"),
+    "Bearer with no token": (lambda: {"Authorization": "Bearer"}, "malformed"),
+    "Bearer and a space": (lambda: {"Authorization": "Bearer "}, "malformed"),
+    "Bearer and two words": (lambda: {"Authorization": "Bearer abc def"}, "malformed"),
     "a token that is not one": (lambda: bearer("not-a-token"), "malformed"),
     "expired": (lambda: bearer(signed(claims(exp=1))), "expired"),
     "not yet valid": (lambda: bearer(signed(claims(nbf=4_000_000_000))), "not-yet-valid"),
@@ -112,6 +137,9 @@ async def test_refuses_alike_whatever_the_reason_and_logs_only_the_reason(
     assert response.content == REFUSED_BODY
     assert response.headers["WWW-Authenticate"] == "Bearer"
     assert [record.getMessage() for record in caplog.records] == [f"sign-in refused: {reason}"]
-    secrets_sent = [value.removeprefix("Bearer ") for value in sent.values()]
+    # An empty value is in every text, so only values with something in them are looked for.
+    secrets_sent = [
+        secret for value in sent.values() if (secret := value.removeprefix("Bearer ").strip())
+    ]
     for leak in [*secrets_sent, USER_ID, ISSUER, ORIGIN, "evil.example.com", "other.example.com"]:
         assert leak not in caplog.text

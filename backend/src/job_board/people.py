@@ -13,7 +13,8 @@ another request has just written.
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,9 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_board.database import get_session
 from job_board.models import Person
 from job_board.settings import Settings
-from job_board.tokens import TokenRefused, bearer_token, verify_session_token
+from job_board.tokens import TokenRefused, verify_session_token
 
 logger = logging.getLogger(__name__)
+
+# Declares the bearer token in the API description. It never refuses itself
+# (auto_error=False), so every refusal goes through the one path below.
+BEARER = HTTPBearer(auto_error=False, description="A Clerk session token.")
 
 
 def get_settings(request: Request) -> Settings:
@@ -32,12 +37,17 @@ def get_settings(request: Request) -> Settings:
 
 
 def signed_in_user_id(
+    request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(BEARER)],
 ) -> str:
     """The Clerk user id of a valid ``Authorization: Bearer`` token, or 401."""
     try:
-        return verify_session_token(bearer_token(authorization), settings)
+        if credentials is None:
+            # No header, or one that is not "Bearer" followed by a token.
+            present = bool(request.headers.get("Authorization"))
+            raise TokenRefused("malformed" if present else "missing")
+        return verify_session_token(credentials.credentials, settings)
     except TokenRefused as refusal:
         logger.info("sign-in refused: %s", refusal.reason)
         raise HTTPException(

@@ -37,16 +37,6 @@ class TokenRefused(Exception):
         self.reason: Reason = reason
 
 
-def bearer_token(authorization: str | None) -> str:
-    """The token in an ``Authorization: Bearer <token>`` header's value."""
-    if not authorization:
-        raise TokenRefused("missing")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token or " " in token:
-        raise TokenRefused("malformed")
-    return token
-
-
 def verify_session_token(token: str, settings: Settings) -> str:
     """The Clerk user id a valid session token names; TokenRefused otherwise."""
     try:
