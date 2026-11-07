@@ -1,0 +1,80 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://jobs.example.com/ottermere/1001",
+      "ai_disclaimer": null,
+      "ai_opt_out_request_url": null,
+      "application_deadline": null,
+      "company_name": "Ottermere Analytics",
+      "content": "&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Build the pipelines that count otters &amp;amp; their rivers.&lt;/p&gt;",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "departments": [{ "id": 41, "name": "Engineering", "parent_id": null, "child_ids": [] }],
+      "education": "education_optional",
+      "first_published": "2026-09-14T09:30:00-04:00",
+      "id": 1001,
+      "include_ai_disclaimer": false,
+      "internal_job_id": 501,
+      "language": "en",
+      "location": { "name": "Remote, United States" },
+      "metadata": null,
+      "offices": [{ "id": 7, "name": "Remote", "location": "Remote", "parent_id": null, "child_ids": [] }],
+      "requisition_id": "ENG-0001",
+      "title": "Senior Data Engineer",
+      "updated_at": "2026-10-29T10:42:09-04:00"
+    },
+    {
+      "absolute_url": "https://jobs.example.com/ottermere/1002",
+      "ai_disclaimer": null,
+      "ai_opt_out_request_url": null,
+      "application_deadline": null,
+      "company_name": "Ottermere Analytics",
+      "content": "&lt;h2&gt;About the role&lt;/h2&gt;&lt;p&gt;Design the screens our field teams use by the river.&lt;/p&gt;",
+      "data_compliance": [],
+      "departments": [{ "id": 42, "name": "Design", "parent_id": null, "child_ids": [] }],
+      "education": "education_optional",
+      "first_published": "2026-10-01T08:00:00+01:00",
+      "id": 1002,
+      "include_ai_disclaimer": false,
+      "internal_job_id": 502,
+      "language": "en",
+      "location": { "name": "Lisbon, Portugal" },
+      "metadata": null,
+      "offices": [{ "id": 8, "name": "Lisbon", "location": "Lisbon", "parent_id": null, "child_ids": [] }],
+      "requisition_id": "DES-0002",
+      "title": "Product Designer",
+      "updated_at": "2026-10-30T16:05:00+01:00"
+    },
+    {
+      "absolute_url": "https://jobs.example.com/ottermere/1003",
+      "ai_disclaimer": null,
+      "ai_opt_out_request_url": null,
+      "application_deadline": null,
+      "company_name": "Ottermere Analytics",
+      "content": "&lt;p&gt;Keep the lights on for the otter census.&lt;/p&gt;",
+      "data_compliance": [],
+      "departments": [],
+      "education": "education_optional",
+      "first_published": "2026-10-20T12:00:00-07:00",
+      "id": 1003,
+      "include_ai_disclaimer": false,
+      "internal_job_id": 503,
+      "language": "en",
+      "location": { "name": "Portland, Oregon" },
+      "metadata": null,
+      "offices": [],
+      "requisition_id": "OPS-0003",
+      "title": "Site Reliability Engineer",
+      "updated_at": "2026-11-02T09:15:30-07:00"
+    }
+  ],
+  "meta": { "total": 3 }
+}
