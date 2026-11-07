@@ -14,11 +14,11 @@ It is early. What exists today is the skeleton of the backend and the web app, s
 - scoring: a command that rates each open posting from 1 to 5 against the person's profile, with a one-line reason, for each person with a working key and at least one target title, on that person's own key, up to 25 new postings per person each run, and exits; when Anthropic refuses a key, it stops using that key and the model key panel tells the person why, until they save a new one;
 - PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings, of fetch runs, of scores and of resumes);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
-- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, lets them list, add, remove and save their target titles, lets them upload, replace or remove their resume and see its size and when it was uploaded, and lists their leads: the open postings scored for them, best first, each with its score, its one-line reason and a link to the posting;
+- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, lets them edit every section of their profile (target titles, nearby titles, places, pay, skills, gaps and trade-offs, deal-breakers, companies, pace and rules of their own), each saved on its own, though scoring reads only the target titles today, lets them upload, replace or remove their resume and see its size and when it was uploaded, and lists their leads: the open postings scored for them, best first, each with its score, its one-line reason and a link to the posting;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Running the fetcher and scoring on a schedule, and the screen to edit the rest of the profile, come next.
+Running the fetcher and scoring on a schedule comes next.
 
 ## Running it
 
