@@ -8,16 +8,21 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from job_board.profile_sections import (
+    Application,
     Companies,
     DealBreakers,
     Gaps,
+    Office,
     OwnRules,
     Pace,
     Pay,
     Places,
+    Skill,
     Skills,
+    TargetTitles,
     TitleRange,
 )
+from job_board.profiles import Profile
 
 TITLE_RANGE = {"nearby_titles": ["Designer"], "lower_level_ok": False}
 PLACES = {
@@ -492,3 +497,38 @@ def test_companies_applied_to_are_the_same_job_only_when_company_and_title_both_
 def test_pace_takes_no_lowest_score_as_never_writing_a_brief() -> None:
     assert saved(Pace, {**PACE, "brief_from_score": None})["brief_from_score"] is None
     assert refusal(Pace, {"leads_per_day": 10})["type"] == "missing"
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        TargetTitles,
+        TitleRange,
+        Office,
+        Places,
+        Pay,
+        Skill,
+        Skills,
+        Gaps,
+        DealBreakers,
+        Application,
+        Companies,
+        Pace,
+        OwnRules,
+        Profile,
+    ],
+    ids=lambda model: model.__name__,
+)
+def test_every_field_says_what_it_holds_for_a_form_and_for_a_model_reading_the_schema(
+    model: type[BaseModel],
+) -> None:
+    undescribed = [name for name, field in model.model_fields.items() if not field.description]
+
+    assert undescribed == []
+
+
+def test_places_publishes_the_state_codes_it_takes_in_its_schema() -> None:
+    for mode in ("validation", "serialization"):
+        states = Places.model_json_schema(mode=mode)["properties"]["states"]
+
+        assert states["items"] == {"type": "string", "enum": sorted(US_STATES)}, mode

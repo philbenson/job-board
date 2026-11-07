@@ -31,6 +31,7 @@ from job_board.profile_sections import (
     MAX_SENT_TITLES,
     MAX_TARGET_TITLES,
     MAX_TITLE_LENGTH,
+    TARGET_TITLES,
     Companies,
     DealBreakers,
     Gaps,
@@ -63,7 +64,7 @@ class Profile(BaseModel):
     # required there even though a stored document may lack it.
     model_config = ConfigDict(extra="ignore", json_schema_serialization_defaults_required=True)
 
-    target_titles: list[str] = Field(default_factory=list)
+    target_titles: list[str] = Field(default_factory=list, description=TARGET_TITLES)
     title_range: TitleRange | None = Field(default=None, description=UNANSWERED)
     places: Places | None = Field(default=None, description=UNANSWERED)
     pay: Pay | None = Field(default=None, description=UNANSWERED)

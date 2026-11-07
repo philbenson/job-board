@@ -472,9 +472,9 @@ export interface components {
             offices: components["schemas"]["Office"][];
             /**
              * States
-             * @description US states they would work in, as two-letter postal codes, DC included; any case is taken and stored in upper case.
+             * @description US states they can work from, as two-letter postal codes, DC included; any case is taken and stored in upper case.
              */
-            states: string[];
+            states: ("AK" | "AL" | "AR" | "AZ" | "CA" | "CO" | "CT" | "DC" | "DE" | "FL" | "GA" | "HI" | "IA" | "ID" | "IL" | "IN" | "KS" | "KY" | "LA" | "MA" | "MD" | "ME" | "MI" | "MN" | "MO" | "MS" | "MT" | "NC" | "ND" | "NE" | "NH" | "NJ" | "NM" | "NV" | "NY" | "OH" | "OK" | "OR" | "PA" | "RI" | "SC" | "SD" | "TN" | "TX" | "UT" | "VA" | "VT" | "WA" | "WI" | "WV" | "WY")[];
             /**
              * Will Relocate
              * @description Whether they would move for a role.
@@ -491,7 +491,10 @@ export interface components {
          * @description The whole profile, as stored and as answered.
          */
         Profile: {
-            /** Target Titles */
+            /**
+             * Target Titles
+             * @description Job titles they are looking for, each up to 100 characters; at most 20.
+             */
             target_titles: string[];
             /** @description Null until the person saves this section. */
             title_range: components["schemas"]["TitleRange"] | null;
@@ -566,7 +569,10 @@ export interface components {
          * @description The body that replaces the target titles. An empty list means none chosen.
          */
         TargetTitles: {
-            /** Titles */
+            /**
+             * Titles
+             * @description Job titles they are looking for, each up to 100 characters; at most 20.
+             */
             titles: string[];
         };
         /**

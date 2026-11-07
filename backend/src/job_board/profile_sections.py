@@ -20,6 +20,11 @@ MAX_TARGET_TITLES = 20  # enough to cover the variants of one search; more is a 
 MAX_TITLE_LENGTH = 100  # longer than any real job title, short enough to show on one line
 MAX_SENT_TITLES = sent_limit(MAX_TARGET_TITLES)
 
+TARGET_TITLES = (
+    f"Job titles they are looking for, each up to {MAX_TITLE_LENGTH} characters;"
+    f" at most {MAX_TARGET_TITLES}."
+)
+
 TargetTitle = Annotated[str, AfterValidator(checked_text("a target title", MAX_TITLE_LENGTH))]
 
 
@@ -30,7 +35,7 @@ class TargetTitles(BaseModel):
 
     titles: Annotated[
         list[TargetTitle],
-        Field(max_length=MAX_SENT_TITLES),
+        Field(max_length=MAX_SENT_TITLES, description=TARGET_TITLES),
         AfterValidator(distinct_and_capped("target titles", MAX_TARGET_TITLES, fold)),
     ]
 
@@ -98,7 +103,11 @@ def _checked_state(code: str) -> str:
     return upper
 
 
-State = Annotated[str, AfterValidator(_checked_state)]
+# The codes are published in the schema, so a form or a model can offer them;
+# the check stays a function, so its refusal is the sentence above, not a list.
+State = Annotated[
+    str, AfterValidator(_checked_state), Field(json_schema_extra={"enum": sorted(US_STATES)})
+]
 
 
 class Office(Section):
@@ -138,7 +147,7 @@ class Places(Section):
         Field(
             max_length=sent_limit(len(US_STATES)),
             description=(
-                "US states they would work in, as two-letter postal codes, DC included;"
+                "US states they can work from, as two-letter postal codes, DC included;"
                 " any case is taken and stored in upper case."
             ),
         ),
