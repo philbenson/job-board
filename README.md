@@ -26,6 +26,8 @@ Sign-in needs a [Clerk](https://clerk.com/) application; a development instance 
 - `CLERK_AUTHORIZED_PARTIES`, in `backend/.env`: the origins of the pages allowed to send session tokens, comma-separated. `.env.example` already holds `http://localhost:5173`, the web app's dev server; open the app at that address, not `127.0.0.1`, or the service refuses its tokens.
 - `VITE_CLERK_PUBLISHABLE_KEY`, in `frontend/.env.local`: the publishable key, which is public by design.
 
+Sign-up is by invitation: in the Clerk dashboard, set the application's sign-up mode to Invite-only, then invite each person who will use it by email. Left at Open, anyone who finds the page can make an account.
+
 The service will not start without the three backend values, and names whichever is missing or malformed. The web app runs without its key, and says sign-in is not configured.
 
 ```sh
