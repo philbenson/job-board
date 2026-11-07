@@ -45,6 +45,17 @@ describe('Account', () => {
     ).toBeInTheDocument()
   })
 
+  it('shows the resume after the target titles and the leads after the resume when signed in', () => {
+    clerk.signedIn = true
+
+    render(<Account />)
+
+    const headings = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((heading) => heading.textContent)
+    expect(headings.slice(-3)).toEqual(['Target titles', 'Resume', 'Your leads'])
+  })
+
   it('shows no target titles and no leads when signed out', () => {
     clerk.signedIn = false
 

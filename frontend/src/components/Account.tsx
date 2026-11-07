@@ -9,12 +9,14 @@ import { AccountPanel } from './AccountPanel.tsx'
 import { LeadsPanel } from './LeadsPanel.tsx'
 import { ModelKeyPanel } from './ModelKeyPanel.tsx'
 import { ProfilePanel } from './ProfilePanel.tsx'
+import { ResumePanel } from './ResumePanel.tsx'
 
 /**
  * Clerk's sign-in button when signed out; its user button, what the backend
- * made of the sign-in, the person's model key, their target titles and their
- * leads when signed in. Until Clerk has loaded neither shows, so the area says
- * it is loading, or that Clerk could not load, rather than standing empty.
+ * made of the sign-in, the person's model key, their target titles, their
+ * resume and their leads when signed in. Until Clerk has loaded neither shows,
+ * so the area says it is loading, or that Clerk could not load, rather than
+ * standing empty.
  */
 export function Account() {
   return (
@@ -35,6 +37,7 @@ export function Account() {
         <AccountPanel />
         <ModelKeyPanel />
         <ProfilePanel />
+        <ResumePanel />
         <LeadsPanel />
       </Show>
     </section>

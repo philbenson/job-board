@@ -39,6 +39,12 @@ def make_settings(
     clerk_jwt_key: str = PUBLIC_PEM,
     clerk_authorized_parties: str = ORIGIN,
     model_key_encryption_key: str = MODEL_KEY_ENCRYPTION_KEY,
+    # Passed even when None, so a storage setting in the shell never reaches a test.
+    s3_endpoint_url: str | None = None,
+    s3_region: str | None = None,
+    s3_bucket: str | None = None,
+    s3_access_key_id: str | None = None,
+    s3_secret_access_key: str | None = None,
 ) -> Settings:
     return Settings(
         database_url=database_url,
@@ -46,5 +52,10 @@ def make_settings(
         clerk_jwt_key=clerk_jwt_key,
         clerk_authorized_parties=clerk_authorized_parties,
         model_key_encryption_key=model_key_encryption_key,
+        s3_endpoint_url=s3_endpoint_url,
+        s3_region=s3_region,
+        s3_bucket=s3_bucket,
+        s3_access_key_id=s3_access_key_id,
+        s3_secret_access_key=s3_secret_access_key,
         _env_file=None,
     )

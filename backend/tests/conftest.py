@@ -1,12 +1,18 @@
+import secrets
 import socket
 from collections.abc import Iterator
 from pathlib import Path
 
+import boto3
+import botocore.config
+import botocore.session
 import pytest
 from alembic import command
 from alembic.config import Config
+from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
 
+from job_board.resumes.store import SETTINGS_FROM_NOWHERE
 from job_board.scoring.tracing import TRACING_VARIABLES
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
@@ -74,3 +80,35 @@ def silent_port() -> Iterator[int]:
         server.listen()
         port: int = server.getsockname()[1]
         yield port
+
+
+@pytest.fixture(scope="session")
+def local_s3() -> Iterator[str]:
+    """The address of an S3 server on this machine, running for this test run only."""
+    with local_s3_server() as address:
+        yield address
+
+
+@pytest.fixture
+def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
+    """A bucket of one test's own on the local S3 server, emptied and removed after."""
+    # Built as the service builds its own, reading nothing from the shell's
+    # AWS_ variables, ~/.aws or proxy variables, which a test may also set.
+    session = botocore.session.Session(session_vars=SETTINGS_FROM_NOWHERE)
+    client = boto3.session.Session(botocore_session=session).client(
+        "s3",
+        endpoint_url=local_s3,
+        region_name="us-east-1",
+        aws_access_key_id="local-s3-owner",
+        aws_secret_access_key="local-s3-owner-secret",
+        config=botocore.config.Config(proxies={}),
+    )
+    bucket = LocalBucket(f"resumes-{secrets.token_hex(6)}", client)
+    client.create_bucket(Bucket=bucket.name)
+    try:
+        yield bucket
+    finally:
+        for key in bucket.stored_keys():
+            client.delete_object(Bucket=bucket.name, Key=key)
+        client.delete_bucket(Bucket=bucket.name)
+        client.close()

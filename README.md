@@ -4,19 +4,21 @@ A job board that reads postings for you. You describe the work you want; every d
 
 ## Where it stands
 
-It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the first part of the profile, the posting fetcher, scoring, and the leads list:
+It is early. What exists today is the skeleton of the backend and the web app, sign-in, the model key, the profile, saved through the service, the posting fetcher, scoring, resume upload, and the leads list:
 
-- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, `GET /profile` and `PUT /profile/target-titles`, which read the signed-in person's profile and replace the job titles they are looking for, and `GET /leads`, which answers the open postings scored for the signed-in person, best first, the best 100 with a count of all;
+- a FastAPI service with `GET /health`, which reports whether the database answers, `GET /me`, which answers the signed-in person's id, `/model-key`, where the signed-in person reads, saves and removes their own Anthropic API key, `GET /profile`, which reads the signed-in person's profile, with a `PUT` route under `/profile/` for each of its sections, and `GET /leads`, which answers the open postings scored for the signed-in person, best first, the best 100 with a count of all;
 - sign-in through Clerk: the web app signs a person in, and the service checks their session token on every request that needs a person and keeps one row per person, added on their first request;
+- the profile, in ten sections, each replaced whole through its own route: the job titles they are looking for; nearby titles and whether a role one level down is fine; where they will work; pay; skills and years of each; requirements they lack but would apply without, and what they would give up; deal-breakers among industries, company sizes and recruiting agencies; companies to watch and jobs already applied to; how many postings a day, and from what score a posting gets a written brief; and rules of their own. Every section but the titles reads as null until its first save, each has its own limits, and saving one leaves the rest as they were. Pay is annual base pay in whole US dollars, and places are US states, by postal code, and city names as the person typed them;
 - the model key: the service checks a person's Anthropic API key with Anthropic before saving it, keeps it sealed so only the service can open it, and from then on shows only its last four characters;
+- the resume: `/resume`, where the signed-in person uploads one PDF of up to 5 MB, replacing any before it, reads its size and when it was uploaded, and removes it; the service keeps the file in an S3-compatible bucket, such as Cloudflare R2 or Amazon S3, with a row describing it in PostgreSQL, and the web app has a panel for all three;
 - scoring: a command that rates each open posting from 1 to 5, with a one-line reason, for each person with a working key and at least one target title, on that person's own key, up to 25 new postings per person each run, and exits; when Anthropic refuses a key, it stops using that key and the model key panel tells the person why, until they save a new one;
-- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings, of fetch runs and of scores);
+- PostgreSQL for local development in Docker, with Alembic migrations (so far, the tables of people, of model keys, of profiles, of postings, of fetch runs, of scores and of resumes);
 - a Go command that reads Greenhouse job boards into PostgreSQL once and exits, storing each board whole or not at all and recording every attempt;
-- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, lets them list, add, remove and save their target titles, and lists their leads: the open postings scored for them, best first, each with its score, its one-line reason and a link to the posting;
+- a React and TypeScript web app that shows whether the service answers, offers sign-in, and once signed in says whether the service recognised the person, lets them save, replace or remove their model key, lets them list, add, remove and save their target titles, lets them upload, replace or remove their resume and see its size and when it was uploaded, and lists their leads: the open postings scored for them, best first, each with its score, its one-line reason and a link to the posting;
 - tests, lint and strict type checks for each part, run by GitHub Actions on every push that changes that part;
 - a check that keeps personal contact details and private names out of this public repository.
 
-Running the fetcher and scoring on a schedule, and the rest of the profile, come next.
+Running the fetcher and scoring on a schedule, and the screen to edit the rest of the profile, come next.
 
 ## Running it
 
@@ -34,6 +36,15 @@ Sign-up is by invitation: in the Clerk dashboard, set the application's sign-up 
 The model key needs one more backend value, `MODEL_KEY_ENCRYPTION_KEY`, in `backend/.env`: 32 random bytes in URL-safe base64, which seals each person's key in the database. Make one with `python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Keep it safe and keep it fixed: if it is lost or changed, no saved key can be opened, and the model key panel asks each person to enter theirs again.
 
 The service will not start without the four backend values, and names whichever is missing or malformed. The web app runs without its key, and says sign-in is not configured.
+
+Resume upload needs a bucket in an S3-compatible store and five more values in `backend/.env`, all five or none:
+
+- `S3_ENDPOINT_URL`: the store's `https` address, with no path (`http` is accepted only for this machine, for a local stand-in). For Cloudflare R2, `https://<account id>.r2.cloudflarestorage.com`; for Amazon S3, `https://s3.<region>.amazonaws.com`.
+- `S3_REGION`: `auto` for R2; for S3, the bucket's region.
+- `S3_BUCKET`: the bucket's name.
+- `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`: a key allowed to write and delete objects in that bucket.
+
+Without them the service starts as before, logs once that resume storage is not set up, and answers `503` on its resume routes, and the resume panel says storage is not set up. Given some but not all five, it will not start, and names the ones missing. It reads the store's address and credentials from these five alone, never from `AWS_` environment variables or `~/.aws`, so settings made for another project cannot send resumes elsewhere.
 
 ```sh
 git clone https://github.com/philbenson/job-board.git
@@ -89,6 +100,8 @@ uv run mypy
 
 `DATABASE_URL` takes the plain form `postgresql://user:password@host:port/database` (`postgres://` works too). The service reads it, or `backend/.env`. The tests read it, or else the URL in `backend/.env.example`, which is the compose database; they never read `.env`, so a `.env` pointed at another database is never touched by a test run. The tests need no Clerk application: they sign their own session tokens with a key each run generates. Nor do they need an Anthropic key or reach Anthropic: the routes' tests stand in for the key check, the check's own tests answer it through a fake transport, scoring's tests rate postings with a stand-in model, and the real model is tested against a small server the tests run on this machine.
 
+Nor do they reach a storage provider: each run starts a local S3 server, from the moto package that `uv sync` installs, and the resume tests keep every file there.
+
 Web app, from `frontend/` (the tests replace the network, so they need no backend; see [frontend/README.md](frontend/README.md)):
 
 ```sh
@@ -126,6 +139,7 @@ sh tools/install-hooks.sh     # once per clone: run the check on every commit an
 - **Async SQLAlchemy on psycopg 3**: the service waits on the database without holding up other requests, through a query layer that stays readable as the schema grows.
 - **Clerk, with tokens checked in the service**: sign-in, accounts and their security are a product of their own, so Clerk runs them, and the service keeps only its own row per person. The service checks each session token itself, against the public key, the issuer and the permitted origins it was started with, so checking a request costs no call to Clerk and no wait on one.
 - **Each person's own model key, checked and sealed**: scoring runs on the person's own Anthropic key, so the service keeps it sealed with AES-256-GCM, bound to its owner and provider so a sealed key copied to another row will not open, and checks it before saving by reading the metadata of the model the app runs, which Anthropic answers only for a working key allowed that model and which generates nothing, so the check costs nothing.
+- **The resume as the raw request body, read after the sign-in**: the upload is the PDF itself rather than a form, so the service checks the session token, the declared type and the declared length before it reads a byte, refuses anything over 5 MB unread, stops at the first bytes that are not a PDF, and holds no database connection while the file arrives or the store answers.
 - **Scoring as a scheduled command on each person's own key**: rating postings costs model calls, so each person pays for their own on their own key, in a small batch per run that bounds what one run can cost them; a command that a schedule starts, works through everyone once and exits keeps that work out of the web service, so a slow or failing model never holds up a page, and a posting whose request fails is simply left for the next run.
 - **uv, ruff and strict mypy**: one tool and one lock file for Python and its dependencies, so every machine and every CI run installs the same thing; lint, formatting and strict typing catch mistakes before the tests run.
 - **React and TypeScript, built with Vite**: typed components from the API's edge to the screen, with a dev server that reloads in place and passes API requests to the backend under its own origin, so the backend never has to allow requests from another one.

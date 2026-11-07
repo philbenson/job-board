@@ -155,6 +155,31 @@ class ProfileRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ResumeRow(Base):
+    """What is known of a person's resume, whose file is in the resume store.
+
+    One per person. The file's key in the store is the same for every upload
+    by that person, so a new upload replaces the file and this row in place.
+
+    Removing a person removes this row but not the file in the store.
+    TODO: removing a person's data must also delete their resume from the store.
+    """
+
+    __tablename__ = "resumes"
+    __table_args__ = (
+        CheckConstraint("size_bytes BETWEEN 1 AND 5242880", name="size_bytes"),  # at most 5 MiB
+    )
+
+    person_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True
+    )
+    object_key: Mapped[str] = mapped_column(Text)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Score(Base):
     """One person's rating of one posting, or a note that the model's reply could not be read.
 

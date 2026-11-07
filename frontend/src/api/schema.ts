@@ -117,10 +117,287 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile/title-range": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Title Range
+         * @description Replaces the signed-in person's title range and answers the profile as stored.
+         */
+        put: operations["save_title_range_profile_title_range_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Places
+         * @description Replaces where the signed-in person will work and answers the profile as stored.
+         */
+        put: operations["save_places_profile_places_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Pay
+         * @description Replaces the signed-in person's pay and answers the profile as stored.
+         */
+        put: operations["save_pay_profile_pay_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Skills
+         * @description Replaces the signed-in person's skills and answers the profile as stored.
+         */
+        put: operations["save_skills_profile_skills_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Gaps
+         * @description Replaces the signed-in person's gaps and trade-offs and answers the profile as stored.
+         */
+        put: operations["save_gaps_profile_gaps_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/deal-breakers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Deal Breakers
+         * @description Replaces the signed-in person's deal-breakers and answers the profile as stored.
+         */
+        put: operations["save_deal_breakers_profile_deal_breakers_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Companies
+         * @description Replaces the companies the signed-in person watches and answers the profile as stored.
+         */
+        put: operations["save_companies_profile_companies_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/pace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Pace
+         * @description Replaces the signed-in person's pace and answers the profile as stored.
+         */
+        put: operations["save_pace_profile_pace_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/own-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Own Rules
+         * @description Replaces the signed-in person's own rules and answers the profile as stored.
+         */
+        put: operations["save_own_rules_profile_own_rules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Resume */
+        get: operations["read_resume_resume_get"];
+        /**
+         * Upload Resume
+         * @description Stores the PDF in the body as the signed-in person's resume, replacing any before it.
+         */
+        put: operations["upload_resume_resume_put"];
+        post?: never;
+        /**
+         * Remove Resume
+         * @description Deletes the file, whether or not a row describes it, then the row.
+         *
+         *     So a removal also clears a file whose row was never written; if the store
+         *     does not answer, the row stays and still describes the file.
+         */
+        delete: operations["remove_resume_resume_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Application
+         * @description One job a person has applied to: the company and the title of the role.
+         */
+        Application: {
+            /**
+             * Company
+             * @description The company's name, up to 100 characters.
+             */
+            company: string;
+            /**
+             * Title
+             * @description The title of the role applied for, up to 100 characters.
+             */
+            title: string;
+        };
+        /**
+         * Companies
+         * @description Companies a person keeps an eye on, and the jobs they have already applied to.
+         */
+        Companies: {
+            /**
+             * Watch
+             * @description Companies whose postings they want to see, each up to 100 characters; at most 30.
+             */
+            watch: string[];
+            /**
+             * Applied
+             * @description Jobs they have already applied to, so a posting for one is not suggested again; at most 50, the same company with another title being another job.
+             */
+            applied: components["schemas"]["Application"][];
+        };
+        /**
+         * DealBreakers
+         * @description What rules a posting out for a person whatever else it offers.
+         */
+        DealBreakers: {
+            /**
+             * Industries
+             * @description Industries they will not work in, each up to 100 characters; at most 30.
+             */
+            industries: string[];
+            /**
+             * Company Sizes
+             * @description Company sizes, by number of employees, they will not work at.
+             */
+            company_sizes: ("1-10" | "11-50" | "51-200" | "201-500" | "501-1000" | "1001-5000" | "5001-10000" | "10001+")[];
+            /**
+             * No Agencies
+             * @description Whether a posting from a recruiting agency, not the employer, rules it out.
+             */
+            no_agencies: boolean;
+        };
+        /**
+         * Gaps
+         * @description Where a person falls short of a posting and still applies, and what they would give up.
+         */
+        Gaps: {
+            /**
+             * Apply With
+             * @description Requirements they lack but would still apply without, in their words, each up to 200 characters; at most 20.
+             */
+            apply_with: string[];
+            /**
+             * Trade Offs
+             * @description What they would give up for the right role, in their words, each up to 200 characters; at most 20.
+             */
+            trade_offs: string[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -205,17 +482,135 @@ export interface components {
             key: string;
         };
         /**
+         * Office
+         * @description A city a person would go into an office in, and how often.
+         */
+        Office: {
+            /**
+             * City
+             * @description The city's name as the person typed it, up to 100 characters.
+             */
+            city: string;
+            /**
+             * Days A Week
+             * @description Days a week in the office, from 1 to 5; 5 means on site.
+             */
+            days_a_week: number;
+        };
+        /**
+         * OwnRules
+         * @description Rules of a person's own, in their words, that no other section covers.
+         */
+        OwnRules: {
+            /**
+             * Rules
+             * @description Anything else a posting must or must not be, in their words, each up to 300 characters; at most 20.
+             */
+            rules: string[];
+        };
+        /**
+         * Pace
+         * @description How many postings a person wants a day, and which deserve a written brief.
+         */
+        Pace: {
+            /**
+             * Leads Per Day
+             * @description Postings to show a day, from 1 to 50.
+             */
+            leads_per_day: number;
+            /**
+             * Brief From Score
+             * @description The lowest score, from 1 to 5, at which a posting gets a written brief; null for no briefs.
+             */
+            brief_from_score: number | null;
+        };
+        /**
+         * Pay
+         * @description What a person will be paid: annual base pay in whole US dollars, before bonus or equity.
+         */
+        Pay: {
+            /**
+             * Floor Usd
+             * @description The lowest annual base pay, in whole US dollars, they would take.
+             */
+            floor_usd: number;
+            /**
+             * Ask Usd
+             * @description The annual base pay, in whole US dollars, they ask for; at least the floor.
+             */
+            ask_usd: number;
+        };
+        /**
+         * Places
+         * @description Where a person will work: remote, offices in named cities, US states, and moving.
+         */
+        Places: {
+            /**
+             * Remote Ok
+             * @description Whether a fully remote role is fine.
+             */
+            remote_ok: boolean;
+            /**
+             * Offices
+             * @description Cities, as typed, where they would go into an office, and how many days a week; at most 20, one per city.
+             */
+            offices: components["schemas"]["Office"][];
+            /**
+             * States
+             * @description US states they can work from, as two-letter postal codes, DC included; any case is taken and stored in upper case.
+             */
+            states: ("AK" | "AL" | "AR" | "AZ" | "CA" | "CO" | "CT" | "DC" | "DE" | "FL" | "GA" | "HI" | "IA" | "ID" | "IL" | "IN" | "KS" | "KY" | "LA" | "MA" | "MD" | "ME" | "MI" | "MN" | "MO" | "MS" | "MT" | "NC" | "ND" | "NE" | "NH" | "NJ" | "NM" | "NV" | "NY" | "OH" | "OK" | "OR" | "PA" | "RI" | "SC" | "SD" | "TN" | "TX" | "UT" | "VA" | "VT" | "WA" | "WI" | "WV" | "WY")[];
+            /**
+             * Will Relocate
+             * @description Whether they would move for a role.
+             */
+            will_relocate: boolean;
+            /**
+             * Relocate For
+             * @description Companies they would move for even though they would not move otherwise, each up to 100 characters; at most 20, and empty when they would move anyway.
+             */
+            relocate_for: string[];
+        };
+        /**
          * Profile
          * @description The whole profile, as stored and as answered.
          */
         Profile: {
-            /** Target Titles */
+            /**
+             * Target Titles
+             * @description Job titles they are looking for, each up to 100 characters; at most 20.
+             */
             target_titles: string[];
+            /** @description Null until the person saves this section. */
+            title_range: components["schemas"]["TitleRange"] | null;
+            /** @description Null until the person saves this section. */
+            places: components["schemas"]["Places"] | null;
+            /** @description Null until the person saves this section. */
+            pay: components["schemas"]["Pay"] | null;
+            /** @description Null until the person saves this section. */
+            skills: components["schemas"]["Skills"] | null;
+            /** @description Null until the person saves this section. */
+            gaps: components["schemas"]["Gaps"] | null;
+            /** @description Null until the person saves this section. */
+            deal_breakers: components["schemas"]["DealBreakers"] | null;
+            /** @description Null until the person saves this section. */
+            companies: components["schemas"]["Companies"] | null;
+            /** @description Null until the person saves this section. */
+            pace: components["schemas"]["Pace"] | null;
+            /** @description Null until the person saves this section. */
+            own_rules: components["schemas"]["OwnRules"] | null;
         };
         /** Refused */
         Refused: {
             /** Detail */
             detail: string;
+        };
+        /**
+         * Resume
+         * @description The signed-in person's resume, or null before their first upload.
+         */
+        Resume: {
+            resume: components["schemas"]["SavedResume"] | null;
         };
         /** SavedModelKey */
         SavedModelKey: {
@@ -238,13 +633,69 @@ export interface components {
             /** Failed At */
             failed_at: string | null;
         };
+        /** SavedResume */
+        SavedResume: {
+            /** Size Bytes */
+            size_bytes: number;
+            /**
+             * Uploaded At
+             * Format: date-time
+             */
+            uploaded_at: string;
+        };
+        /**
+         * Skill
+         * @description One skill and how long the person has used it.
+         */
+        Skill: {
+            /**
+             * Name
+             * @description The skill, as the person names it, up to 60 characters.
+             */
+            name: string;
+            /**
+             * Years
+             * @description Whole years of using it, from 0 to 60; 0 means under a year.
+             */
+            years: number;
+        };
+        /**
+         * Skills
+         * @description The skills a person brings.
+         */
+        Skills: {
+            /**
+             * Skills
+             * @description Their skills, each named once; at most 100.
+             */
+            skills: components["schemas"]["Skill"][];
+        };
         /**
          * TargetTitles
          * @description The body that replaces the target titles. An empty list means none chosen.
          */
         TargetTitles: {
-            /** Titles */
+            /**
+             * Titles
+             * @description Job titles they are looking for, each up to 100 characters; at most 20.
+             */
             titles: string[];
+        };
+        /**
+         * TitleRange
+         * @description How far from their target titles a person will look.
+         */
+        TitleRange: {
+            /**
+             * Nearby Titles
+             * @description Job titles close to the target titles that are also worth seeing, each up to 100 characters; at most 20.
+             */
+            nearby_titles: string[];
+            /**
+             * Lower Level Ok
+             * @description Whether a role one level below the target titles is fine.
+             */
+            lower_level_ok: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -547,6 +998,536 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_title_range_profile_title_range_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TitleRange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_places_profile_places_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Places"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_pay_profile_pay_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Pay"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_skills_profile_skills_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Skills"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gaps_profile_gaps_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Gaps"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_deal_breakers_profile_deal_breakers_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DealBreakers"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_companies_profile_companies_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Companies"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_pace_profile_pace_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Pace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_own_rules_profile_own_rules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnRules"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_resume_resume_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resume"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Resume storage is not set up, or did not answer */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    upload_resume_resume_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/pdf": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resume"];
+                };
+            };
+            /** @description The file ended before its declared length */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description No declared length */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Over 5 MB, or longer than declared */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Not sent as a PDF, or not a PDF */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Resume storage is not set up, or did not answer */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    remove_resume_resume_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Resume storage is not set up, or did not answer */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
                 };
             };
         };

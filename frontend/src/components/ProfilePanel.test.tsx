@@ -7,6 +7,7 @@ import type {
   TargetTitlesBody,
 } from '../api/profile.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
+import { profileWith } from '../test/profileAnswers.ts'
 
 // Clerk replaced by a stand-in that hands out a session token, so no test
 // reaches Clerk's servers.
@@ -53,7 +54,7 @@ type Reply = (init?: RequestInit) => Promise<Response>
 function service(stored: string[], save: Reply = () => answerOnlyAbort()) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === '/api/profile') {
-      return answer(200, { target_titles: stored })
+      return answer(200, profileWith(stored))
     }
     if (url === '/api/profile/target-titles') {
       return save(init)
@@ -161,7 +162,7 @@ describe('ProfilePanel', () => {
   })
 
   it('keeps its two status lines on the page, empty, so each message is announced', async () => {
-    service(['Designer'], () => answer(200, { target_titles: ['Designer'] }))
+    service(['Designer'], () => answer(200, profileWith(['Designer'])))
     const user = userEvent.setup()
     render(<ProfilePanel />)
     await loaded()
@@ -321,7 +322,7 @@ describe('ProfilePanel', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(SAVING)).toBeInTheDocument()
     expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
-    const stored = { target_titles: ['Designer', 'Writer (stored)'] } satisfies ProfileBody
+    const stored = profileWith(['Designer', 'Writer (stored)'])
     await act(async () => {
       finish(await answer(200, stored))
     })
@@ -365,7 +366,7 @@ describe('ProfilePanel', () => {
     expect(saves).toHaveLength(1)
 
     await act(async () => {
-      finish(await answer(200, { target_titles: ['Designer'] }))
+      finish(await answer(200, profileWith(['Designer'])))
     })
     expect(await screen.findByText(SAVED)).toBeInTheDocument()
     expect(shownTitles()).toEqual(['Designer'])
@@ -388,7 +389,7 @@ describe('ProfilePanel', () => {
     expect(save).not.toBeDisabled()
     expect(save).toHaveFocus()
     await act(async () => {
-      finish(await answer(200, { target_titles: ['Designer'] }))
+      finish(await answer(200, profileWith(['Designer'])))
     })
     expect(await screen.findByText(SAVED)).toBeInTheDocument()
     expect(save).toHaveFocus()

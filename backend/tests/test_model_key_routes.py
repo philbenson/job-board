@@ -78,7 +78,9 @@ async def service_for(database_url: str) -> AsyncIterator[Service]:
     sessions: list[AsyncSession] = []
 
     async def recorded_session(request: Request) -> AsyncIterator[AsyncSession]:
-        async for session in get_session(request):
+        # The session get_session gives, opened here rather than by iterating
+        # get_session, which would leave its session open when a route refuses.
+        async with request.app.state.sessionmaker() as session:
             sessions.append(session)
             yield session
 
@@ -329,6 +331,16 @@ async def test_refuses_a_malformed_key_without_asking_anthropic(key: str, servic
     assert response.json() == {"detail": MALFORMED, "reason": "malformed"}
     assert service.checker.asked == []
     assert (await service.client.get("/model-key", headers=person)).status_code == 404
+
+
+async def test_a_route_that_refuses_gives_its_connection_back_before_the_answer(
+    service: Service,
+) -> None:
+    # The read of a key no one saved is answered 404 from inside its transaction.
+    response = await service.client.get("/model-key", headers=new_person())
+
+    assert response.status_code == 404
+    assert service.app.state.engine.pool.checkedout() == 0
 
 
 async def test_takes_a_key_of_exactly_the_shortest_length(service: Service) -> None:
