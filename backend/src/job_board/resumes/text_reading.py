@@ -58,7 +58,7 @@ def _answer_of(answer: bytes) -> Reading | None:
     return None
 
 
-async def _send(stdin: asyncio.StreamWriter, file: bytes) -> None:
+async def _send(stdin: asyncio.StreamWriter, file: bytes | bytearray) -> None:
     # A child that ends before it reads the whole file breaks the pipe; its
     # exit says what happened, so the broken pipe says nothing more.
     try:
@@ -99,7 +99,7 @@ class ResumeTextReader:
     address_space_bytes: int = 256 * 1024 * 1024  # pypdf reading a 5 MB file needs far less
     one_at_a_time: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
 
-    async def read(self, file: bytes) -> Reading:
+    async def read(self, file: bytes | bytearray) -> Reading:
         """The file's text and what reading it gave; ``failed`` for anything that went wrong."""
         async with self.one_at_a_time:
             try:
@@ -111,7 +111,7 @@ class ResumeTextReader:
                 )
                 return FAILED
 
-    async def _read(self, file: bytes) -> Reading:
+    async def _read(self, file: bytes | bytearray) -> Reading:
         limits = (self.cpu_seconds, self.address_space_bytes, MAX_RESUME_BYTES)
         child = await asyncio.create_subprocess_exec(
             *self.command,

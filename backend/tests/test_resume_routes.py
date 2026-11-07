@@ -11,6 +11,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, Request
 from local_s3 import LocalBucket
+from pdf_files import pdf, resume_lines
 from session_tokens import claims, signed
 from settings_for_tests import make_settings
 from sqlalchemy import create_engine, text
@@ -23,7 +24,8 @@ from job_board.database import get_session
 LARGEST = 5 * 1024 * 1024
 ACCESS_KEY_ID = "resume-test-access-key-id"
 SECRET_ACCESS_KEY = "resume-test-secret-access-key"
-A_PDF = b"%PDF-1.7\n" + secrets.token_bytes(2048) + b"\n%%EOF\n"
+A_PDF = pdf(resume_lines())
+A_PDF_TEXT = "\n".join(resume_lines())
 CHUNK = 64 * 1024
 
 NOT_SET_UP = {"detail": "Resume storage is not set up"}
@@ -72,6 +74,24 @@ class Someone:
             "SELECT r.object_key, r.size_bytes, r.uploaded_at "
             "FROM resumes r JOIN people p ON p.id = r.person_id WHERE p.clerk_user_id = :user",
             user=self.clerk_user_id,
+        )
+
+    def text_row(self) -> Any:
+        (row,) = run(
+            self.database_url,
+            "SELECT r.text_state, r.text, r.text_checked_at "
+            "FROM resumes r JOIN people p ON p.id = r.person_id WHERE p.clerk_user_id = :user",
+            user=self.clerk_user_id,
+        )
+        return row
+
+    def check_text(self) -> None:
+        """Mark the text checked, as a save would."""
+        run(
+            self.database_url,
+            "UPDATE resumes SET text = coalesce(text, 'typed in'), text_checked_at = now() "
+            "WHERE person_id = :person",
+            person=self.person_id(),
         )
 
     def remove(self) -> None:
@@ -229,6 +249,31 @@ async def test_a_second_upload_replaces_the_file_and_the_row(
     assert row.uploaded_at >= first_row.uploaded_at
     assert s3_bucket.stored_keys() == [someone.key()]
     assert s3_bucket.read(someone.key())[0] == second
+
+
+async def test_an_upload_keeps_the_text_read_from_the_file_unchecked(
+    service: Service, someone: Someone
+) -> None:
+    uploaded = await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+
+    assert uploaded.status_code == 200
+    assert uploaded.json().keys() == {"resume"}
+    assert uploaded.json()["resume"].keys() == {"size_bytes", "uploaded_at"}
+    assert tuple(someone.text_row()) == ("found", A_PDF_TEXT, None)
+
+
+async def test_a_second_upload_reads_its_own_text_and_clears_the_check(
+    service: Service, someone: Someone
+) -> None:
+    await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+    someone.check_text()
+    assert someone.text_row().text_checked_at is not None
+    unreadable = b"%PDF-1.7\n" + secrets.token_bytes(2048) + b"\n%%EOF\n"
+
+    replaced = await service.client.put("/resume", headers=pdf_headers(someone), content=unreadable)
+
+    assert replaced.status_code == 200
+    assert tuple(someone.text_row()) == ("failed", None, None)
 
 
 async def test_takes_the_media_type_whatever_its_case_and_parameters(
@@ -397,6 +442,18 @@ async def test_a_client_that_goes_away_mid_upload_leaves_nothing_stored(
 
 
 @dataclass
+class WatchedReader:
+    """Stands in front of the service's text reader, noting the request's database state."""
+
+    reader: Any
+    store: WatchedStore
+
+    async def read(self, file: bytes | bytearray) -> Any:
+        self.store.look("read")
+        return await self.reader.read(file)
+
+
+@dataclass
 class WatchedStore:
     """Stands in front of the service's store, noting the request's database state at each call."""
 
@@ -418,17 +475,20 @@ class WatchedStore:
         await self.store.delete(key)
 
 
-async def test_holds_no_database_transaction_or_connection_while_the_store_answers(
+async def test_holds_no_database_transaction_or_connection_while_the_text_or_store_answers(
     service: Service, someone: Someone
 ) -> None:
     watched = WatchedStore(service.app.state.resume_store, service)
     service.app.state.resume_store = watched
+    reader = WatchedReader(service.app.state.resume_text_reader, watched)
+    service.app.state.resume_text_reader = reader
 
     uploaded = await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
     removed = await service.client.delete("/resume", headers=someone.headers)
 
     assert (uploaded.status_code, removed.status_code) == (200, 204)
-    assert watched.seen == [("put", False, 0), ("delete", False, 0)]
+    # The text is read once the file is in, and before the store keeps it.
+    assert watched.seen == [("read", False, 0), ("put", False, 0), ("delete", False, 0)]
 
 
 async def test_holds_no_database_transaction_or_connection_while_the_file_arrives(

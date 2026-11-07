@@ -12,6 +12,7 @@ from job_board.model_key import routes as model_key_routes
 from job_board.model_key.check_limits import CheckLimits
 from job_board.resumes import routes as resume_routes
 from job_board.resumes.store import open_store
+from job_board.resumes.text_reading import ResumeTextReader
 from job_board.settings import Settings
 from job_board.validation_answers import answer_refused_requests
 
@@ -45,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Job board", lifespan=lifespan)
     app.state.settings = resolved
     app.state.check_limits = CheckLimits()
+    # One per worker process, so each worker reads one resume's text at a time.
+    app.state.resume_text_reader = ResumeTextReader()
     app.add_middleware(BodyLimit)
     answer_refused_requests(app)
     app.include_router(health.router)
