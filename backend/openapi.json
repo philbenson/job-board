@@ -948,6 +948,141 @@
           }
         ]
       }
+    },
+    "/resume/text": {
+      "get": {
+        "summary": "Read Resume Text",
+        "operationId": "read_resume_text_resume_text_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeText"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No resume uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Resume storage is not set up, or did not answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Save Resume Text",
+        "description": "Saves the person's checked text over what the reading gave, keeping the reading's state.\n\nIt saves only while the resume is still the upload the text was read\nfrom; the reading's state stays, so the screen can still say how it went.",
+        "operationId": "save_resume_text_resume_text_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckedText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeText"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No resume uploaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Your resume was replaced since this text was read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The text breaks one of its rules, or the body is of another shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextRefused"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Resume storage is not set up, or did not answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -973,6 +1108,27 @@
         ],
         "title": "Application",
         "description": "One job a person has applied to: the company and the title of the role."
+      },
+      "CheckedText": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "uploaded_at"
+        ],
+        "title": "CheckedText",
+        "description": "The text the person checked, and the upload time of the file it was read from."
       },
       "Companies": {
         "properties": {
@@ -1387,6 +1543,39 @@
         "title": "Places",
         "description": "Where a person will work: remote, offices in named cities, US states, and moving."
       },
+      "Problem": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Loc"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Msg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "loc",
+          "msg"
+        ],
+        "title": "Problem"
+      },
       "Profile": {
         "properties": {
           "target_titles": {
@@ -1513,6 +1702,15 @@
         "title": "Profile",
         "description": "The whole profile, as stored and as answered."
       },
+      "ReadState": {
+        "type": "string",
+        "enum": [
+          "found",
+          "cut",
+          "none_found",
+          "failed"
+        ]
+      },
       "Refused": {
         "properties": {
           "detail": {
@@ -1545,6 +1743,57 @@
         ],
         "title": "Resume",
         "description": "The signed-in person's resume, or null before their first upload."
+      },
+      "ResumeText": {
+        "properties": {
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReadState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "uploaded_at",
+          "state",
+          "text",
+          "checked_at"
+        ],
+        "title": "ResumeText",
+        "description": "What reading the resume's text gave, and the person's check of it.\n\n``state`` is null for a resume uploaded before its text was read."
       },
       "SavedModelKey": {
         "properties": {
@@ -1688,6 +1937,23 @@
         ],
         "title": "TargetTitles",
         "description": "The body that replaces the target titles. An empty list means none chosen."
+      },
+      "TextRefused": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "TextRefused",
+        "description": "The app's validation answer: each problem's kind, place and message, quoting nothing."
       },
       "TitleRange": {
         "properties": {

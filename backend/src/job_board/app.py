@@ -11,6 +11,7 @@ from job_board.logging_setup import configure_logging
 from job_board.model_key import routes as model_key_routes
 from job_board.model_key.check_limits import CheckLimits
 from job_board.resumes import routes as resume_routes
+from job_board.resumes import text_routes as resume_text_routes
 from job_board.resumes.store import open_store
 from job_board.resumes.text_reading import ResumeTextReader
 from job_board.settings import Settings
@@ -55,4 +56,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(model_key_routes.router)
     app.include_router(profiles.router)
     app.include_router(resume_routes.router)
+    app.include_router(resume_text_routes.router)
     return app
