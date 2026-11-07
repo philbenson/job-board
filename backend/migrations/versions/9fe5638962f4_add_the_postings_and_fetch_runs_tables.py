@@ -78,7 +78,9 @@ def upgrade() -> None:
         sa.Column("postings_closed", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("failure", sa.Text(), nullable=True),  # a short code, never raw error text
         sa.PrimaryKeyConstraint("id", name=op.f("pk_fetch_runs")),
-        sa.CheckConstraint("outcome IN ('succeeded', 'failed')", name=op.f("ck_fetch_runs_outcome")),
+        sa.CheckConstraint(
+            "outcome IN ('succeeded', 'failed')", name=op.f("ck_fetch_runs_outcome")
+        ),
     )
 
 
