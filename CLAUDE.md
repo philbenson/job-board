@@ -14,6 +14,12 @@ Backend, from `backend/`:
 - `uv run uvicorn job_board.app:create_app --factory --reload` serves on port 8000
 - `DATABASE_URL` takes the form `postgresql://user:password@host:port/database`. The service reads it or `backend/.env`; the tests read it or `backend/.env.example`, never `.env`
 
+Front end, from `frontend/` (Node 24.15 or newer on the 24 line, or 26 or newer):
+
+- `npm ci` installs from the lock file
+- `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`, in that order, as CI runs them
+- `npm run dev` serves the app and passes `/api/…` to the backend on port 8000
+
 Public-content check, from the repository root:
 
 - `python3 -m unittest discover -s tools/tests`
