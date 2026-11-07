@@ -1,6 +1,8 @@
 import base64
 import binascii
-from typing import Annotated
+import re
+from dataclasses import dataclass
+from typing import Annotated, Self
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -9,7 +11,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_public_key,
 )
-from pydantic import PlainSerializer, SecretBytes, SecretStr, field_validator
+from pydantic import PlainSerializer, SecretBytes, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import make_url
 from sqlalchemy.exc import ArgumentError
@@ -36,6 +38,33 @@ ENCRYPTION_KEY_REFUSAL = (
     "python3 -c 'import base64, secrets; "
     "print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'"
 )
+
+STORAGE_SETTINGS = (
+    "S3_ENDPOINT_URL",
+    "S3_REGION",
+    "S3_BUCKET",
+    "S3_ACCESS_KEY_ID",
+    "S3_SECRET_ACCESS_KEY",
+)
+ENDPOINT_REFUSAL = (
+    "S3_ENDPOINT_URL must be the https origin of an S3-compatible store, such as "
+    "https://s3.us-east-1.amazonaws.com, with no path; http only to 127.0.0.1, ::1 or localhost"
+)
+REGION_REFUSAL = (
+    "S3_REGION must be a region name such as auto or us-east-1: up to 63 letters, "
+    "digits and hyphens, not only digits, and neither starting nor ending with a hyphen"
+)
+BUCKET_REFUSAL = (
+    "S3_BUCKET must be 3 to 63 lowercase letters, digits, dots and hyphens, "
+    "starting and ending with a letter or digit"
+)
+# Plain http would send the credentials' signatures and every resume in the
+# clear; on this machine it reaches only a local store, which the tests run.
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+BUCKET_NAME = re.compile(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]")  # S3's rule, which R2 shares
+# botocore's own rule for a region, a host label, copied from validate_region_name
+# in botocore/utils.py, which raises on any other when the client is built.
+REGION_NAME = re.compile(r"^(?![0-9]+$)(?!-)[a-zA-Z0-9-]{,63}(?<!-)$")
 
 
 def sqlalchemy_url(url: str) -> str:
@@ -180,3 +209,94 @@ class Settings(ScoringSettings):
         if not origins or None in origins:
             raise ValueError(PARTIES_REFUSAL)
         return frozenset(item for item in origins if item is not None)
+
+    # Resume storage: an S3-compatible bucket, optional as a whole. All five
+    # settings or none; without them the service starts and the resume routes
+    # answer that storage is not set up.
+    s3_endpoint_url: str | None = None
+    s3_region: str | None = None
+    s3_bucket: str | None = None
+    s3_access_key_id: SecretStr | None = None
+    s3_secret_access_key: SecretStr | None = None
+
+    @field_validator(
+        "s3_endpoint_url",
+        "s3_region",
+        "s3_bucket",
+        "s3_access_key_id",
+        "s3_secret_access_key",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_not_given(cls, value: object) -> object:
+        # An .env file may list a setting with nothing after the equals sign.
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("s3_endpoint_url")
+    @classmethod
+    def _endpoint_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        if origin(value, frozenset({"http", "https"})) is None or (
+            parts.scheme == "http" and parts.hostname not in LOOPBACK_HOSTS
+        ):
+            raise ValueError(ENDPOINT_REFUSAL)
+        # Kept as given rather than as origin() writes it, which drops the
+        # brackets around an IPv6 address.
+        return value.rstrip("/")
+
+    @field_validator("s3_region")
+    @classmethod
+    def _region_name(cls, value: str | None) -> str | None:
+        if value is not None and REGION_NAME.fullmatch(value) is None:
+            raise ValueError(REGION_REFUSAL)
+        return value
+
+    @field_validator("s3_bucket")
+    @classmethod
+    def _bucket_name(cls, value: str | None) -> str | None:
+        if value is not None and BUCKET_NAME.fullmatch(value) is None:
+            raise ValueError(BUCKET_REFUSAL)
+        return value
+
+    @model_validator(mode="after")
+    def _all_storage_settings_or_none(self) -> Self:
+        given = {name: getattr(self, name.lower()) is not None for name in STORAGE_SETTINGS}
+        if any(given.values()) and not all(given.values()):
+            missing = ", ".join(name for name, present in given.items() if not present)
+            raise ValueError(
+                f"Resume storage needs all five S3 settings or none of them; missing {missing}"
+            )
+        return self
+
+    def resume_storage(self) -> StorageSettings | None:
+        """The store's settings, or None when resume storage is not set up."""
+        if (
+            self.s3_endpoint_url is None
+            or self.s3_region is None
+            or self.s3_bucket is None
+            or self.s3_access_key_id is None
+            or self.s3_secret_access_key is None
+        ):
+            return None
+        return StorageSettings(
+            endpoint_url=self.s3_endpoint_url,
+            region=self.s3_region,
+            bucket=self.s3_bucket,
+            access_key_id=self.s3_access_key_id,
+            secret_access_key=self.s3_secret_access_key,
+        )
+
+
+@dataclass(frozen=True)
+class StorageSettings:
+    """Where resumes are kept: one bucket in an S3-compatible store."""
+
+    endpoint_url: str
+    region: str
+    bucket: str
+    access_key_id: SecretStr
+    secret_access_key: SecretStr

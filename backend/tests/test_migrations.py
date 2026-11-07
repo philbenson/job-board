@@ -15,6 +15,7 @@ HEAD_TABLES = [
     "people",
     "postings",
     "profiles",
+    "resumes",
     "scores",
 ]
 # The key, unique and check constraints of the fetcher's tables, in name order,
