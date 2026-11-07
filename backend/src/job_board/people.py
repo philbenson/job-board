@@ -11,10 +11,11 @@ another request has just written.
 """
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,16 @@ from job_board.settings import Settings
 from job_board.tokens import TokenRefused, verify_session_token
 
 logger = logging.getLogger(__name__)
+
+
+class Refused(BaseModel):
+    detail: str
+
+
+# The 401 every route that needs a signed-in person declares in the API description.
+SIGN_IN_REQUIRED: dict[int | str, dict[str, Any]] = {
+    401: {"model": Refused, "description": "No valid session token"}
+}
 
 # Declares the bearer token in the API description. It never refuses itself
 # (auto_error=False), so every refusal goes through the one path below.

@@ -13,7 +13,7 @@ earlier one in place.
 """
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import JSONResponse
@@ -23,11 +23,10 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
-from job_board.me import Refused
 from job_board.model_key.check import KeyChecker, get_key_checker
 from job_board.model_key.sealing import seal
 from job_board.models import ModelKey, Person
-from job_board.people import current_person, get_settings
+from job_board.people import SIGN_IN_REQUIRED, Refused, current_person, get_settings
 from job_board.settings import Settings
 
 Provider = Literal["anthropic"]
@@ -64,11 +63,6 @@ class SavedModelKey(BaseModel):
 class ModelKeyRefused(BaseModel):
     detail: str
     reason: RefusalReason
-
-
-SIGN_IN_REQUIRED: dict[int | str, dict[str, Any]] = {
-    401: {"model": Refused, "description": "No valid session token"}
-}
 
 
 def refused(reason: RefusalReason) -> JSONResponse:
