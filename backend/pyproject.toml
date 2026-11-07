@@ -5,6 +5,7 @@ description = "The job board's API: postings fetched daily and scored against ea
 requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.1",
+    "anthropic>=2.6.0",
     "cryptography>=50.0.2",
     "fastapi>=0.162.2",
     "psycopg[binary]>=3.3.8",
