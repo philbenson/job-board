@@ -5,7 +5,7 @@ export type HealthCheck = ServiceHealth | 'aborted'
 
 // The service answers its health route within two seconds; a reply slower
 // than this is treated as no reply at all.
-export const HEALTH_TIMEOUT_MS = 5_000
+const HEALTH_TIMEOUT_MS = 5_000
 
 /**
  * Asks the backend whether it is up. Resolves to "ok" only when the service
