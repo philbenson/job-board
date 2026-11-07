@@ -1,11 +1,15 @@
 """A cap on the size of every request body, applied before anything reads it.
 
-Invariant: no route runs with a body over the cap, or with part of one. A body
+Invariant: no route runs with a body over its cap, or with part of one. A body
 declared larger than the cap is refused at once, unread. Any other body is read
 here, counting its bytes as they arrive, and refused as soon as it passes the
 cap; only a body read in full under the cap reaches the app, which then reads
 it from here. So the refusal comes before the sign-in check, and costs at most
 the cap in memory per request, which a route reading the body would hold anyway.
+
+The one exception is a method and path in ``READS_ITS_OWN_BODY``: its route
+takes a body larger than this cap, so it is passed through unread, and the
+route checks the sign-in before it reads a byte and caps the body itself.
 
 The service has no proxy in front of it yet to cap bodies; this is that cap.
 """
@@ -17,6 +21,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 LARGEST_BODY_BYTES = 64 * 1024  # far above any body a route here takes
 TOO_LARGE = json.dumps({"detail": "The request body is too large"}).encode()
+# Routes that read and cap their own bodies, matched exactly: a resume upload
+# runs to 5 MiB, so buffering it here would read it before the sign-in check.
+READS_ITS_OWN_BODY = frozenset({("PUT", "/resume")})
 
 
 class BodyLimit:
@@ -24,7 +31,7 @@ class BodyLimit:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] != "http" or (scope["method"], scope["path"]) in READS_ITS_OWN_BODY:
             await self.app(scope, receive, send)
             return
 
