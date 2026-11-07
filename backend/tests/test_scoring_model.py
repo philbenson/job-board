@@ -6,6 +6,9 @@ from typing import Any
 import pytest
 from canned_anthropic import canned_anthropic, message, rating
 from langchain_core.exceptions import OutputParserException
+from langchain_core.language_models import BaseChatModel
+from langchain_core.load import dumpd
+from langchain_core.runnables import RunnableBinding, RunnableSequence
 from pydantic import ValidationError
 
 from job_board.model_key.check import CHECK_MODEL
@@ -93,7 +96,6 @@ async def test_the_real_model_ignores_environment_variables_that_would_send_the_
     key = fake_key()
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("ANTHROPIC_API_URL", "http://127.0.0.1:9")
-    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "Authorization: Bearer someone-else")
     with canned_anthropic(rating(2, "A different field.")) as server:
         await anthropic_model(key, base_url=server.url).ainvoke("Rate this.")
 
@@ -108,3 +110,20 @@ async def test_the_real_model_ignores_environment_variables_that_would_send_the_
 async def test_the_real_model_refuses_a_reply_that_is_not_a_valid_rating(reply: str) -> None:
     with canned_anthropic(message(reply)) as server, pytest.raises(OutputParserException):
         await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+
+
+def chat_model_of(model: object) -> BaseChatModel:
+    """The chat model inside the factory's model: its first step's bound runnable."""
+    assert isinstance(model, RunnableSequence)
+    binding = model.first
+    assert isinstance(binding, RunnableBinding)
+    assert isinstance(binding.bound, BaseChatModel)
+    return binding.bound
+
+
+def test_the_real_model_shows_the_key_in_none_of_its_text_or_serialized_forms() -> None:
+    key = fake_key()
+    model = anthropic_model(key, base_url="http://127.0.0.1:9")
+    chat = chat_model_of(model)
+    forms = [repr(model), str(model), repr(chat), str(chat), str(dumpd(model)), str(dumpd(chat))]
+    assert [form for form in forms if key in form] == []

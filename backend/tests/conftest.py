@@ -13,9 +13,12 @@ ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 @pytest.fixture(autouse=True)
-def no_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every test runs with LangSmith tracing unset, so none can send a trace."""
-    for name in TRACING_VARIABLES:
+def no_tracing_or_custom_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test runs with LangSmith tracing and the SDK's custom headers unset.
+
+    So none can send a trace, and none sends a header the environment added.
+    """
+    for name in (*TRACING_VARIABLES, "ANTHROPIC_CUSTOM_HEADERS"):
         monkeypatch.delenv(name, raising=False)
 
 

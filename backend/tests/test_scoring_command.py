@@ -121,6 +121,24 @@ def test_the_tests_run_with_tracing_unset() -> None:
     assert [name for name in TRACING_VARIABLES if name in os.environ] == []
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["X-Api-Key: sk-ant-api03-someone-else", "Authorization: Bearer someone-else", ""],
+    ids=["api-key", "authorization", "empty"],
+)
+def test_refuses_to_start_while_custom_anthropic_headers_are_set(
+    scoring_environment: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
+) -> None:
+    scoring_environment.setenv("ANTHROPIC_CUSTOM_HEADERS", value)
+    assert main(model_factory=never_built) == EXIT_REFUSED
+    assert any("ANTHROPIC_CUSTOM_HEADERS" in line for line in caplog.messages)
+    assert "someone-else" not in caplog.text
+
+
+def test_the_tests_run_with_custom_anthropic_headers_unset() -> None:
+    assert "ANTHROPIC_CUSTOM_HEADERS" not in os.environ
+
+
 def test_the_command_refuses_tracing_as_a_process(tmp_path: Path) -> None:
     environment = {
         name: value

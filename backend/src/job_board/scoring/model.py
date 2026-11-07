@@ -1,10 +1,11 @@
 """The rating a model gives one posting, and the real model that gives it.
 
-Invariant: the person's key goes only to Anthropic's API, in the request's
-authorization header. The base URL and that header are set here, over anything
-the environment says. Unlike the model key check, this cannot also remove an
-``X-Api-Key`` header that ``ANTHROPIC_CUSTOM_HEADERS`` adds: LangChain takes
-header values as text only, with no way to say "omit".
+Invariant: the person's key goes only to Anthropic's API, as the request's
+only credential. The base URL is set here, over anything the environment says,
+and the key goes only as ``api_key``, which LangChain keeps as a secret: out of
+the model's repr and its serialized form, which every callback is handed. The
+SDK would add headers from ``ANTHROPIC_CUSTOM_HEADERS`` over the client's own,
+so the scoring command refuses to start while that variable is set.
 """
 
 import unicodedata
@@ -97,7 +98,6 @@ def anthropic_model(
         model_provider="anthropic",
         api_key=key,
         base_url=base_url,
-        default_headers={"Authorization": f"Bearer {key}"},
         max_tokens=MAX_TOKENS,
         max_retries=0,
         timeout=timeout,

@@ -4,11 +4,13 @@ Exits 0 when every batch finished, or had nothing it could do (another run held
 the person, or the key was sealed under another service key); 1 when any batch
 stopped on a failure; 2 when it refused to start. It needs only DATABASE_URL and
 MODEL_KEY_ENCRYPTION_KEY, read from the environment or a .env file in the
-working directory.
+working directory, and refuses to start while LangSmith tracing is on or
+ANTHROPIC_CUSTOM_HEADERS is set.
 """
 
 import asyncio
 import logging
+import os
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -24,12 +26,16 @@ EXIT_FINISHED = 0
 EXIT_STOPPED = 1
 EXIT_REFUSED = 2
 
+# The Anthropic SDK adds these headers to every request, over the client's own.
+CUSTOM_HEADERS = "ANTHROPIC_CUSTOM_HEADERS"
+
 log = logging.getLogger(__name__)
 
 
-def refuse_tracing() -> bool:
-    """Log the refusal and answer True when LangSmith tracing is on."""
+def refuse_the_environment() -> bool:
+    """Log each setting the command will not run under, and answer True when there is one."""
     configure_logging()
+    refused = False
     variable = tracing_turned_on()
     if variable is not None:
         log.error(
@@ -37,7 +43,18 @@ def refuse_tracing() -> bool:
             "titles and the model's replies to LangSmith; unset it or set it to false",
             variable,
         )
-    return variable is not None
+        refused = True
+    # The SDK's own OpenTelemetry spans are no-ops while only opentelemetry-api is installed;
+    # with an OpenTelemetry SDK added and their content mode set to "content", they would carry
+    # the prompts.
+    if CUSTOM_HEADERS in os.environ:
+        log.error(
+            "refusing to start: %s adds headers to every request to Anthropic, which could "
+            "send another credential beside each person's own key; unset it",
+            CUSTOM_HEADERS,
+        )
+        refused = True
+    return refused
 
 
 def _settings() -> ScoringSettings | None:
@@ -66,7 +83,7 @@ async def _score(settings: ScoringSettings, model_factory: ModelFactory) -> int:
 
 def main(model_factory: ModelFactory = anthropic_model) -> int:
     """Score everyone once and give the exit code. ``model_factory`` is for the tests."""
-    if refuse_tracing():
+    if refuse_the_environment():
         return EXIT_REFUSED
     settings = _settings()
     if settings is None:
