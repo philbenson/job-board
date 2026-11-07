@@ -60,6 +60,8 @@ const NEWLY_SAVED = {
   failed_at: null,
 } satisfies SavedModelKeyBody
 const NEWLY_SAVED_LINE = 'Anthropic key ending in wxyz, checked Nov 8, 2026'
+// A key scoring stopped on is dated by when it stopped, not when it was checked.
+const STOPPED_LINE = 'Anthropic key ending in abcd, stopped working Nov 9, 2026'
 const NONE = { detail: 'no model key saved' } satisfies NoModelKeyBody
 
 type Reply = (init?: RequestInit) => Promise<Response>
@@ -185,7 +187,7 @@ describe('ModelKeyPanel', () => {
     ],
     [
       'no-credit',
-      "This key's account has run out of credit. Add credit or save a new key to keep scoring.",
+      "This key's account has run out of credit. Add credit, then save the key again to keep scoring.",
     ],
   ] as const)(
     'says above the saved key why scoring stopped when the key is %s',
@@ -198,7 +200,8 @@ describe('ModelKeyPanel', () => {
       render(<ModelKeyPanel />)
 
       const said = await screen.findByText(sentence)
-      const line = screen.getByText(SAVED_LINE)
+      const line = screen.getByText(STOPPED_LINE)
+      expect(screen.queryByText(SAVED_LINE)).not.toBeInTheDocument()
       expect(
         said.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy()

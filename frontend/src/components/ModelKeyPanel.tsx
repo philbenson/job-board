@@ -43,7 +43,7 @@ const FAILURE_SENTENCES: Record<NonNullable<SavedModelKeyBody['failure']>, strin
   'not-permitted':
     'This key can no longer use the model this app runs. Save a new one to keep scoring.',
   'no-credit':
-    "This key's account has run out of credit. Add credit or save a new key to keep scoring.",
+    "This key's account has run out of credit. Add credit, then save the key again to keep scoring.",
 }
 
 /**
@@ -300,6 +300,10 @@ function readSaved(
 function savedLine(saved: SavedModelKeyBody): string {
   if (!saved.usable) {
     return `Your saved key ending in ${saved.last_four} can no longer be used. Enter it again.`
+  }
+  if (saved.failure !== null && saved.failed_at !== null) {
+    const stopped = CHECKED_DATE.format(new Date(saved.failed_at))
+    return `Anthropic key ending in ${saved.last_four}, stopped working ${stopped}`
   }
   const checked = CHECKED_DATE.format(new Date(saved.checked_at))
   return `Anthropic key ending in ${saved.last_four}, checked ${checked}`
