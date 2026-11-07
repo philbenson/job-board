@@ -1,4 +1,9 @@
-import { STATE_NAMES, type StateCode } from '../api/profile.ts'
+import {
+  COMPANY_SIZE_NAMES,
+  STATE_NAMES,
+  type CompanySize,
+  type StateCode,
+} from '../api/profile.ts'
 
 /** A value a control sends, with the words it shows for it. */
 export type Choice<Value extends string> = readonly [Value, string]
@@ -16,3 +21,8 @@ export const DAY_CHOICES: readonly Choice<string>[] = [
   ['4', '4'],
   ['5', '5 (on site)'],
 ]
+
+/** Every company size the backend takes, smallest first. */
+export const SIZE_CHOICES: readonly Choice<CompanySize>[] = Object.entries(
+  COMPANY_SIZE_NAMES,
+) as [CompanySize, string][]

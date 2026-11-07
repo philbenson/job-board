@@ -143,6 +143,69 @@ describe('the profile parts', () => {
 
       expect(sent).toEqual([{ floor_usd: 90_000, ask_usd: 120_000 }])
     })
+
+    it('skills, under a year said as such', async () => {
+      const sent = await sentBy(
+        '/profile/skills',
+        async () => {
+          await type('Skills', 'Skill', 'Python')
+          await type('Skills', 'Years', ' 5 {Enter}')
+          await type('Skills', 'Skill', 'SQL')
+          await type('Skills', 'Years', '0{Enter}')
+          await type('Skills', 'Skill', 'Excel')
+          await type('Skills', 'Years', '1{Enter}')
+          expect(shownIn('Skills', 'Your skills')).toEqual([
+            'Python, 5 years',
+            'SQL, under a year',
+            'Excel, 1 year',
+          ])
+        },
+        'Skills',
+      )
+
+      expect(sent).toEqual([
+        {
+          skills: [
+            { name: 'Python', years: 5 },
+            { name: 'SQL', years: 0 },
+            { name: 'Excel', years: 1 },
+          ],
+        },
+      ])
+    })
+
+    it('gaps and trade-offs', async () => {
+      const sent = await sentBy(
+        '/profile/gaps',
+        async () => {
+          await type('Gaps and trade-offs', 'Add a gap you would apply with', 'No degree{Enter}')
+          await type('Gaps and trade-offs', 'Add a trade-off you would make', 'A longer commute{Enter}')
+          await type('Gaps and trade-offs', 'Add a trade-off you would make', 'Less pay{Enter}')
+        },
+        'Gaps and trade-offs',
+      )
+
+      expect(sent).toEqual([
+        { apply_with: ['No degree'], trade_offs: ['A longer commute', 'Less pay'] },
+      ])
+    })
+
+    it('deal-breakers', async () => {
+      const sent = await sentBy(
+        '/profile/deal-breakers',
+        async () => {
+          await type('Deal-breakers', 'Add an industry you will not work in', 'Gambling{Enter}')
+          await tick('Deal-breakers', '10,001 or more people')
+          await tick('Deal-breakers', '1 to 10 people')
+          await tick('Deal-breakers', 'No recruiting agencies')
+        },
+        'Deal-breakers',
+      )
+
+      expect(sent).toEqual([
+        { industries: ['Gambling'], company_sizes: ['10001+', '1-10'], no_agencies: true },
+      ])
+    })
   })
 
   it('holds a save whose number is blank or not whole, saying which', async () => {
@@ -161,6 +224,22 @@ describe('the profile parts', () => {
     expect(sentTo(fetchMock, '/profile/pay')).toEqual([])
   })
 
+  it('adds no skill whose years are blank or not whole, saying so', async () => {
+    const fetchMock = stubProfileService(profileWith([]))
+    render(<ProfilePanel />)
+    await loaded()
+    const [notice] = part('Skills').getAllByRole('status')
+
+    await type('Skills', 'Skill', 'Python{Enter}')
+    expect(notice).toHaveTextContent('Enter years as a whole number')
+    await type('Skills', 'Years', '2.5{Enter}')
+    expect(notice).toHaveTextContent('Enter years as a whole number')
+    expect(part('Skills').queryByRole('list')).not.toBeInTheDocument()
+    await save('Skills')
+
+    expect(sentTo(fetchMock, '/profile/skills')).toEqual([{ skills: [] }])
+  })
+
   it('shows each section as stored, its numbers grouped, once read', async () => {
     stubProfileService(fullProfile())
     render(<ProfilePanel />)
@@ -173,6 +252,13 @@ describe('the profile parts', () => {
     expect(part('Places').getByRole('checkbox', { name: 'Ohio' })).not.toBeChecked()
     expect(shownIn('Places', 'Companies you would move for')).toEqual(['Example Corp'])
     expect(part('Pay').getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' })).toHaveValue('90,000')
+    expect(shownIn('Skills', 'Your skills')).toEqual(['Python, 5 years'])
+    expect(shownIn('Gaps and trade-offs', 'Gaps you would apply with')).toEqual(['No degree'])
+    expect(shownIn('Gaps and trade-offs', 'Trade-offs you would make')).toEqual(['A longer commute'])
+    expect(shownIn('Deal-breakers', 'Industries you will not work in')).toEqual(['Gambling'])
+    expect(part('Deal-breakers').getByRole('checkbox', { name: '1 to 10 people' })).toBeChecked()
+    expect(part('Deal-breakers').getByRole('checkbox', { name: '11 to 50 people' })).not.toBeChecked()
+    expect(part('Deal-breakers').getByRole('checkbox', { name: 'No recruiting agencies' })).toBeChecked()
     expect(screen.queryByText('Not answered yet.')).not.toBeInTheDocument()
   })
 
@@ -231,6 +317,25 @@ describe('the profile parts', () => {
     await save('Pay')
 
     expect(await part('Pay').findByText(said)).toBeInTheDocument()
+  })
+
+  it("names a skill when a refusal points at its years", async () => {
+    stubProfileService(profileWith([]), {
+      '/profile/skills': () =>
+        answer(422, refusal(['body', 'skills', 1, 'years'], 'Input should be less than or equal to 60')),
+    })
+    render(<ProfilePanel />)
+    await loaded()
+
+    await type('Skills', 'Skill', 'Python')
+    await type('Skills', 'Years', '5{Enter}')
+    await type('Skills', 'Skill', 'SQL')
+    await type('Skills', 'Years', '61{Enter}')
+    await save('Skills')
+
+    expect(
+      await part('Skills').findByText('Input should be less than or equal to 60: SQL'),
+    ).toBeInTheDocument()
   })
 
   it('names a state by its name when a refusal points at it', async () => {

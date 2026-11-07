@@ -2,9 +2,12 @@ import { useAuth } from '@clerk/react'
 import { useEffect, useId, useState } from 'react'
 import { fetchProfile, type ProfileBody, type ProfileRead } from '../api/profile.ts'
 import { withToken } from '../api/withToken.ts'
+import { DealBreakersPart } from './DealBreakersPart.tsx'
+import { GapsPart } from './GapsPart.tsx'
 import { NearbyTitlesPart } from './NearbyTitlesPart.tsx'
 import { PayPart } from './PayPart.tsx'
 import { PlacesPart } from './PlacesPart.tsx'
+import { SkillsPart } from './SkillsPart.tsx'
 import { TargetTitlesPart } from './TargetTitlesPart.tsx'
 import { EXCHANGE_TIMEOUT_MS } from './useProfilePart.ts'
 
@@ -60,6 +63,9 @@ export function ProfilePanel() {
           <NearbyTitlesPart stored={loading.profile.title_range} />
           <PlacesPart stored={loading.profile.places} />
           <PayPart stored={loading.profile.pay} />
+          <SkillsPart stored={loading.profile.skills} />
+          <GapsPart stored={loading.profile.gaps} />
+          <DealBreakersPart stored={loading.profile.deal_breakers} />
         </>
       )}
     </section>

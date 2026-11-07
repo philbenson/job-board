@@ -468,7 +468,15 @@ describe('ProfilePanel, as parts', () => {
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Your profile')
     expect(
       screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
-    ).toEqual(['Target titles', 'Nearby titles', 'Places', 'Pay'])
+    ).toEqual([
+      'Target titles',
+      'Nearby titles',
+      'Places',
+      'Pay',
+      'Skills',
+      'Gaps and trade-offs',
+      'Deal-breakers',
+    ])
     expect(
       screen.getByText(
         'Scoring reads your target titles today. The other sections are kept for the interview and for scoring to read later.',
@@ -567,7 +575,14 @@ describe('ProfilePanel, as parts', () => {
     for (const control of controls) {
       expect(control).toHaveAttribute('aria-disabled', 'true')
     }
-    for (const heading of ['Target titles', 'Nearby titles', 'Pay']) {
+    for (const heading of [
+      'Target titles',
+      'Nearby titles',
+      'Pay',
+      'Skills',
+      'Gaps and trade-offs',
+      'Deal-breakers',
+    ]) {
       const region = screen.getByRole('region', { name: heading })
       for (const control of [
         ...within(region).getAllByRole('textbox'),
