@@ -112,20 +112,20 @@ describe('TextListEditor', () => {
     const input = screen.getByRole('textbox', { name: 'Add a rule' })
 
     // A zero-width space alone is blank.
-    fireEvent.change(input, { target: { value: ' ​ ' } })
+    fireEvent.change(input, { target: { value: ' \u200B ' } })
     await user.type(input, '{Enter}')
     expect(shownRules()).toEqual([])
     expect(input).toHaveValue('')
 
     // A zero-width space and a byte order mark at the ends do not count
     // towards the longest length.
-    fireEvent.change(input, { target: { value: `​${'x'.repeat(12)}﻿ ` } })
+    fireEvent.change(input, { target: { value: `\u200B${'x'.repeat(12)}\uFEFF ` } })
     await user.type(input, '{Enter}')
     expect(screen.getByRole('status')).toHaveTextContent(/^$/)
 
     // A direction control stays, for the backend to refuse.
-    fireEvent.change(input, { target: { value: '⁦No nights' } })
+    fireEvent.change(input, { target: { value: '\u2066No nights' } })
     await user.type(input, '{Enter}')
-    expect(shownRules()).toEqual(['x'.repeat(12), '⁦No nights'])
+    expect(shownRules()).toEqual(['x'.repeat(12), '\u2066No nights'])
   })
 })

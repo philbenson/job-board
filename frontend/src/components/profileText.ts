@@ -8,7 +8,7 @@ const ALSO_WHITESPACE = new Set(['\u001C', '\u001D', '\u001E', '\u001F', '\u0085
 // The embeddings, overrides and isolates: format characters the backend
 // keeps at an end so as to refuse them, since dropping one would change how
 // the rest of the text shows.
-const DIRECTION_CONTROL = /^[‪-‮⁦-⁩]$/u
+const DIRECTION_CONTROL = /^[\u202A-\u202E\u2066-\u2069]$/u
 
 function trimsAway(character: string): boolean {
   return (
@@ -52,8 +52,8 @@ export function repeatKey(text: string): string {
 
 /**
  * The whole number typed, with any commas dropped; "not whole" when it is
- * blank or not a whole number, and "too large" past what JSON carries
- * exactly. Range is otherwise the backend's to check.
+ * blank or not a whole number, and "too large" past what a JavaScript
+ * number holds exactly. Range is otherwise the backend's to check.
  */
 export function wholeNumberFrom(typed: string): number | 'not whole' | 'too large' {
   const digits = typed.trim().replaceAll(',', '')
