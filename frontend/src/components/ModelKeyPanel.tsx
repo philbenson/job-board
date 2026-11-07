@@ -1,6 +1,5 @@
 import { useAuth } from '@clerk/react'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
-import { askWithin } from '../api/askWithin.ts'
 import {
   type ModelKeyRead,
   type ModelKeyRemoval,
@@ -10,8 +9,7 @@ import {
   type SavedModelKeyBody,
   saveModelKey,
 } from '../api/modelKey.ts'
-
-type GetToken = ReturnType<typeof useAuth>['getToken']
+import { withToken } from '../api/withToken.ts'
 
 // Reading and removing touch one row, so a reply slower than this is no reply.
 const READ_TIMEOUT_MS = 5_000
@@ -19,6 +17,9 @@ const REMOVE_TIMEOUT_MS = 5_000
 // A save waits on Anthropic's check, which the backend gives up on after 25
 // seconds, so the panel waits a little longer than that.
 const SAVE_TIMEOUT_MS = 30_000
+
+// Without a session token there is nobody to ask for, which is no answer.
+const NO_ANSWER = 'unavailable'
 
 const READ_FAILED = 'Could not load your model key'
 const SAVE_FAILED = 'Could not save the key. Try again.'
@@ -48,18 +49,22 @@ export function ModelKeyPanel() {
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
-    void withToken(getToken, READ_TIMEOUT_MS, controller.signal, readModelKey).then(
-      (read: ModelKeyRead | 'aborted') => {
-        if (read === 'aborted') {
-          return
-        }
-        if (read === 'unavailable') {
-          setSaved('unreadable')
-        } else {
-          setSaved(read === 'none' ? 'none' : read.saved)
-        }
-      },
-    )
+    void withToken(
+      getToken,
+      READ_TIMEOUT_MS,
+      controller.signal,
+      readModelKey,
+      NO_ANSWER,
+    ).then((read: ModelKeyRead | 'aborted') => {
+      if (read === 'aborted') {
+        return
+      }
+      if (read === 'unavailable') {
+        setSaved('unreadable')
+      } else {
+        setSaved(read === 'none' ? 'none' : read.saved)
+      }
+    })
     return () => {
       controller.abort()
     }
@@ -85,6 +90,7 @@ export function ModelKeyPanel() {
       SAVE_TIMEOUT_MS,
       signal,
       (token, requestSignal) => saveModelKey(token, key, requestSignal),
+      NO_ANSWER,
     )
     if (outcome === 'aborted') {
       return
@@ -113,6 +119,7 @@ export function ModelKeyPanel() {
       REMOVE_TIMEOUT_MS,
       signal,
       removeModelKey,
+      NO_ANSWER,
     )
     if (outcome === 'aborted') {
       return
@@ -188,24 +195,4 @@ function savedLine(saved: SavedModelKeyBody): string {
   }
   const checked = CHECKED_DATE.format(new Date(saved.checked_at))
   return `Anthropic key ending in ${saved.last_four}, checked ${checked}`
-}
-
-/**
- * Asks with Clerk's session token, under one time limit for the token and the
- * request together, so a token that never comes is no answer too. Without a
- * token there is nobody to ask for, which is no answer.
- */
-function withToken<T>(
-  getToken: GetToken,
-  limitMs: number,
-  signal: AbortSignal,
-  ask: (token: string, signal: AbortSignal) => Promise<T>,
-): Promise<T | 'unavailable' | 'aborted'> {
-  return askWithin(limitMs, signal, async (askSignal) => {
-    const token = await getToken()
-    if (token === null) {
-      return 'unavailable' as const
-    }
-    return ask(token, askSignal)
-  })
 }

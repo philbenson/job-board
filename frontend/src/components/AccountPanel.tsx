@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/react'
 import { useEffect, useState } from 'react'
-import { askWithin } from '../api/askWithin.ts'
 import { fetchMe, type MeAnswer, type MeCheck } from '../api/me.ts'
+import { withToken } from '../api/withToken.ts'
 
 type Shown = MeAnswer | 'checking'
 
@@ -49,14 +49,6 @@ function confirmSignIn(
   getToken: GetToken,
   signal: AbortSignal,
 ): Promise<MeCheck> {
-  return askWithin(CONFIRM_TIMEOUT_MS, signal, async (confirmSignal) => {
-    const token = await getToken()
-    // Clerk has no session token to give, so there is nothing to recognise.
-    if (token === null) {
-      return 'refused'
-    }
-    // Past the limit or the caller's abort this signal has aborted, so a
-    // token that comes late sends no request.
-    return fetchMe(token, confirmSignal)
-  })
+  // Clerk having no session token to give leaves nothing to recognise.
+  return withToken(getToken, CONFIRM_TIMEOUT_MS, signal, fetchMe, 'refused')
 }
