@@ -4,11 +4,14 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import boto3
+import botocore.session
 import pytest
 from alembic import command
 from alembic.config import Config
 from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
+
+from job_board.resumes.store import SETTINGS_FROM_NOWHERE
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
@@ -63,8 +66,10 @@ def local_s3() -> Iterator[str]:
 @pytest.fixture
 def s3_bucket(local_s3: str) -> Iterator[LocalBucket]:
     """A bucket of one test's own on the local S3 server, emptied and removed after."""
-    # The client is made here, before a test can change the environment it reads.
-    client = boto3.client(
+    # Built as the service builds its own, reading nothing from the shell's
+    # AWS_ variables or ~/.aws, which a test may also set.
+    session = botocore.session.Session(session_vars=SETTINGS_FROM_NOWHERE)
+    client = boto3.session.Session(botocore_session=session).client(
         "s3",
         endpoint_url=local_s3,
         region_name="us-east-1",

@@ -461,9 +461,9 @@ async def test_a_refusal_from_the_store_is_logged_with_its_error_code(
 
     assert (response.status_code, response.json()) == (503, DID_NOT_ANSWER)
     assert someone.rows() == []
-    assert [record.getMessage() for record in caplog.records] == [
-        "resume storage did not answer put_object: ClientError NoSuchBucket"
-    ]
+    # The local server logs its own way in this process too; only the service's lines count.
+    ours = [record.getMessage() for record in caplog.records if record.name.startswith("job_board")]
+    assert ours == ["resume storage did not answer put_object: ClientError NoSuchBucket"]
 
 
 async def test_removes_the_file_and_the_row(
