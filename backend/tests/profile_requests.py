@@ -21,6 +21,9 @@ NEW_PROFILE: dict[str, Any] = {
     "title_range": None,
     "places": None,
     "pay": None,
+    "skills": None,
+    "gaps": None,
+    "deal_breakers": None,
 }
 
 

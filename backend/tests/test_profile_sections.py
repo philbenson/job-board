@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from job_board.profile_sections import Pay, Places, TitleRange
+from job_board.profile_sections import DealBreakers, Gaps, Pay, Places, Skills, TitleRange
 
 TITLE_RANGE = {"nearby_titles": ["Designer"], "lower_level_ok": False}
 PLACES = {
@@ -18,6 +18,19 @@ PLACES = {
     "relocate_for": ["Example Company"],
 }
 PAY = {"floor_usd": 120_000, "ask_usd": 150_000}
+SKILLS = {"skills": [{"name": "Python", "years": 5}]}
+GAPS = {"apply_with": ["No degree"], "trade_offs": ["A longer commute"]}
+DEAL_BREAKERS = {"industries": ["Gambling"], "company_sizes": ["1-10"], "no_agencies": True}
+COMPANY_SIZES = [
+    "1-10",
+    "11-50",
+    "51-200",
+    "201-500",
+    "501-1000",
+    "1001-5000",
+    "5001-10000",
+    "10001+",
+]
 
 
 def saved(model: type[BaseModel], sent: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +87,33 @@ TEXTS = {
         "A company",
         100,
     ),
+    "skill": Text(
+        Skills,
+        SKILLS,
+        lambda text: {"skills": [{"name": text, "years": 1}]},
+        ("skills", 0, "name"),
+        "A skill",
+        60,
+    ),
+    "gap": Text(
+        Gaps, GAPS, lambda text: {**GAPS, "apply_with": [text]}, ("apply_with", 0), "A gap", 200
+    ),
+    "trade-off": Text(
+        Gaps,
+        GAPS,
+        lambda text: {**GAPS, "trade_offs": [text]},
+        ("trade_offs", 0),
+        "A trade-off",
+        200,
+    ),
+    "industry": Text(
+        DealBreakers,
+        DEAL_BREAKERS,
+        lambda text: {**DEAL_BREAKERS, "industries": [text]},
+        ("industries", 0),
+        "An industry",
+        100,
+    ),
 }
 
 
@@ -100,9 +140,10 @@ class Listed:
     field: str
     item: Callable[[int], Any]  # the nth distinct item
     repeat: Callable[[int], Any]  # a repeat of the nth item, spelled differently
-    cap: int | None  # None where the choices are fewer than any cap
+    cap: int
     plural: str
     broken: Any  # an item that breaks a rule, to show the sent limit is checked first
+    choices_only: bool = False  # every allowed value fits under the cap, so it is never reached
 
 
 # The fifty states and the District of Columbia.
@@ -187,9 +228,10 @@ LISTS = {
         "states",
         lambda n: US_STATES[n],
         lambda n: US_STATES[n].lower(),
-        None,
+        51,
         "states",
         "ZZ",
+        choices_only=True,
     ),
     "companies to move for": Listed(
         Places,
@@ -200,6 +242,50 @@ LISTS = {
         20,
         "companies",
         "   ",
+    ),
+    "skills": Listed(
+        Skills,
+        SKILLS,
+        "skills",
+        lambda n: {"name": f"Skill {n}", "years": 1},
+        lambda n: {"name": f"SKILL {n}", "years": 9},
+        100,
+        "skills",
+        {},
+    ),
+    "gaps": Listed(
+        Gaps, GAPS, "apply_with", lambda n: f"Gap {n}", lambda n: f"gap {n}", 20, "gaps", " "
+    ),
+    "trade-offs": Listed(
+        Gaps,
+        GAPS,
+        "trade_offs",
+        lambda n: f"Trade-off {n}",
+        lambda n: f"TRADE-OFF {n}",
+        20,
+        "trade-offs",
+        " ",
+    ),
+    "industries": Listed(
+        DealBreakers,
+        DEAL_BREAKERS,
+        "industries",
+        lambda n: f"Industry {n}",
+        lambda n: f"industry {n}",
+        30,
+        "industries",
+        " ",
+    ),
+    "company sizes": Listed(
+        DealBreakers,
+        DEAL_BREAKERS,
+        "company_sizes",
+        lambda n: COMPANY_SIZES[n],
+        lambda n: COMPANY_SIZES[n],
+        8,
+        "company sizes",
+        "huge",
+        choices_only=True,
     ),
 }
 
@@ -215,12 +301,11 @@ def test_each_list_drops_repeats_keeping_the_first_spelling(listed: Listed) -> N
     )
 
 
-CAPPED = {name: listed for name, listed in LISTS.items() if listed.cap is not None}
+CAPPED = {name: listed for name, listed in LISTS.items() if not listed.choices_only}
 
 
 @pytest.mark.parametrize("listed", CAPPED.values(), ids=CAPPED.keys())
 def test_each_cap_counts_the_list_after_repeats_are_dropped(listed: Listed) -> None:
-    assert listed.cap is not None
     full = [listed.item(n) for n in range(listed.cap)]
     with_repeats = [*full, listed.repeat(0), listed.repeat(listed.cap - 1)]
     over = refusal(listed.model, {**listed.body, listed.field: [*full, listed.item(listed.cap)]})
@@ -238,7 +323,7 @@ def test_each_cap_counts_the_list_after_repeats_are_dropped(listed: Listed) -> N
 def test_each_list_past_ten_times_its_cap_is_refused_before_any_item_is_checked(
     listed: Listed,
 ) -> None:
-    most = 10 * (listed.cap if listed.cap is not None else len(US_STATES))
+    most = 10 * listed.cap
     error = refusal(listed.model, {**listed.body, listed.field: [listed.broken] * (most + 1)})
 
     assert (error["type"], error["loc"]) == ("too_long", (listed.field,))
@@ -256,8 +341,15 @@ def test_each_list_past_ten_times_its_cap_is_refused_before_any_item_is_checked(
         ),
         (Pay, lambda floor: {"floor_usd": floor, "ask_usd": 10_000_000}, ("floor_usd",), 0, 10**7),
         (Pay, lambda ask: {"floor_usd": 0, "ask_usd": ask}, ("ask_usd",), 0, 10**7),
+        (
+            Skills,
+            lambda years: {"skills": [{"name": "Python", "years": years}]},
+            ("skills", 0, "years"),
+            0,
+            60,
+        ),
     ],
-    ids=["days in the office", "pay floor", "pay ask"],
+    ids=["days in the office", "pay floor", "pay ask", "years of a skill"],
 )
 def test_each_number_takes_its_range_and_refuses_past_either_end(
     model: type[BaseModel],
@@ -302,3 +394,13 @@ def test_pay_refuses_an_ask_below_the_floor_and_takes_an_ask_at_it() -> None:
 
     assert saved(Pay, {"floor_usd": 150_000, "ask_usd": 150_000})["ask_usd"] == 150_000
     assert (error["msg"], error["loc"]) == ("The ask cannot be below the floor", ("ask_usd",))
+
+
+def test_deal_breakers_take_every_company_size_and_refuse_any_other() -> None:
+    error = refusal(DealBreakers, {**DEAL_BREAKERS, "company_sizes": ["1-10", "10,001+"]})
+
+    assert (
+        saved(DealBreakers, {**DEAL_BREAKERS, "company_sizes": COMPANY_SIZES})["company_sizes"]
+        == COMPANY_SIZES
+    )
+    assert (error["type"], error["loc"]) == ("literal_error", ("company_sizes", 1))

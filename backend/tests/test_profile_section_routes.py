@@ -54,6 +54,28 @@ SECTIONS = {
         {"floor_usd": 120_000, "ask_usd": 150_000},
         {"floor_usd": 120_000, "ask_usd": 150_000},
     ),
+    "skills": Section(
+        "/profile/skills",
+        "skills",
+        {"skills": [{"name": "Python", "years": 0}, {"name": "python ", "years": 9}]},
+        {"skills": [{"name": "Python", "years": 0}]},
+    ),
+    "gaps": Section(
+        "/profile/gaps",
+        "gaps",
+        {"apply_with": ["No degree", "NO DEGREE"], "trade_offs": []},
+        {"apply_with": ["No degree"], "trade_offs": []},
+    ),
+    "deal-breakers": Section(
+        "/profile/deal-breakers",
+        "deal_breakers",
+        {
+            "industries": ["Gambling"],
+            "company_sizes": ["1-10", "10001+", "1-10"],
+            "no_agencies": True,
+        },
+        {"industries": ["Gambling"], "company_sizes": ["1-10", "10001+"], "no_agencies": True},
+    ),
 }
 
 
@@ -180,6 +202,24 @@ def section_body(name: str, **changes: Any) -> dict[str, Any]:
             ["body", "ask_usd"],
             "The ask cannot be below the floor",
         ),
+        (
+            "/profile/skills",
+            {"skills": [{"name": "Quoted " + "x" * 60, "years": 1}]},
+            ["body", "skills", 0, "name"],
+            "A skill can be at most 60 characters",
+        ),
+        (
+            "/profile/gaps",
+            {"apply_with": ["Quoted"], "trade_offs": ["Quoted", "\t"]},
+            ["body", "trade_offs", 1],
+            "A trade-off cannot be blank",
+        ),
+        (
+            "/profile/deal-breakers",
+            section_body("deal-breakers", industries=[f"Quoted {n}" for n in range(31)]),
+            ["body", "industries"],
+            "You can list at most 30 industries",
+        ),
     ],
     ids=[
         "a blank nearby title",
@@ -188,6 +228,9 @@ def section_body(name: str, **changes: Any) -> dict[str, Any]:
         "an unknown state",
         "companies to move for while moving anyway",
         "an ask below the floor",
+        "a skill too long",
+        "a blank trade-off",
+        "too many industries",
     ],
 )
 async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_nothing(
@@ -247,6 +290,30 @@ async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_not
             ["body", "nearby_titles"],
             "list_type",
         ),
+        (
+            "/profile/skills",
+            {"skills": [{"name": "Python", "years": 1.5}]},
+            ["body", "skills", 0, "years"],
+            "int_type",
+        ),
+        (
+            "/profile/deal-breakers",
+            section_body("deal-breakers", company_sizes=["huge"]),
+            ["body", "company_sizes", 0],
+            "literal_error",
+        ),
+        (
+            "/profile/deal-breakers",
+            section_body("deal-breakers", company_sizes=[10]),
+            ["body", "company_sizes", 0],
+            "literal_error",
+        ),
+        (
+            "/profile/deal-breakers",
+            section_body("deal-breakers", no_agencies=1),
+            ["body", "no_agencies"],
+            "bool_type",
+        ),
     ],
     ids=[
         "a number as text",
@@ -258,6 +325,10 @@ async def test_refuses_a_section_breaking_a_rule_quoting_nothing_and_storing_not
         "a number as text inside a list",
         "a field it does not name inside a list",
         "text for a list",
+        "a fraction inside a list",
+        "a size that is not a choice",
+        "a number for a choice",
+        "a number as a boolean",
     ],
 )
 async def test_refuses_a_value_of_another_type_without_converting_it(

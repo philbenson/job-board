@@ -453,10 +453,248 @@
           }
         ]
       }
+    },
+    "/profile/skills": {
+      "put": {
+        "summary": "Save Skills",
+        "description": "Replaces the signed-in person's skills and answers the profile as stored.",
+        "operationId": "save_skills_profile_skills_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Skills"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/gaps": {
+      "put": {
+        "summary": "Save Gaps",
+        "description": "Replaces the signed-in person's gaps and trade-offs and answers the profile as stored.",
+        "operationId": "save_gaps_profile_gaps_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Gaps"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/profile/deal-breakers": {
+      "put": {
+        "summary": "Save Deal Breakers",
+        "description": "Replaces the signed-in person's deal-breakers and answers the profile as stored.",
+        "operationId": "save_deal_breakers_profile_deal_breakers_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DealBreakers"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "DealBreakers": {
+        "properties": {
+          "industries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Industries",
+            "description": "Industries they will not work in, each up to 100 characters; at most 30."
+          },
+          "company_sizes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "1-10",
+                "11-50",
+                "51-200",
+                "201-500",
+                "501-1000",
+                "1001-5000",
+                "5001-10000",
+                "10001+"
+              ]
+            },
+            "type": "array",
+            "maxItems": 80,
+            "title": "Company Sizes",
+            "description": "Company sizes, by number of employees, they will not work at."
+          },
+          "no_agencies": {
+            "type": "boolean",
+            "title": "No Agencies",
+            "description": "Whether a posting from a recruiting agency, not the employer, rules it out."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "industries",
+          "company_sizes",
+          "no_agencies"
+        ],
+        "title": "DealBreakers",
+        "description": "What rules a posting out for a person whatever else it offers."
+      },
+      "Gaps": {
+        "properties": {
+          "apply_with": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Apply With",
+            "description": "Requirements they lack but would still apply without, in their words, each up to 200 characters; at most 20."
+          },
+          "trade_offs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Trade Offs",
+            "description": "What they would give up for the right role, in their words, each up to 200 characters; at most 20."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "apply_with",
+          "trade_offs"
+        ],
+        "title": "Gaps",
+        "description": "Where a person falls short of a posting and still applies, and what they would give up."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -699,6 +937,39 @@
               }
             ],
             "description": "Null until the person saves this section."
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Skills"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "gaps": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gaps"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
+          },
+          "deal_breakers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DealBreakers"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the person saves this section."
           }
         },
         "type": "object",
@@ -706,7 +977,10 @@
           "target_titles",
           "title_range",
           "places",
-          "pay"
+          "pay",
+          "skills",
+          "gaps",
+          "deal_breakers"
         ],
         "title": "Profile",
         "description": "The whole profile, as stored and as answered."
@@ -753,6 +1027,50 @@
           "usable"
         ],
         "title": "SavedModelKey"
+      },
+      "Skill": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "The skill, as the person names it, up to 60 characters."
+          },
+          "years": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 0.0,
+            "title": "Years",
+            "description": "Whole years of using it, from 0 to 60; 0 means under a year."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "years"
+        ],
+        "title": "Skill",
+        "description": "One skill and how long the person has used it."
+      },
+      "Skills": {
+        "properties": {
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/Skill"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Skills",
+            "description": "Their skills, each named once; at most 100."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "skills"
+        ],
+        "title": "Skills",
+        "description": "The skills a person brings."
       },
       "TargetTitles": {
         "properties": {

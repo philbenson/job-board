@@ -31,8 +31,11 @@ from job_board.profile_sections import (
     MAX_SENT_TITLES,
     MAX_TARGET_TITLES,
     MAX_TITLE_LENGTH,
+    DealBreakers,
+    Gaps,
     Pay,
     Places,
+    Skills,
     TargetTitles,
     TitleRange,
 )
@@ -60,6 +63,9 @@ class Profile(BaseModel):
     title_range: TitleRange | None = Field(default=None, description=UNANSWERED)
     places: Places | None = Field(default=None, description=UNANSWERED)
     pay: Pay | None = Field(default=None, description=UNANSWERED)
+    skills: Skills | None = Field(default=None, description=UNANSWERED)
+    gaps: Gaps | None = Field(default=None, description=UNANSWERED)
+    deal_breakers: DealBreakers | None = Field(default=None, description=UNANSWERED)
 
 
 def stored_profile(document: Any) -> Profile:
@@ -139,3 +145,21 @@ async def save_places(body: Places, person: SignedIn, session: Database) -> Prof
 async def save_pay(body: Pay, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's pay and answers the profile as stored."""
     return await _save_section(session, person, "pay", body.model_dump(mode="json"))
+
+
+@router.put("/profile/skills", responses=SIGN_IN_REQUIRED)
+async def save_skills(body: Skills, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's skills and answers the profile as stored."""
+    return await _save_section(session, person, "skills", body.model_dump(mode="json"))
+
+
+@router.put("/profile/gaps", responses=SIGN_IN_REQUIRED)
+async def save_gaps(body: Gaps, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's gaps and trade-offs and answers the profile as stored."""
+    return await _save_section(session, person, "gaps", body.model_dump(mode="json"))
+
+
+@router.put("/profile/deal-breakers", responses=SIGN_IN_REQUIRED)
+async def save_deal_breakers(body: DealBreakers, person: SignedIn, session: Database) -> Profile:
+    """Replaces the signed-in person's deal-breakers and answers the profile as stored."""
+    return await _save_section(session, person, "deal_breakers", body.model_dump(mode="json"))

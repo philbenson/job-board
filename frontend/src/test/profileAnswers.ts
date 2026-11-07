@@ -10,5 +10,8 @@ export function profileWith(titles: string[]): ProfileBody {
     title_range: null,
     places: null,
     pay: null,
+    skills: null,
+    gaps: null,
+    deal_breakers: null,
   }
 }

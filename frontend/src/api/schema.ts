@@ -157,10 +157,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/profile/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Skills
+         * @description Replaces the signed-in person's skills and answers the profile as stored.
+         */
+        put: operations["save_skills_profile_skills_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Gaps
+         * @description Replaces the signed-in person's gaps and trade-offs and answers the profile as stored.
+         */
+        put: operations["save_gaps_profile_gaps_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile/deal-breakers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Deal Breakers
+         * @description Replaces the signed-in person's deal-breakers and answers the profile as stored.
+         */
+        put: operations["save_deal_breakers_profile_deal_breakers_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * DealBreakers
+         * @description What rules a posting out for a person whatever else it offers.
+         */
+        DealBreakers: {
+            /**
+             * Industries
+             * @description Industries they will not work in, each up to 100 characters; at most 30.
+             */
+            industries: string[];
+            /**
+             * Company Sizes
+             * @description Company sizes, by number of employees, they will not work at.
+             */
+            company_sizes: ("1-10" | "11-50" | "51-200" | "201-500" | "501-1000" | "1001-5000" | "5001-10000" | "10001+")[];
+            /**
+             * No Agencies
+             * @description Whether a posting from a recruiting agency, not the employer, rules it out.
+             */
+            no_agencies: boolean;
+        };
+        /**
+         * Gaps
+         * @description Where a person falls short of a posting and still applies, and what they would give up.
+         */
+        Gaps: {
+            /**
+             * Apply With
+             * @description Requirements they lack but would still apply without, in their words, each up to 200 characters; at most 20.
+             */
+            apply_with: string[];
+            /**
+             * Trade Offs
+             * @description What they would give up for the right role, in their words, each up to 200 characters; at most 20.
+             */
+            trade_offs: string[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -283,6 +380,12 @@ export interface components {
             places: components["schemas"]["Places"] | null;
             /** @description Null until the person saves this section. */
             pay: components["schemas"]["Pay"] | null;
+            /** @description Null until the person saves this section. */
+            skills: components["schemas"]["Skills"] | null;
+            /** @description Null until the person saves this section. */
+            gaps: components["schemas"]["Gaps"] | null;
+            /** @description Null until the person saves this section. */
+            deal_breakers: components["schemas"]["DealBreakers"] | null;
         };
         /** Refused */
         Refused: {
@@ -305,6 +408,33 @@ export interface components {
             checked_at: string;
             /** Usable */
             usable: boolean;
+        };
+        /**
+         * Skill
+         * @description One skill and how long the person has used it.
+         */
+        Skill: {
+            /**
+             * Name
+             * @description The skill, as the person names it, up to 60 characters.
+             */
+            name: string;
+            /**
+             * Years
+             * @description Whole years of using it, from 0 to 60; 0 means under a year.
+             */
+            years: number;
+        };
+        /**
+         * Skills
+         * @description The skills a person brings.
+         */
+        Skills: {
+            /**
+             * Skills
+             * @description Their skills, each named once; at most 100.
+             */
+            skills: components["schemas"]["Skill"][];
         };
         /**
          * TargetTitles
@@ -700,6 +830,132 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["Pay"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_skills_profile_skills_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Skills"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gaps_profile_gaps_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Gaps"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_deal_breakers_profile_deal_breakers_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DealBreakers"];
             };
         };
         responses: {

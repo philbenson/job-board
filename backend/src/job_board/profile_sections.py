@@ -6,7 +6,7 @@ description written for the person filling in a form and for a language model
 reading the model's schema as a tool's.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal, get_args
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
@@ -194,3 +194,108 @@ class Pay(Section):
         if floor is not None and ask < floor:
             raise PydanticCustomError("ask_below_floor", "The ask cannot be below the floor")
         return ask
+
+
+MAX_SKILLS = 100  # a long career's worth, each named once
+MAX_SKILL_LENGTH = 60  # a skill is a name, not a sentence
+MAX_YEARS = 60  # a whole working life
+
+SkillName = Annotated[str, AfterValidator(checked_text("a skill", MAX_SKILL_LENGTH))]
+
+
+class Skill(Section):
+    """One skill and how long the person has used it."""
+
+    name: SkillName = Field(
+        description=f"The skill, as the person names it, up to {MAX_SKILL_LENGTH} characters."
+    )
+    years: int = Field(
+        ge=0,
+        le=MAX_YEARS,
+        description=f"Whole years of using it, from 0 to {MAX_YEARS}; 0 means under a year.",
+    )
+
+
+class Skills(Section):
+    """The skills a person brings."""
+
+    skills: Annotated[
+        list[Skill],
+        Field(
+            max_length=sent_limit(MAX_SKILLS),
+            description=f"Their skills, each named once; at most {MAX_SKILLS}.",
+        ),
+        AfterValidator(distinct_and_capped("skills", MAX_SKILLS, lambda skill: fold(skill.name))),
+    ]
+
+
+MAX_GAPS = 20  # a short list, each weighed when a posting is scored
+MAX_GAP_LENGTH = 200  # a sentence, enough to say what is missing and why it is fine
+
+Gap = Annotated[str, AfterValidator(checked_text("a gap", MAX_GAP_LENGTH))]
+TradeOff = Annotated[str, AfterValidator(checked_text("a trade-off", MAX_GAP_LENGTH))]
+
+
+class Gaps(Section):
+    """Where a person falls short of a posting and still applies, and what they would give up."""
+
+    apply_with: Annotated[
+        list[Gap],
+        Field(
+            max_length=sent_limit(MAX_GAPS),
+            description=(
+                "Requirements they lack but would still apply without, in their words, each up to"
+                f" {MAX_GAP_LENGTH} characters; at most {MAX_GAPS}."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("gaps", MAX_GAPS, fold)),
+    ]
+    trade_offs: Annotated[
+        list[TradeOff],
+        Field(
+            max_length=sent_limit(MAX_GAPS),
+            description=(
+                "What they would give up for the right role, in their words, each up to"
+                f" {MAX_GAP_LENGTH} characters; at most {MAX_GAPS}."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("trade-offs", MAX_GAPS, fold)),
+    ]
+
+
+MAX_INDUSTRIES = 30  # more than this is a list of the few industries left
+MAX_INDUSTRY_LENGTH = 100  # longer than any industry's name
+
+CompanySize = Literal[
+    "1-10", "11-50", "51-200", "201-500", "501-1000", "1001-5000", "5001-10000", "10001+"
+]
+COMPANY_SIZES = get_args(CompanySize)
+
+Industry = Annotated[str, AfterValidator(checked_text("an industry", MAX_INDUSTRY_LENGTH))]
+
+
+class DealBreakers(Section):
+    """What rules a posting out for a person whatever else it offers."""
+
+    industries: Annotated[
+        list[Industry],
+        Field(
+            max_length=sent_limit(MAX_INDUSTRIES),
+            description=(
+                "Industries they will not work in, each up to"
+                f" {MAX_INDUSTRY_LENGTH} characters; at most {MAX_INDUSTRIES}."
+            ),
+        ),
+        AfterValidator(distinct_and_capped("industries", MAX_INDUSTRIES, fold)),
+    ]
+    company_sizes: Annotated[
+        list[CompanySize],
+        Field(
+            max_length=sent_limit(len(COMPANY_SIZES)),
+            description="Company sizes, by number of employees, they will not work at.",
+        ),
+        AfterValidator(distinct_and_capped("company sizes", len(COMPANY_SIZES), fold)),
+    ]
+    no_agencies: bool = Field(
+        description="Whether a posting from a recruiting agency, not the employer, rules it out."
+    )
