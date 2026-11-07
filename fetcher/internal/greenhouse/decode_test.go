@@ -102,6 +102,27 @@ func TestDecodeLeavesAbsentOptionalFieldsEmpty(t *testing.T) {
 	}
 }
 
+func TestDecodeStripsTheNULCharacterFromEveryTextField(t *testing.T) {
+	body := feedWith(t, func(job map[string]any) {
+		job["title"] = "Data\x00 Engineer\x00"
+		job["company_name"] = "Otter\x00mere Analytics"
+		job["location"] = map[string]any{"name": "\x00Remote"}
+		job["absolute_url"] = "https://jobs.example.com/otter\x00mere/2001"
+		job["content"] = "&lt;p&gt;Hel\x00lo&lt;/p&gt;"
+	})
+
+	postings, err := Decode(body)
+
+	if err != nil || len(postings) != 1 {
+		t.Fatalf("Decode gave %d postings and error %v, want one posting", len(postings), err)
+	}
+	got := postings[0]
+	if got.Title != "Data Engineer" || got.CompanyName != "Ottermere Analytics" || got.Location != "Remote" ||
+		got.URL != "https://jobs.example.com/ottermere/2001" || got.ContentHTML != "<p>Hello</p>" {
+		t.Errorf("decoded %+v, want every text field without the NUL character", got)
+	}
+}
+
 func TestDecodeAcceptsABoardWithNoPostings(t *testing.T) {
 	postings, err := Decode([]byte(`{"jobs": [], "meta": {"total": 0}}`))
 	if err != nil {
@@ -136,6 +157,7 @@ func TestDecodeRefusesAnInvalidPosting(t *testing.T) {
 		"a negative id":               func(job map[string]any) { job["id"] = -4 },
 		"no title":                    func(job map[string]any) { delete(job, "title") },
 		"a blank title":               func(job map[string]any) { job["title"] = " \t " },
+		"a title of NUL characters":   func(job map[string]any) { job["title"] = "\x00 \x00" },
 		"a relative URL":              func(job map[string]any) { job["absolute_url"] = "/ottermere/2001" },
 		"a URL that is not the web":   func(job map[string]any) { job["absolute_url"] = "ftp://jobs.example.com/2001" },
 		"a URL with no host":          func(job map[string]any) { job["absolute_url"] = "https:///2001" },

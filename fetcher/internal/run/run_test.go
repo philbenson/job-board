@@ -182,9 +182,6 @@ func TestAFailedBoardKeepsItsPostingsAndRecordsWhy(t *testing.T) {
 			adjust: func(t *testing.T, h *harness) { h.runner.Feed.Timeout = 50 * time.Millisecond }},
 		{name: "a server that hangs up", failure: "request", detail: "timed_out=false",
 			answer: func(w http.ResponseWriter, r *http.Request) { panic(http.ErrAbortHandler) }},
-		// PostgreSQL refuses a NUL byte in text, so this feed decodes but cannot be stored.
-		{name: "a posting the database refuses", failure: "database", detail: "condition=22021",
-			answer: answer([]byte(`{"jobs": [{"id": 1, "title": "Engineer\u0000", "absolute_url": "https://jobs.example.com/1", "updated_at": "2026-11-01T00:00:00Z"}]}`))},
 		{name: "a row the write cannot lock in time", failure: "database", detail: "condition=55P03",
 			answer: answer(fixture),
 			adjust: func(t *testing.T, h *harness) {
@@ -219,6 +216,23 @@ func TestAFailedBoardKeepsItsPostingsAndRecordsWhy(t *testing.T) {
 				t.Errorf("log %q does not say %q", line, report)
 			}
 		})
+	}
+}
+
+func TestAPostingWithANULCharacterIsStoredWithoutIt(t *testing.T) {
+	h := newHarness(t)
+	// PostgreSQL refuses the NUL character in text; the feed's decoding strips it.
+	h.feeds["ottermere"] = answer([]byte(`{"jobs": [{"id": 1, "title": "Engineer\u0000", "absolute_url": "https://jobs.example.com/1", "content": "&lt;p&gt;Hi\u0000&lt;/p&gt;", "updated_at": "2026-11-01T00:00:00Z"}]}`))
+
+	if ok := h.runner.Boards(context.Background(), []string{"ottermere"}); !ok {
+		t.Errorf("Boards reported a failure; log:\n%s", h.log)
+	}
+
+	if got, want := h.runs(t), []string{"ottermere succeeded - 1/1/0"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("runs %q, want %q", got, want)
+	}
+	if got := h.strings(t, "SELECT title || '|' || content_html FROM postings"); !reflect.DeepEqual(got, []string{"Engineer|<p>Hi</p>"}) {
+		t.Errorf("stored %q, want the text without the NUL character", got)
 	}
 }
 

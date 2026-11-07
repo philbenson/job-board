@@ -8,7 +8,7 @@ For each board it is given, it asks Greenhouse's public Job Board API once for e
 - a posting it has seen is brought up to date, and marked as seen;
 - a posting that the board no longer lists is closed, and reopened if it comes back.
 
-A board is stored whole or not at all: if the request fails, the answer is not the feed, or any one posting fails a check, nothing on that board changes. One board failing never stops the next. Every attempt, successful or not, is recorded in the `fetch_runs` table with what it counted, or a short code saying what failed.
+A board is stored whole or not at all: if the request fails, the answer is not the feed, or any one posting fails a check, nothing on that board changes. A NUL character, which PostgreSQL cannot store, is dropped from a posting's text rather than failing the posting. One board failing never stops the next. Every attempt, successful or not, is recorded in the `fetch_runs` table with what it counted, or a short code saying what failed.
 
 The tables belong to the backend's Alembic migrations; the fetcher never creates or changes one, so migrate the database first. It checks both tables exist before it tries any board, and stops if they do not.
 

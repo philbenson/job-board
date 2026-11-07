@@ -82,11 +82,12 @@ func (j job) posting() (posting.Posting, string) {
 	if j.ID <= 0 {
 		return posting.Posting{}, "id"
 	}
-	title := strings.TrimSpace(j.Title)
+	title := strings.TrimSpace(withoutNUL(j.Title))
 	if title == "" {
 		return posting.Posting{}, "title"
 	}
-	if !isWebURL(j.AbsoluteURL) {
+	address := withoutNUL(j.AbsoluteURL)
+	if !isWebURL(address) {
 		return posting.Posting{}, "absolute_url"
 	}
 	updated, err := time.Parse(time.RFC3339, j.UpdatedAt)
@@ -104,22 +105,30 @@ func (j job) posting() (posting.Posting, string) {
 	checked := posting.Posting{
 		ExternalID:       j.ID,
 		Title:            title,
-		URL:              j.AbsoluteURL,
+		URL:              address,
 		FirstPublishedAt: published,
 		SourceUpdatedAt:  updated,
 	}
 	if j.CompanyName != nil {
-		checked.CompanyName = strings.TrimSpace(*j.CompanyName)
+		checked.CompanyName = strings.TrimSpace(withoutNUL(*j.CompanyName))
 	}
 	if j.Location != nil {
-		checked.Location = strings.TrimSpace(j.Location.Name)
+		checked.Location = strings.TrimSpace(withoutNUL(j.Location.Name))
 	}
 	if j.Content != nil {
 		// The feed escapes its HTML once; unescaping once gives the HTML itself,
 		// which is still untrusted.
-		checked.ContentHTML = html.UnescapeString(*j.Content)
+		checked.ContentHTML = withoutNUL(html.UnescapeString(*j.Content))
 	}
 	return checked, ""
+}
+
+// withoutNUL removes every NUL character. PostgreSQL refuses it in text, so
+// one stray NUL would fail the whole board at every run until the company
+// edited the posting; it carries nothing in a title, an address or a
+// description, so it is dropped rather than refused.
+func withoutNUL(text string) string {
+	return strings.ReplaceAll(text, "\x00", "")
 }
 
 func isWebURL(raw string) bool {
