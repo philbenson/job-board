@@ -337,3 +337,37 @@ func interruptOnceWaiting(t *testing.T, interrupt context.CancelFunc) {
 	t.Error("no write waited for the held row")
 	interrupt()
 }
+
+func TestABoardAnotherRunIsFetchingIsRecordedAsLockedAndNotFetched(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	other, err := store.Connect(ctx, testdb.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close(ctx)
+	if _, err := other.LockBoard(ctx, greenhouse.Source, "larkspur"); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	h.feeds["larkspur"] = func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write(fixture)
+	}
+	h.feeds["ottermere"] = answer(fixture)
+
+	if ok := h.runner.Boards(ctx, []string{"larkspur", "ottermere"}); ok {
+		t.Error("Boards reported success")
+	}
+
+	if requests != 0 {
+		t.Errorf("the locked board was fetched %d times, want 0", requests)
+	}
+	want := []string{"larkspur failed locked 0/0/0", "ottermere succeeded - 3/3/0"}
+	if got := h.runs(t); !reflect.DeepEqual(got, want) {
+		t.Errorf("runs %q, want %q; log:\n%s", got, want, h.log)
+	}
+	if line := h.log.String(); !strings.Contains(line, `level=WARN msg="board fetched" board=larkspur outcome=failed failure=locked`) {
+		t.Errorf("log %q does not warn of the locked board", line)
+	}
+}

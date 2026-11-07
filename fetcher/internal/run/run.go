@@ -22,6 +22,7 @@ const (
 	FailureInvalidPosting = "invalid-posting" // a posting failed a check
 	FailureDatabase       = "database"        // the board could not be stored
 	FailureInterrupted    = "interrupted"     // the run was interrupted while the board was fetched or written
+	FailureLocked         = "locked"          // another run was fetching the board, so this one did not
 )
 
 // Long enough to reconnect and insert one row on a healthy database. The
@@ -64,8 +65,10 @@ func (r *Runner) Boards(ctx context.Context, boards []string) bool {
 // succeeded.
 func (r *Runner) board(ctx context.Context, board string) bool {
 	record := store.Run{Source: greenhouse.Source, Board: board, StartedAt: time.Now(), Outcome: store.Succeeded}
-	var err error
-	record.Counts, err = r.fetchAndWrite(ctx, board)
+	lock, err := r.Store.LockBoard(ctx, greenhouse.Source, board)
+	if err == nil {
+		record.Counts, err = r.fetchAndWrite(ctx, lock, board)
+	}
 	if err != nil {
 		record.Outcome, record.Failure = store.Failed, failure(ctx, err)
 	}
@@ -75,6 +78,12 @@ func (r *Runner) board(ctx context.Context, board string) bool {
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer cancel()
 	recorded := r.Store.RecordRun(recordCtx, record) == nil
+	if lock != nil {
+		// Released after the record. Should the release fail, the lock is held
+		// only until the process exits and its session ends, and no run visits
+		// a board twice.
+		_ = r.Store.Unlock(recordCtx, lock)
+	}
 
 	attributes := []any{"board", board, "outcome", record.Outcome}
 	if record.Outcome == store.Succeeded {
@@ -86,25 +95,27 @@ func (r *Runner) board(ctx context.Context, board string) bool {
 		attributes = append(attributes, "recorded", false)
 	}
 	level := slog.LevelInfo
-	if record.Outcome == store.Failed || !recorded {
+	switch {
+	case !recorded:
+		level = slog.LevelError
+	case record.Failure == FailureLocked: // expected while another run is going, but still a board not fetched
+		level = slog.LevelWarn
+	case record.Outcome == store.Failed:
 		level = slog.LevelError
 	}
 	r.Log.Log(ctx, level, "board fetched", attributes...)
 	return record.Outcome == store.Succeeded && recorded
 }
 
-// fetchAndWrite fetches one board and stores it. A connection that closed
-// since the last board is replaced first; one that closes after this point
+// fetchAndWrite fetches one board and stores it while holding its lock. A
+// connection that closes after the lock was taken takes the lock with it and
 // fails the board.
-func (r *Runner) fetchAndWrite(ctx context.Context, board string) (store.Counts, error) {
-	if err := r.Store.Reconnect(ctx); err != nil {
-		return store.Counts{}, err
-	}
+func (r *Runner) fetchAndWrite(ctx context.Context, lock *store.BoardLock, board string) (store.Counts, error) {
 	postings, err := r.Feed.Fetch(ctx, board)
 	if err != nil {
 		return store.Counts{}, err
 	}
-	return r.Store.WriteBoard(ctx, greenhouse.Source, board, postings)
+	return r.Store.WriteBoard(ctx, lock, postings)
 }
 
 // failure is the failure code for an error from fetching or storing a board.
@@ -114,6 +125,8 @@ func failure(ctx context.Context, err error) string {
 	switch {
 	case ctx.Err() != nil:
 		return FailureInterrupted
+	case errors.Is(err, store.ErrLocked):
+		return FailureLocked
 	case errors.Is(err, greenhouse.ErrRequest):
 		return FailureRequest
 	case errors.Is(err, greenhouse.ErrStatus):

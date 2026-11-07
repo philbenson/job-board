@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -84,11 +85,22 @@ func sample(id int64, title string) posting.Posting {
 
 func write(t *testing.T, s *Store, board string, postings ...posting.Posting) Counts {
 	t.Helper()
-	counts, err := s.WriteBoard(context.Background(), "greenhouse", board, postings)
+	counts, err := writeLocked(s, board, postings)
 	if err != nil {
 		t.Fatalf("WriteBoard: %v", err)
 	}
 	return counts
+}
+
+// writeLocked writes a board as a run does, holding its lock.
+func writeLocked(s *Store, board string, postings []posting.Posting) (Counts, error) {
+	ctx := context.Background()
+	lock, err := s.LockBoard(ctx, "greenhouse", board)
+	if err != nil {
+		return Counts{}, err
+	}
+	defer func() { _ = s.Unlock(ctx, lock) }()
+	return s.WriteBoard(ctx, lock, postings)
 }
 
 func TestWriteBoardStoresNewPostings(t *testing.T) {
@@ -242,7 +254,7 @@ func TestWriteBoardWritesNothingWhenAnyPostingFails(t *testing.T) {
 	// PostgreSQL refuses a NUL byte in text, so this posting fails inside the transaction.
 	refused := sample(4, "Engineer\x00")
 
-	_, err := s.WriteBoard(context.Background(), "greenhouse", "ottermere",
+	_, err := writeLocked(s, "ottermere",
 		[]posting.Posting{sample(1, "Senior Data Engineer"), sample(3, "Site Reliability Engineer"), refused})
 
 	if err == nil {
@@ -250,6 +262,52 @@ func TestWriteBoardWritesNothingWhenAnyPostingFails(t *testing.T) {
 	}
 	if after := rows(t, s, "ottermere", 2); !reflect.DeepEqual(after, before) {
 		t.Errorf("a failed write changed the board:\n got %+v\nwant %+v", after, before)
+	}
+}
+
+func TestABoardLockIsHeldByOneSessionAtATime(t *testing.T) {
+	ctx := context.Background()
+	s, other := open(t), open(t)
+	lock, err := s.LockBoard(ctx, "greenhouse", "ottermere")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := other.LockBoard(ctx, "greenhouse", "ottermere"); !errors.Is(err, ErrLocked) {
+		t.Errorf("a second session locked a held board: error %v, want ErrLocked", err)
+	}
+	if _, err := other.LockBoard(ctx, "greenhouse", "larkspur"); err != nil {
+		t.Errorf("another board's lock: %v", err)
+	}
+
+	if err := s.Unlock(ctx, lock); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.LockBoard(ctx, "greenhouse", "ottermere"); err != nil {
+		t.Errorf("after Unlock, the board is still locked: %v", err)
+	}
+}
+
+func TestWriteBoardRefusesALockWhoseConnectionClosed(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	lock, err := s.LockBoard(ctx, "greenhouse", "ottermere")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.conn.Close(ctx); err != nil { // the lock goes with the session
+		t.Fatal(err)
+	}
+	if err := s.reconnect(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.WriteBoard(ctx, lock, []posting.Posting{sample(1, "Data Engineer")}); err == nil {
+		t.Error("WriteBoard wrote without the board's lock")
+	}
+	rows(t, s, "ottermere", 0)
+	if err := s.Unlock(ctx, lock); err != nil {
+		t.Errorf("Unlock of a lock that went with its session: %v", err)
 	}
 }
 

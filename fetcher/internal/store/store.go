@@ -6,6 +6,7 @@ package store
 import (
 	"cmp"
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,10 +37,10 @@ func Connect(ctx context.Context, databaseURL string) (*Store, error) {
 	return &Store{config: config, conn: conn}, nil
 }
 
-// Reconnect opens a new connection when the current one has closed, as it
+// reconnect opens a new connection when the current one has closed, as it
 // does when the database ends the session or a statement is interrupted, so
 // one dropped connection fails at most the board in hand.
-func (s *Store) Reconnect(ctx context.Context) error {
+func (s *Store) reconnect(ctx context.Context) error {
 	if !s.conn.IsClosed() {
 		return nil
 	}
@@ -53,6 +54,64 @@ func (s *Store) Reconnect(ctx context.Context) error {
 
 func (s *Store) Close(ctx context.Context) error {
 	return s.conn.Close(ctx)
+}
+
+// boardLockClass is the first key of every board lock the fetcher takes,
+// naming the fetcher among the users of PostgreSQL's advisory locks; the second
+// key is a hash of the source and board. Two-key locks never collide with
+// one-key ones, which the rest of the system is free to use. Its bytes spell
+// "FETC".
+const boardLockClass int32 = 0x46455443
+
+// ErrLocked: another session holds the board's lock, so another run is
+// fetching it.
+var ErrLocked = errors.New("another run holds the board's lock")
+
+// errLockLost: the connection that took the board's lock has closed, and the
+// lock went with it.
+var errLockLost = errors.New("the connection holding the board's lock has closed")
+
+// BoardLock is one board's advisory lock, held by the session that took it.
+type BoardLock struct {
+	conn          *pgx.Conn
+	source, board string
+}
+
+// LockBoard takes a board's lock without waiting, reconnecting first if the
+// connection has closed. It returns ErrLocked when another session holds the
+// lock.
+//
+// Invariant: a board is fetched and written by at most one run at a time.
+// The lock is taken before the fetch, so two runs cannot store their feeds in
+// an order other than the one they read them in.
+func (s *Store) LockBoard(ctx context.Context, source, board string) (*BoardLock, error) {
+	if err := s.reconnect(ctx); err != nil {
+		return nil, err
+	}
+	var locked bool
+	if err := s.conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1::int4, "+boardLockKey+")",
+		boardLockClass, source, board).Scan(&locked); err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, ErrLocked
+	}
+	return &BoardLock{conn: s.conn, source: source, board: board}, nil
+}
+
+// boardLockKey is the lock's second key, computed in SQL from the source ($2)
+// and the board ($3).
+const boardLockKey = "hashtext($2::text || ':' || $3::text)"
+
+// Unlock releases a board's lock. A lock whose connection has closed went with
+// its session, so there is nothing to release then.
+func (s *Store) Unlock(ctx context.Context, lock *BoardLock) error {
+	if lock.conn.IsClosed() {
+		return nil
+	}
+	_, err := lock.conn.Exec(ctx, "SELECT pg_advisory_unlock($1::int4, "+boardLockKey+")",
+		boardLockClass, lock.source, lock.board)
+	return err
 }
 
 // Counts is what one write of a board did: postings in the feed, postings
@@ -95,13 +154,19 @@ const (
 // Invariant: each board is written whole or not at all. Any failure, or ctx
 // ending, rolls the whole write back.
 //
-// It never reconnects: a connection that closed fails the write.
+// It writes only through the connection that holds the board's lock, and
+// never reconnects: once that connection has closed, the lock is gone and the
+// write fails.
 //
 // Invariant: writing the same feed again adds no row and changes nothing but
 // last_seen_at.
-func (s *Store) WriteBoard(ctx context.Context, source, board string, postings []posting.Posting) (Counts, error) {
+func (s *Store) WriteBoard(ctx context.Context, lock *BoardLock, postings []posting.Posting) (Counts, error) {
+	if lock.conn != s.conn || lock.conn.IsClosed() {
+		return Counts{}, errLockLost
+	}
+	source, board := lock.source, lock.board
 	var counts Counts
-	err := pgx.BeginFunc(ctx, s.conn, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, lock.conn, func(tx pgx.Tx) error {
 		batch := &pgx.Batch{}
 		for _, p := range postings {
 			batch.Queue(upsertPosting, source, board, p.ExternalID, p.Title, nullIfEmpty(p.CompanyName),
@@ -148,7 +213,7 @@ type Run struct {
 // first if the connection has closed, so a write that lost its connection is
 // still recorded.
 func (s *Store) RecordRun(ctx context.Context, run Run) error {
-	if err := s.Reconnect(ctx); err != nil {
+	if err := s.reconnect(ctx); err != nil {
 		return err
 	}
 	_, err := s.conn.Exec(ctx, `
