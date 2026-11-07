@@ -41,7 +41,7 @@ func open(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if _, err := s.conn.Exec(ctx, "TRUNCATE postings, fetch_runs"); err != nil {
+		if _, err := s.conn.Exec(ctx, "TRUNCATE postings, fetch_runs CASCADE"); err != nil {
 			t.Error(err)
 		}
 		_ = s.Close(ctx)
