@@ -1,12 +1,12 @@
 import { useAuth } from '@clerk/react'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { askWithin } from '../api/askWithin.ts'
 import {
   fetchProfile,
   saveTargetTitles,
   type ProfileRead,
   type TitlesSave,
 } from '../api/profile.ts'
+import { withToken } from '../api/withToken.ts'
 
 // The backend holds the same cap and refuses past it; checking here too lets
 // the person hear it at once, as they add, instead of when they save.
@@ -25,8 +25,6 @@ const NOT_SAVED = 'Could not save your target titles; your changes are still her
 
 // Where focus goes after the last title is removed.
 const INPUT = Symbol('the input')
-
-type GetToken = ReturnType<typeof useAuth>['getToken']
 
 type Loading = 'loading' | 'loaded' | 'unavailable'
 
@@ -68,7 +66,14 @@ export function ProfilePanel() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void withToken(getToken, controller.signal, fetchProfile).then(
+    // No token to give is no answer either.
+    void withToken(
+      getToken,
+      EXCHANGE_TIMEOUT_MS,
+      controller.signal,
+      fetchProfile,
+      'unavailable',
+    ).then(
       (read: ProfileRead) => {
         // An aborted load belongs to an effect that has been cleaned up; see
         // ServiceStatus for why its answer must not be shown.
@@ -174,8 +179,12 @@ export function ProfilePanel() {
     setAddNotice(null)
     setSave({ kind: 'saving' })
     const sent = titles
-    void withToken(getToken, controller.signal, (token, signal) =>
-      saveTargetTitles(token, sent, signal),
+    void withToken(
+      getToken,
+      EXCHANGE_TIMEOUT_MS,
+      controller.signal,
+      (token, signal) => saveTargetTitles(token, sent, signal),
+      'unavailable',
     ).then((saved: TitlesSave) => {
       if (saved === 'aborted') {
         return
@@ -272,24 +281,4 @@ export function ProfilePanel() {
 
 function repeatKey(title: string): string {
   return title.normalize('NFC').toLowerCase()
-}
-
-/**
- * Asks Clerk for the session token, then runs `ask` with it, all within
- * EXCHANGE_TIMEOUT_MS. No token to give is no answer either.
- */
-function withToken<T>(
-  getToken: GetToken,
-  signal: AbortSignal,
-  ask: (token: string, signal: AbortSignal) => Promise<T>,
-): Promise<T | 'unavailable' | 'aborted'> {
-  return askWithin(EXCHANGE_TIMEOUT_MS, signal, async (exchangeSignal) => {
-    const token = await getToken()
-    if (token === null) {
-      return 'unavailable'
-    }
-    // Past the limit or the caller's abort this signal has aborted, so a
-    // token that comes late sends no request.
-    return ask(token, exchangeSignal)
-  })
 }

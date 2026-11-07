@@ -136,6 +136,30 @@ describe('ProfilePanel', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('says the titles could not load when Clerk has no token, asking the service nothing', async () => {
+    clerk.getToken.mockResolvedValue(null)
+    const fetchMock = service(['Designer'])
+
+    render(<ProfilePanel />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(NOT_LOADED)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('says a save failed when Clerk has no token, sending nothing and keeping the list', async () => {
+    const fetchMock = service(['Designer'])
+    render(<ProfilePanel />)
+    await loaded()
+    clerk.getToken.mockResolvedValue(null)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText(NOT_SAVED)).toBeInTheDocument()
+    expect(screen.getByText(NONE_YET)).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps its two status lines on the page, empty, so each message is announced', async () => {
     service(['Designer'], () => answer(200, { target_titles: ['Designer'] }))
     const user = userEvent.setup()
