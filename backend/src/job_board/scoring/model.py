@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain.chat_models import init_chat_model
+from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableLambda
@@ -120,15 +121,23 @@ def _is_whole_json(text: str) -> bool:
 def _one_rating(answer: dict[str, Any]) -> Any:
     """The rating in a reply, or the reason there is none, raised.
 
-    The parser mends unclosed JSON, so a reply cut off inside its reason would
-    read as a rating with half a sentence: a reply that stopped at the limit
-    counts only when its text is whole JSON on its own. Otherwise the parser's
-    own error is raised as it came; it quotes the reply, so it is never logged.
+    The parser mends unclosed JSON, so a reply that ended early inside its
+    reason would read as a rating with half a sentence: a reply counts only when
+    its text is whole JSON on its own, whatever its stop reason. Structured
+    output makes a finished reply whole, so this costs nothing. One that is not
+    whole raises ReplyCutOff when it stopped at the limit, and is unreadable
+    otherwise. A refusal, which may hold part of a reply or none, is raised
+    first, as it came. A reply that is whole but no rating raises the parser's
+    own error as it came; it quotes the reply, so it is never logged.
     """
     raw: AIMessage = answer["raw"]
-    if raw.response_metadata.get("stop_reason") == CUT_OFF and not _is_whole_json(raw.text):
-        raise ReplyCutOff
     error: BaseException | None = answer["parsing_error"]
+    if isinstance(error, ModelRefusalError):
+        raise error
+    if not _is_whole_json(raw.text):
+        if raw.response_metadata.get("stop_reason") == CUT_OFF:
+            raise ReplyCutOff
+        raise OutputParserException("the reply is not whole JSON")
     if error is not None:
         raise error
     return answer["parsed"]
@@ -143,8 +152,9 @@ def anthropic_model(
     the model does not support. No retries: the schedule is the retry, and a
     retried call costs the person twice. ``base_url`` and ``timeout`` are for
     the tests, which point it at a local server. The raw reply comes back
-    beside the parsed one only so a reply cut off at the limit can be told
-    apart; what leaves this model is a Rating, or an exception.
+    beside the parsed one only so its text can be checked whole and a reply
+    cut off at the limit told apart; what leaves this model is a Rating, or an
+    exception.
     """
     chat = init_chat_model(
         SCORING_MODEL,

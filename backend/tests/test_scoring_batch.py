@@ -525,15 +525,23 @@ async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
     assert len(server.received) == 2
 
 
+@pytest.mark.parametrize(
+    ("text", "quoted"),
+    [
+        ('{"score": 4, "reason": "Cut short in the mid', "Cut short"),
+        ('{"score": 4, "reason": "Wants {Go}', "Wants"),  # cut just after a brace
+    ],
+    ids=["mid-reason", "after-a-brace"],
+)
 async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_goes_on(
-    engine: AsyncEngine, caplog: pytest.LogCaptureFixture
+    engine: AsyncEngine, caplog: pytest.LogCaptureFixture, text: str, quoted: str
 ) -> None:
     caplog.set_level(logging.INFO)
     person = await add_person(engine)
     first, second, third = [
         await add_posting(engine, seen=START - timedelta(days=age)) for age in range(3)
     ]
-    cut_off = message('{"score": 4, "reason": "Cut short in the mid', stop_reason="max_tokens")
+    cut_off = message(text, stop_reason="max_tokens")
     with canned_anthropic(rating(5, "Exact."), cut_off, rating(2, "A different field.")) as server:
         result = await run(engine, person, real(server.url))
 
@@ -549,7 +557,7 @@ async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_go
         (logging.WARNING, f"person {person}, posting {second}: reply cut off at the token limit"),
         (logging.INFO, f"person {person}: 2 rated, 1 unreadable, finished"),
     ]
-    assert "Cut short" not in caplog.text
+    assert quoted not in caplog.text
 
 
 @pytest.mark.parametrize(

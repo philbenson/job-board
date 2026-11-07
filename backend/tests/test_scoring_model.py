@@ -162,6 +162,19 @@ async def test_the_real_model_refuses_a_whole_but_invalid_reply_at_the_limit_as_
         await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
 
 
+@pytest.mark.parametrize(
+    "stop_reason", ["end_turn", "model_context_window_exceeded"], ids=["end-turn", "window"]
+)
+async def test_the_real_model_refuses_a_reply_that_is_not_whole_json_as_unreadable(
+    stop_reason: str,
+) -> None:
+    # The parser would mend this into a rating with half a sentence for its reason.
+    broken = message('{"score": 4, "reason": "A close ma', stop_reason=stop_reason)
+    with canned_anthropic(broken) as server, pytest.raises(OutputParserException) as raised:
+        await anthropic_model(fake_key(), base_url=server.url).ainvoke("Rate this.")
+    assert "A close ma" not in str(raised.value)  # it quotes none of the reply
+
+
 def chat_model_of(model: object) -> BaseChatModel:
     """The chat model inside the factory's model: the runnable its first step binds as raw."""
     assert isinstance(model, RunnableSequence)
