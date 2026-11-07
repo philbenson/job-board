@@ -37,7 +37,14 @@ MAX_TOKENS = 4096
 # person's profile through every callback. Leaving them out changes only what
 # is returned, not what is thought or billed.
 THINKING = {"type": "adaptive", "display": "omitted"}
-TIMEOUT_SECONDS = 60.0  # one rating; the schedule's next run tries again
+# A rating that runs past its timeout stops the person's batch and records
+# nothing, so the same posting would be asked for, and paid for, on every run.
+# The timeout is therefore sized to let the whole token limit arrive: 4,096
+# tokens at 25 a second, a speed this model is sure to beat, is about 164
+# seconds, and 30 more for reading the input makes about 194.
+SLOWEST_TOKENS_PER_SECOND = 25
+INPUT_READING_SECONDS = 30
+TIMEOUT_SECONDS = MAX_TOKENS / SLOWEST_TOKENS_PER_SECOND + INPUT_READING_SECONDS
 CUT_OFF = "max_tokens"  # the stop reason of a reply that reached the token limit
 
 # A model that takes the prompt's messages and answers a Rating, or raises.

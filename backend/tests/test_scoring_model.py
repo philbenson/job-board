@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from canned_anthropic import canned_anthropic, message, rating
+from langchain_anthropic import ChatAnthropic
 from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.load import dumpd
@@ -12,7 +13,16 @@ from langchain_core.runnables import RunnableBinding, RunnableParallel, Runnable
 from pydantic import ValidationError
 
 from job_board.model_key.check import CHECK_MODEL
-from job_board.scoring.model import MAX_REASON_LENGTH, Rating, ReplyCutOff, anthropic_model
+from job_board.scoring.model import (
+    INPUT_READING_SECONDS,
+    MAX_REASON_LENGTH,
+    MAX_TOKENS,
+    SLOWEST_TOKENS_PER_SECOND,
+    TIMEOUT_SECONDS,
+    Rating,
+    ReplyCutOff,
+    anthropic_model,
+)
 
 
 def fake_key() -> str:
@@ -168,3 +178,17 @@ def test_the_real_model_shows_the_key_in_none_of_its_text_or_serialized_forms() 
     chat = chat_model_of(model)
     forms = [repr(model), str(model), repr(chat), str(chat), str(dumpd(model)), str(dumpd(chat))]
     assert [form for form in forms if key in form] == []
+
+
+def test_the_timeout_covers_the_whole_token_limit_at_the_slowest_speed_and_reading_the_input() -> (
+    None
+):
+    # A rating that times out stops the batch and records nothing, so a limit
+    # raised without the timeout would ask for, and charge for, the same posting
+    # on every run.
+    assert SLOWEST_TOKENS_PER_SECOND == 25
+    assert INPUT_READING_SECONDS == 30
+    assert TIMEOUT_SECONDS >= MAX_TOKENS / SLOWEST_TOKENS_PER_SECOND + INPUT_READING_SECONDS
+    chat = chat_model_of(anthropic_model(fake_key(), base_url="http://127.0.0.1:9"))
+    assert isinstance(chat, ChatAnthropic)
+    assert chat.default_request_timeout == TIMEOUT_SECONDS
