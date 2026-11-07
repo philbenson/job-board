@@ -7,6 +7,7 @@ the environment says. Unlike the model key check, this cannot also remove an
 header values as text only, with no way to say "omit".
 """
 
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -16,6 +17,7 @@ from langchain_core.runnables import Runnable
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from job_board.model_key.check import ANTHROPIC_API, CHECK_MODEL
+from job_board.profiles import DIRECTION_CONTROLS
 
 SCORING_MODEL = CHECK_MODEL  # the model a person's key was checked against
 MIN_SCORE = 1
@@ -70,6 +72,13 @@ class Rating(BaseModel):
             raise ValueError(f"the reason is longer than {MAX_REASON_LENGTH} characters")
         if len(trimmed.splitlines()) > 1:  # every line break Python knows, not only \n
             raise ValueError("the reason runs over more than one line")
+        # Controls (NUL among them, which PostgreSQL text cannot hold) and lone
+        # surrogates would fail the insert; direction controls would reorder
+        # the sentence where it is shown, as they would a target title.
+        if any(unicodedata.category(character) in {"Cc", "Cs"} for character in trimmed):
+            raise ValueError("the reason holds a control character")
+        if not DIRECTION_CONTROLS.isdisjoint(trimmed):
+            raise ValueError("the reason holds a text direction control")
         return trimmed
 
 

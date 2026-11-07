@@ -2,14 +2,22 @@
 
 A posting's description arrives as HTML. The model gets its words only: tags
 gone, entities decoded, scripts and styles dropped with their contents, and
-whitespace collapsed to single spaces. The description is then cut, so one
-long posting costs no more than any other.
+whitespace collapsed to single spaces. Every field is cut, the description at
+its own length and the title, company and location at a shorter one, so the
+whole text never passes MAX_POSTING_TEXT_CHARACTERS and one long posting costs
+no more than any other.
 """
 
 from html.parser import HTMLParser
 
 MAX_DESCRIPTION_CHARACTERS = 6000  # a long posting's substance, at a bounded cost
+MAX_FIELD_CHARACTERS = 300  # a title, company or location; far past any real one
 NOT_GIVEN = "not given"
+_LABELS = ("Title: ", "Company: ", "Location: ", "Description: ")
+# The labels, three fields, the description and the line breaks between them.
+MAX_POSTING_TEXT_CHARACTERS = (
+    sum(map(len, _LABELS)) + 3 * MAX_FIELD_CHARACTERS + MAX_DESCRIPTION_CHARACTERS + 3
+)
 
 # Elements whose contents are never words a reader sees.
 _HIDDEN = frozenset({"script", "style", "template", "noscript"})
@@ -59,16 +67,20 @@ def plain_text(html: str) -> str:
     return " ".join("".join(words.parts).split())[:MAX_DESCRIPTION_CHARACTERS]
 
 
+def _field(value: str | None) -> str:
+    return " ".join(value.split())[:MAX_FIELD_CHARACTERS] if value else ""
+
+
 def posting_text(
     *, title: str, company_name: str | None, location: str | None, content_html: str | None
 ) -> str:
-    """The posting's title, company, location and description, one to a line."""
-    description = plain_text(content_html) if content_html else ""
+    """The posting's title, company, location and description, one to a line, each cut."""
+    fields = (
+        _field(title),
+        _field(company_name),
+        _field(location),
+        plain_text(content_html) if content_html else "",
+    )
     return "\n".join(
-        [
-            f"Title: {' '.join(title.split())}",
-            f"Company: {' '.join(company_name.split()) if company_name else NOT_GIVEN}",
-            f"Location: {' '.join(location.split()) if location else NOT_GIVEN}",
-            f"Description: {description or NOT_GIVEN}",
-        ]
+        f"{label}{value or NOT_GIVEN}" for label, value in zip(_LABELS, fields, strict=True)
     )

@@ -363,6 +363,19 @@ async def test_keeps_a_rating_and_an_unreadable_reply(engine: AsyncEngine) -> No
     assert await scores_of(engine, person) == [(first, "scored", 5), (second, "unreadable", None)]
 
 
+async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
+    engine: AsyncEngine,
+) -> None:
+    person = await add_person(engine)
+    first, second = await add_posting(engine), await add_posting(engine, seen=START - timedelta(1))
+    with canned_anthropic(rating(3, "Fine\u0000"), rating(4, "A close match.")) as server:
+        result = await run(engine, person, real(server.url))
+
+    assert result == BatchResult(person, rated=1, unreadable=1, end="finished")
+    assert await scores_of(engine, person) == [(first, "unreadable", None), (second, "scored", 4)]
+    assert len(server.received) == 2
+
+
 @pytest.mark.parametrize(
     ("status", "failure"),
     [(401, "rejected"), (403, "not-permitted"), (404, "not-permitted"), (402, "no-credit")],

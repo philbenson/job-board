@@ -40,6 +40,27 @@ def test_a_rating_refuses_a_reason_that_is_empty_too_long_or_on_more_than_one_li
         Rating.model_validate({"score": 3, "reason": reason})
 
 
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Fine\x00",
+        "Fi\x00ne",
+        "Fine\x07",
+        "Fine\x7f",
+        "Fine\x9b",
+        "Fine\ud800",
+        "Fine\u202e",
+        "\u2066Fine",
+    ],
+    ids=["nul", "inner-nul", "bell", "delete", "c1", "surrogate", "right-to-left", "isolate"],
+)
+def test_a_rating_refuses_a_reason_holding_a_control_a_surrogate_or_a_direction_control(
+    reason: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        Rating.model_validate({"score": 3, "reason": reason})
+
+
 def test_a_rating_keeps_a_reason_of_the_longest_length_trimmed() -> None:
     reason = "x" * MAX_REASON_LENGTH
     assert Rating.model_validate({"score": 3, "reason": f" {reason}\n"}).reason == reason
