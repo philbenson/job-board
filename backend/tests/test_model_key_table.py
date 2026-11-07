@@ -76,3 +76,39 @@ def test_goes_when_its_person_goes(connection: Connection) -> None:
 def test_belongs_to_a_person_who_exists(connection: Connection) -> None:
     with pytest.raises(IntegrityError, match="fk_model_keys_person_id_people"):
         add_key(connection, person_id=-1)
+
+
+def failure_of(connection: Connection, person_id: int) -> tuple[str | None, object]:
+    failure, failed_at = connection.execute(
+        text("SELECT failure, failed_at FROM model_keys WHERE person_id = :person"),
+        {"person": person_id},
+    ).one()
+    return failure, failed_at
+
+
+def test_starts_with_no_failure(connection: Connection) -> None:
+    person = new_person(connection)
+    add_key(connection, person)
+    assert failure_of(connection, person) == (None, None)
+
+
+@pytest.mark.parametrize("failure", ["rejected", "not-permitted", "no-credit"])
+def test_records_a_known_failure(connection: Connection, failure: str) -> None:
+    person = new_person(connection)
+    add_key(connection, person)
+    connection.execute(
+        text("UPDATE model_keys SET failure = :failure, failed_at = now() WHERE person_id = :p"),
+        {"failure": failure, "p": person},
+    )
+    recorded, failed_at = failure_of(connection, person)
+    assert recorded == failure
+    assert failed_at is not None
+
+
+def test_takes_only_a_known_failure(connection: Connection) -> None:
+    person = new_person(connection)
+    add_key(connection, person)
+    with pytest.raises(IntegrityError, match="ck_model_keys_failure_is_known"):
+        connection.execute(
+            text("UPDATE model_keys SET failure = 'expired' WHERE person_id = :p"), {"p": person}
+        )
