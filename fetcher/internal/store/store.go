@@ -15,9 +15,11 @@ import (
 
 const connectTimeout = 5 * time.Second // a database that is down stops the run promptly instead of hanging it
 
-// Store is one connection, used by one board at a time.
+// Store is one connection, used by one board at a time, and replaced by a new
+// one when it closes.
 type Store struct {
-	conn *pgx.Conn
+	config *pgx.ConnConfig
+	conn   *pgx.Conn
 }
 
 // Connect opens the connection and checks the database answers.
@@ -31,7 +33,22 @@ func Connect(ctx context.Context, databaseURL string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{conn: conn}, nil
+	return &Store{config: config, conn: conn}, nil
+}
+
+// Reconnect opens a new connection when the current one has closed, as it
+// does when the database ends the session or a statement is interrupted, so
+// one dropped connection fails at most the board in hand.
+func (s *Store) Reconnect(ctx context.Context) error {
+	if !s.conn.IsClosed() {
+		return nil
+	}
+	conn, err := pgx.ConnectConfig(ctx, s.config)
+	if err != nil {
+		return err
+	}
+	s.conn = conn
+	return nil
 }
 
 func (s *Store) Close(ctx context.Context) error {
@@ -77,6 +94,8 @@ const (
 //
 // Invariant: each board is written whole or not at all. Any failure, or ctx
 // ending, rolls the whole write back.
+//
+// It never reconnects: a connection that closed fails the write.
 //
 // Invariant: writing the same feed again adds no row and changes nothing but
 // last_seen_at.
@@ -125,8 +144,13 @@ type Run struct {
 }
 
 // RecordRun writes one fetch_runs row, in its own statement, so a failed
-// board's record survives that board's rolled-back write.
+// board's record survives that board's rolled-back write. It reconnects
+// first if the connection has closed, so a write that lost its connection is
+// still recorded.
 func (s *Store) RecordRun(ctx context.Context, run Run) error {
+	if err := s.Reconnect(ctx); err != nil {
+		return err
+	}
 	_, err := s.conn.Exec(ctx, `
 		INSERT INTO fetch_runs (source, board, started_at, finished_at, outcome,
 		                        postings_seen, postings_new, postings_closed, failure)

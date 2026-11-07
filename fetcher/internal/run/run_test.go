@@ -217,7 +217,7 @@ func TestAnInterruptedRunRecordsTheBoardItWasOnAndStartsNoOther(t *testing.T) {
 		t.Error("Boards reported success")
 	}
 
-	if got, want := h.runs(t), []string{"larkspur failed request 0/0/0"}; !reflect.DeepEqual(got, want) {
+	if got, want := h.runs(t), []string{"larkspur failed interrupted 0/0/0"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("runs %q, want %q", got, want)
 	}
 	if got := len(h.postings(t, "ottermere")); got != 0 {
@@ -226,4 +226,114 @@ func TestAnInterruptedRunRecordsTheBoardItWasOnAndStartsNoOther(t *testing.T) {
 	if line := h.log.String(); !strings.Contains(line, "board=ottermere outcome=skipped reason=interrupted") {
 		t.Errorf("log %q does not report the skipped board", line)
 	}
+}
+
+func TestADroppedConnectionFailsOnlyTheBoardInHand(t *testing.T) {
+	h := newHarness(t)
+	h.feeds["larkspur"] = func(w http.ResponseWriter, r *http.Request) {
+		// As a database restart would, end every other session while the board is being fetched.
+		_, err := h.conn.Exec(r.Context(), `
+			SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity
+			WHERE datname = current_database() AND pid <> pg_backend_pid()`)
+		if err != nil {
+			t.Error(err)
+		}
+		_, _ = w.Write(fixture)
+	}
+	h.feeds["ottermere"] = answer(fixture)
+
+	if ok := h.runner.Boards(context.Background(), []string{"larkspur", "ottermere"}); ok {
+		t.Error("Boards reported success")
+	}
+
+	want := []string{"larkspur failed database 0/0/0", "ottermere succeeded - 3/3/0"}
+	if got := h.runs(t); !reflect.DeepEqual(got, want) {
+		t.Errorf("runs %q, want %q; log:\n%s", got, want, h.log)
+	}
+	if got := len(h.postings(t, "larkspur")); got != 0 {
+		t.Errorf("stored %d postings for the board whose connection dropped, want 0", got)
+	}
+	if got := len(h.postings(t, "ottermere")); got != 3 {
+		t.Errorf("stored %d postings for the next board, want 3", got)
+	}
+}
+
+func TestAnInterruptDuringTheWriteRollsItBackAndRecordsIt(t *testing.T) {
+	h := newHarness(t)
+	h.feeds["ottermere"] = answer(fixture)
+	h.runner.Boards(context.Background(), []string{"ottermere"})
+	before := h.postings(t, "ottermere")
+	holdRow(t, 1001) // so the next write waits inside its transaction
+
+	ctx, interrupt := context.WithCancel(context.Background())
+	defer interrupt()
+	waited := make(chan struct{})
+	go func() {
+		defer close(waited)
+		interruptOnceWaiting(t, interrupt)
+	}()
+	ok := h.runner.Boards(ctx, []string{"ottermere"})
+	<-waited
+
+	if ok {
+		t.Error("Boards reported success")
+	}
+	want := []string{"ottermere succeeded - 3/3/0", "ottermere failed interrupted 0/0/0"}
+	if got := h.runs(t); !reflect.DeepEqual(got, want) {
+		t.Errorf("runs %q, want %q; log:\n%s", got, want, h.log)
+	}
+	if after := h.postings(t, "ottermere"); !reflect.DeepEqual(after, before) {
+		t.Errorf("the interrupted write changed the postings:\n got %q\nwant %q", after, before)
+	}
+}
+
+// holdRow locks one posting's row from a connection of its own until the test
+// ends, so any write that touches it waits.
+func holdRow(t *testing.T, externalID int64) {
+	t.Helper()
+	ctx := context.Background()
+	holder, err := pgx.Connect(ctx, testdb.URL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := holder.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, "SELECT 1 FROM postings WHERE external_id = $1 FOR UPDATE", externalID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = tx.Rollback(ctx)
+		_ = holder.Close(ctx)
+	})
+}
+
+// interruptOnceWaiting calls interrupt as soon as a session of the test
+// database is waiting for a lock, as SIGINT would during a write.
+func interruptOnceWaiting(t *testing.T, interrupt context.CancelFunc) {
+	ctx := context.Background()
+	watcher, err := pgx.Connect(ctx, testdb.URL())
+	if err != nil {
+		t.Error(err)
+		interrupt()
+		return
+	}
+	defer watcher.Close(ctx)
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		var waiting int
+		err := watcher.QueryRow(ctx, `
+			SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waiting)
+		if err != nil {
+			t.Error(err)
+			break
+		}
+		if waiting > 0 {
+			interrupt()
+			return
+		}
+	}
+	t.Error("no write waited for the held row")
+	interrupt()
 }

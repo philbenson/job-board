@@ -21,10 +21,13 @@ const (
 	FailureDecode         = "decode"          // the answer was not the feed's JSON
 	FailureInvalidPosting = "invalid-posting" // a posting failed a check
 	FailureDatabase       = "database"        // the board could not be stored
+	FailureInterrupted    = "interrupted"     // the run was interrupted while the board was fetched or written
 )
 
-// Long enough for one insert on a healthy database; the record is written even
-// after an interrupt, so this bounds how long the interrupt waits.
+// Long enough to reconnect and insert one row on a healthy database. The
+// record has a context of its own, cut loose from the run's, so it is written
+// after an interrupt too, through a new connection if the old one closed; this
+// bounds how long the interrupt waits.
 const recordTimeout = 5 * time.Second
 
 // Runner fetches boards from Feed into Store and logs one line per board.
@@ -37,10 +40,11 @@ type Runner struct {
 // Boards fetches every board in turn and reports whether all of them
 // succeeded.
 //
-// Invariant: one board failing never stops another. Each board is written
-// whole or not at all, and each attempt is recorded in fetch_runs whether it
-// succeeded or not. Once ctx ends, the board in hand rolls back and is
-// recorded as failed, and no further board is started.
+// Invariant: one board failing never stops another, and a dropped database
+// connection fails at most the board in hand. Each board is written whole or
+// not at all, and each attempt is recorded in fetch_runs whether it succeeded
+// or not. Once ctx ends, the board in hand rolls back and is recorded as
+// failed with the code interrupted, and no further board is started.
 func (r *Runner) Boards(ctx context.Context, boards []string) bool {
 	allSucceeded := true
 	for _, board := range boards {
@@ -60,11 +64,10 @@ func (r *Runner) Boards(ctx context.Context, boards []string) bool {
 // succeeded.
 func (r *Runner) board(ctx context.Context, board string) bool {
 	record := store.Run{Source: greenhouse.Source, Board: board, StartedAt: time.Now(), Outcome: store.Succeeded}
-	postings, err := r.Feed.Fetch(ctx, board)
+	var err error
+	record.Counts, err = r.fetchAndWrite(ctx, board)
 	if err != nil {
-		record.Outcome, record.Failure = store.Failed, feedFailure(err)
-	} else if record.Counts, err = r.Store.WriteBoard(ctx, greenhouse.Source, board, postings); err != nil {
-		record.Outcome, record.Failure = store.Failed, FailureDatabase
+		record.Outcome, record.Failure = store.Failed, failure(ctx, err)
 	}
 	record.FinishedAt = time.Now()
 
@@ -90,9 +93,29 @@ func (r *Runner) board(ctx context.Context, board string) bool {
 	return record.Outcome == store.Succeeded && recorded
 }
 
-// feedFailure is the failure code for an error from the feed.
-func feedFailure(err error) string {
+// fetchAndWrite fetches one board and stores it. A connection that closed
+// since the last board is replaced first; one that closes after this point
+// fails the board.
+func (r *Runner) fetchAndWrite(ctx context.Context, board string) (store.Counts, error) {
+	if err := r.Store.Reconnect(ctx); err != nil {
+		return store.Counts{}, err
+	}
+	postings, err := r.Feed.Fetch(ctx, board)
+	if err != nil {
+		return store.Counts{}, err
+	}
+	return r.Store.WriteBoard(ctx, greenhouse.Source, board, postings)
+}
+
+// failure is the failure code for an error from fetching or storing a board.
+// Once the run's context has ended, the cause is the interrupt, whatever the
+// error that followed from it.
+func failure(ctx context.Context, err error) string {
 	switch {
+	case ctx.Err() != nil:
+		return FailureInterrupted
+	case errors.Is(err, greenhouse.ErrRequest):
+		return FailureRequest
 	case errors.Is(err, greenhouse.ErrStatus):
 		return FailureStatus
 	case errors.Is(err, greenhouse.ErrTooLarge):
@@ -101,7 +124,7 @@ func feedFailure(err error) string {
 		return FailureDecode
 	case errors.Is(err, greenhouse.ErrInvalidPosting):
 		return FailureInvalidPosting
-	default: // greenhouse.ErrRequest, the only other error Fetch returns
-		return FailureRequest
+	default: // every error the feed returns is one of the above, so this one came from the database
+		return FailureDatabase
 	}
 }

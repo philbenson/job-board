@@ -45,9 +45,9 @@ docker compose exec db psql -U job_board -d job_board \
   -c "SELECT board, title, location, closed_at FROM postings ORDER BY first_seen_at DESC LIMIT 10"
 ```
 
-It exits 0 when every board succeeded, 1 when any board failed, and 2 when the settings are refused or the database cannot be reached, before any board is tried. Ctrl-C or `SIGTERM` stops it: the board in hand is rolled back and recorded as failed, and no other board is started.
+It exits 0 when every board succeeded, 1 when any board failed, and 2 when the settings are refused or the database cannot be reached, before any board is tried. Ctrl-C or `SIGTERM` stops it: the board in hand is rolled back and recorded as `interrupted`, and no other board is started. If the database drops the connection, only the board in hand fails: the fetcher reconnects to record it and to go on with the next board.
 
-A failed run's code is one of `request` (no answer, or it timed out), `status` (an answer other than 200), `too-large`, `decode` (not the feed's JSON), `invalid-posting` and `database`.
+A failed run's code is one of `request` (no answer, or it timed out), `status` (an answer other than 200), `too-large`, `decode` (not the feed's JSON), `invalid-posting`, `database` and `interrupted` (stopped while the board was fetched or written).
 
 ## Testing it
 
