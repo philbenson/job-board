@@ -15,10 +15,9 @@ from pydantic import ValidationError
 from sqlalchemy import Row, Select, and_, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from job_board.model_errors import PROVIDER
 from job_board.models import ModelKey, Person, Posting, ProfileRow, Score
 from job_board.profiles import Profile, stored_profile
-
-PROVIDER = "anthropic"
 
 log = logging.getLogger(__name__)
 

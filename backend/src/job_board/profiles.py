@@ -51,6 +51,7 @@ __all__ = [
     "Profile",
     "TargetTitles",
     "router",
+    "save_section",
     "stored_profile",
 ]
 
@@ -104,14 +105,16 @@ async def read_profile(person: SignedIn, session: Database) -> Profile:
     return Profile() if document is None else stored_profile(document)
 
 
-async def _save_section(
-    session: AsyncSession, person: Person, section: str, value: object
+async def save_section(
+    session: AsyncSession, person_id: int, section: str, value: object
 ) -> Profile:
     """Sets one section of the person's stored document and answers the profile as stored.
 
-    ``section`` is the Profile field the caller owns and ``value`` its JSON form.
+    ``section`` is the Profile field the caller owns and ``value`` its JSON form,
+    already checked by that section's request model: this checks nothing. The
+    routes and the interviewer's tools write through it alone.
     """
-    new_row = insert(ProfileRow).values(person_id=person.id, document={section: value})
+    new_row = insert(ProfileRow).values(person_id=person_id, document={section: value})
     # One statement, so two saves at once cannot interleave a read and a write:
     # the row is added holding only this section, or the stored document gets
     # this one key set with jsonb_set and keeps every other key it holds.
@@ -137,58 +140,58 @@ async def _save_section(
 @router.put("/profile/target-titles", responses=SIGN_IN_REQUIRED)
 async def save_target_titles(body: TargetTitles, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's target titles and answers the profile as stored."""
-    return await _save_section(session, person, "target_titles", body.titles)
+    return await save_section(session, person.id, "target_titles", body.titles)
 
 
 @router.put("/profile/title-range", responses=SIGN_IN_REQUIRED)
 async def save_title_range(body: TitleRange, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's title range and answers the profile as stored."""
-    return await _save_section(session, person, "title_range", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "title_range", body.model_dump(mode="json"))
 
 
 @router.put("/profile/places", responses=SIGN_IN_REQUIRED)
 async def save_places(body: Places, person: SignedIn, session: Database) -> Profile:
     """Replaces where the signed-in person will work and answers the profile as stored."""
-    return await _save_section(session, person, "places", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "places", body.model_dump(mode="json"))
 
 
 @router.put("/profile/pay", responses=SIGN_IN_REQUIRED)
 async def save_pay(body: Pay, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's pay and answers the profile as stored."""
-    return await _save_section(session, person, "pay", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "pay", body.model_dump(mode="json"))
 
 
 @router.put("/profile/skills", responses=SIGN_IN_REQUIRED)
 async def save_skills(body: Skills, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's skills and answers the profile as stored."""
-    return await _save_section(session, person, "skills", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "skills", body.model_dump(mode="json"))
 
 
 @router.put("/profile/gaps", responses=SIGN_IN_REQUIRED)
 async def save_gaps(body: Gaps, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's gaps and trade-offs and answers the profile as stored."""
-    return await _save_section(session, person, "gaps", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "gaps", body.model_dump(mode="json"))
 
 
 @router.put("/profile/deal-breakers", responses=SIGN_IN_REQUIRED)
 async def save_deal_breakers(body: DealBreakers, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's deal-breakers and answers the profile as stored."""
-    return await _save_section(session, person, "deal_breakers", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "deal_breakers", body.model_dump(mode="json"))
 
 
 @router.put("/profile/companies", responses=SIGN_IN_REQUIRED)
 async def save_companies(body: Companies, person: SignedIn, session: Database) -> Profile:
     """Replaces the companies the signed-in person watches and answers the profile as stored."""
-    return await _save_section(session, person, "companies", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "companies", body.model_dump(mode="json"))
 
 
 @router.put("/profile/pace", responses=SIGN_IN_REQUIRED)
 async def save_pace(body: Pace, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's pace and answers the profile as stored."""
-    return await _save_section(session, person, "pace", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "pace", body.model_dump(mode="json"))
 
 
 @router.put("/profile/own-rules", responses=SIGN_IN_REQUIRED)
 async def save_own_rules(body: OwnRules, person: SignedIn, session: Database) -> Profile:
     """Replaces the signed-in person's own rules and answers the profile as stored."""
-    return await _save_section(session, person, "own_rules", body.model_dump(mode="json"))
+    return await save_section(session, person.id, "own_rules", body.model_dump(mode="json"))

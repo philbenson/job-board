@@ -18,10 +18,10 @@ from settings_for_tests import MODEL_KEY_ENCRYPTION_KEY
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from job_board.environment_refusal import TRACING_VARIABLES
 from job_board.model_key.sealing import seal
 from job_board.scoring.command import EXIT_REFUSED, EXIT_STOPPED, main
 from job_board.scoring.model import ModelFactory, Rating, RatingModel
-from job_board.scoring.tracing import TRACING_VARIABLES
 from job_board.settings import ScoringSettings
 
 BACKEND = Path(__file__).resolve().parents[1]

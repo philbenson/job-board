@@ -10,7 +10,12 @@ ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 # Every table the migrations create, in name order; base holds alembic_version alone.
 HEAD_TABLES = [
     "alembic_version",
+    "checkpoint_blobs",
+    "checkpoint_migrations",
+    "checkpoint_writes",
+    "checkpoints",
     "fetch_runs",
+    "interviews",
     "model_keys",
     "people",
     "postings",
