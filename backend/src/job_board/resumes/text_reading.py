@@ -56,7 +56,9 @@ def _answer_of(answer: bytes) -> Reading | None:
     """The reading the child's answer gives, or None if the parent cannot vouch for it."""
     try:
         value = json.loads(answer)
-    except ValueError:
+    # Brackets nested deep enough, within the answer's bound, run the parser
+    # out of stack, which it raises as RecursionError rather than ValueError.
+    except ValueError, RecursionError:
         return None
     if not isinstance(value, dict) or value.keys() != {"state", "text"}:
         return None

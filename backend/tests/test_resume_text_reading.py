@@ -320,6 +320,7 @@ async def test_a_long_resume_reads_within_the_memory_limit() -> None:
         + ")",
         'import sys; sys.stdout.buffer.write(b\'{"state": "found", "text": "\\xff"}\')',
         "import sys; sys.stdout.write('[' * 50000)",
+        f"import sys; sys.stdout.write('[' * {LONGEST_ANSWER_BYTES})",
     ],
     ids=[
         "not JSON",
@@ -337,6 +338,7 @@ async def test_a_long_resume_reads_within_the_memory_limit() -> None:
         "a key too many",
         "not UTF-8",
         "unclosed brackets",
+        "brackets nested as deep as the longest answer allows",
     ],
 )
 async def test_an_answer_the_parent_cannot_check_fails(
