@@ -103,12 +103,24 @@ async def _renew_claim(context: Context) -> None:
         raise LostClaim
 
 
+def _asked_with_the_tool_calls(messages: list[AnyMessage]) -> bool:
+    """True when the last step ran tool calls whose reply also asked something."""
+    if not isinstance(messages[-1], ToolMessage):
+        return False
+    calling = next(message for message in reversed(messages) if isinstance(message, AIMessage))
+    return bool(calling.text.strip())
+
+
 async def _interviewer(state: InterviewState, runtime: Runtime[Context]) -> InterviewState:
     """The model's next reply, or the service's own line when a limit is reached.
 
     A reply cut off at the token limit, declined by the model, or holding
     nothing raises, and nothing of it is kept, so none of its tool calls runs:
-    the run fails, and a retry asks again from the step before.
+    the run fails, and a retry asks again from the step before. The one empty
+    reply kept from failing is one after tool calls whose reply asked a
+    question: the model had nothing to add, so the interview waits on that
+    question, with the empty reply counted as a call and kept out of the
+    conversation.
     """
     context = runtime.context
     await _renew_claim(context)
@@ -128,7 +140,9 @@ async def _interviewer(state: InterviewState, runtime: Runtime[Context]) -> Inte
     if stop_reason == DECLINED:
         raise ModelDeclined
     if not reply.tool_calls and not reply.text.strip():
-        raise EmptyReply
+        if not _asked_with_the_tool_calls(state["messages"]):
+            raise EmptyReply
+        return {"model_calls": calls + 1, "calls_since_answer": state["calls_since_answer"] + 1}
     return {
         "messages": [reply],
         "model_calls": calls + 1,

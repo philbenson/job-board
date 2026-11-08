@@ -330,6 +330,24 @@ async def test_an_answer_runs_on_and_the_entries_show_the_conversation_without_t
     assert profile.json()["pace"] == PACE
 
 
+async def test_a_question_asked_with_a_save_and_followed_by_nothing_is_shown_once(
+    service: Service, ready: Someone
+) -> None:
+    await waiting_on_the_first_question(service, ready)
+    service.script(calling(("save_pace", PACE), text=NEXT_QUESTION), AIMessage(""))
+    await answer(service, ready, ANSWER)
+    await service.settled()
+
+    interview = await read(service, ready)
+    assert (interview["status"], interview["question"]) == ("waiting", NEXT_QUESTION)
+    assert interview["entries"] == [
+        said("interviewer", FIRST_QUESTION),
+        said("person", ANSWER),
+        said("interviewer", NEXT_QUESTION),
+        saved("pace"),
+    ]
+
+
 async def test_finishing_shows_finished_and_takes_no_answer_or_retry(
     service: Service, ready: Someone
 ) -> None:

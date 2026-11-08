@@ -51,7 +51,11 @@ class ModelDeclined(Exception):
 
 
 class EmptyReply(Exception):
-    """The model's reply held neither text nor a tool call; nothing of it is kept."""
+    """The model's reply held neither text nor a tool call; nothing of it is kept.
+
+    Not raised for such a reply after tool calls whose reply asked a question:
+    the interview waits on that question instead.
+    """
 
     code: InterviewFailure = "empty-reply"
 

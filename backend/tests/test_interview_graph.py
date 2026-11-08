@@ -507,6 +507,50 @@ async def test_a_reply_cut_off_declined_or_empty_fails_and_keeps_and_saves_nothi
     assert await document_of(engine, interview.who.person_id) is None
 
 
+SAVED_AND_ASKED = "Saved your pace. What pay are you after?"
+
+
+async def test_an_empty_reply_after_a_save_that_asked_waits_on_that_question(
+    interview: Run, engine: AsyncEngine
+) -> None:
+    script(
+        interview,
+        AIMessage(FIRST_QUESTION),
+        calling(("save_pace", PACE), text=SAVED_AND_ASKED),
+        AIMessage(""),  # the model had nothing to add after the save's result
+        AIMessage("And your skills?"),
+    )
+    await interview.start()
+    await interview.answer("Ten a day.")
+
+    assert await interview.question() == SAVED_AND_ASKED
+    snapshot = await interview.snapshot()
+    assert isinstance(snapshot.values["messages"][-1], ToolMessage)  # the empty reply is not kept
+    # Counted as the call it was, toward the interview's and the answer's limits.
+    assert (snapshot.values["model_calls"], snapshot.values["calls_since_answer"]) == (3, 2)
+    assert (await document_of(engine, interview.who.person_id))["pace"] == PACE
+
+    await interview.answer("150,000.")
+    earlier, later = interview.model.requests[-2:]
+    assert dumped(later[: len(earlier)]) == dumped(earlier)
+    assert len(later) == len(earlier) + 1  # the answer, after the save's result
+    assert await interview.question() == "And your skills?"
+
+
+async def test_an_empty_reply_after_a_save_that_asked_nothing_fails_and_keeps_nothing(
+    interview: Run,
+) -> None:
+    script(interview, AIMessage(FIRST_QUESTION), calling(("save_pace", PACE)), AIMessage(""))
+    await interview.start()
+    with pytest.raises(EmptyReply):
+        await interview.answer("Ten a day.")
+
+    snapshot = await interview.snapshot()
+    assert snapshot.next == ("interviewer",)
+    assert isinstance(snapshot.values["messages"][-1], ToolMessage)
+    assert snapshot.values["model_calls"] == 2
+
+
 async def test_a_run_whose_claim_was_taken_stops_before_calling_the_model(
     interview: Run, engine: AsyncEngine
 ) -> None:
