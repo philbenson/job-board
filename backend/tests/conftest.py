@@ -12,8 +12,8 @@ from alembic.config import Config
 from local_s3 import LocalBucket, local_s3_server
 from per_run_database import per_run_database, server_url
 
+from job_board.environment_refusal import TRACING_VARIABLES
 from job_board.resumes.store import SETTINGS_FROM_NOWHERE
-from job_board.scoring.tracing import TRACING_VARIABLES
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
