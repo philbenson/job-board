@@ -44,7 +44,7 @@ def stub(program: str) -> ResumeTextReader:
     return ResumeTextReader(command=(sys.executable, "-I", "-c", program))
 
 
-def answer(state: str, text: str | None) -> str:
+def answer(state: str, text: object) -> str:
     return f"import sys; sys.stdout.write({json.dumps({'state': state, 'text': text})!r})"
 
 
@@ -313,7 +313,11 @@ async def test_a_long_resume_reads_within_the_memory_limit() -> None:
         answer("cut", FILLER + "\x00"),
         answer("found", "x" * (MAX_RESUME_TEXT_LENGTH + 1)),
         answer("found", "1 2 3"),
-        'import sys; sys.stdout.write(\'{"state": "found", "text": "a", "more": 1}\')',
+        answer("found", 12345),
+        answer("cut", ["a"]),
+        "import sys; sys.stdout.write("
+        + repr(json.dumps({"state": "found", "text": FILLER, "more": 1}))
+        + ")",
         'import sys; sys.stdout.buffer.write(b\'{"state": "found", "text": "\\xff"}\')',
         "import sys; sys.stdout.write('[' * 50000)",
     ],
@@ -328,9 +332,11 @@ async def test_a_long_resume_reads_within_the_memory_limit() -> None:
         "text the rules would refuse",
         "text past the cap",
         "too few letters",
+        "found with a number for text",
+        "cut with a list for text",
         "a key too many",
         "not UTF-8",
-        "nested past the recursion limit",
+        "unclosed brackets",
     ],
 )
 async def test_an_answer_the_parent_cannot_check_fails(
@@ -559,3 +565,29 @@ def test_the_reading_loads_nothing_of_the_web_framework_the_database_or_the_sett
         or name == "job_board.settings"
     ]
     assert loaded == []
+
+
+async def test_what_the_reading_writes_to_standard_error_is_thrown_away(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    program = "import sys; sys.stderr.write('written to standard error')\n" + answer(
+        "found", FILLER
+    )
+
+    reading = await stub(program).read(pdf(resume_lines()))
+
+    assert reading == Reading("found", FILLER)
+    assert "written to standard error" not in capfd.readouterr().err
+
+
+def test_the_reading_refuses_a_file_longer_than_the_largest_it_is_given() -> None:
+    file = pdf(resume_lines())
+
+    finished = subprocess.run(
+        [*ResumeTextReader().command, "10", str(256 * 1024 * 1024), str(len(file) - 1)],
+        input=file,
+        capture_output=True,
+        env={},
+    )
+
+    assert (finished.returncode, finished.stdout) == (1, b"")

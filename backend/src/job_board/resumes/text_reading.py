@@ -56,7 +56,7 @@ def _answer_of(answer: bytes) -> Reading | None:
     """The reading the child's answer gives, or None if the parent cannot vouch for it."""
     try:
         value = json.loads(answer)
-    except ValueError, RecursionError:
+    except ValueError:
         return None
     if not isinstance(value, dict) or value.keys() != {"state", "text"}:
         return None
