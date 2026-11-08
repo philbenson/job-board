@@ -20,21 +20,20 @@ Invariants:
 """
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import Literal
 
 import anthropic
-from sqlalchemy import func, literal, select, update
+from sqlalchemy import func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, async_sessionmaker
 
-from job_board.model_key.failure import KeyFailure
+from job_board.model_errors import PROVIDER, failure_reason, mark_key_failure
 from job_board.model_key.sealing import SealBroken, SealedUnderAnotherKey, open_sealed, sealed_with
-from job_board.models import ModelKey, Score
+from job_board.models import Score
 from job_board.scoring.graph import rate
 from job_board.scoring.model import SCORING_MODEL, ModelFactory, Rating
-from job_board.scoring.people import PROVIDER, candidate, eligible_people, unscored_postings
+from job_board.scoring.people import candidate, eligible_people, unscored_postings
 from job_board.scoring.posting_text import posting_text
 from job_board.scoring.profile_text import profile_text
 
@@ -43,8 +42,6 @@ BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run 
 LOCK_CLASS = 0x53434F52
 # A key sealed under another service key: the operator's to fix, since no key here will open.
 NOT_SEALED_HERE = "not-sealed-with-this-service-key"
-# An error body's type or code is named in the log only when it looks like one; its message never.
-_CODE = re.compile(r"[a-z0-9_]{1,64}")
 
 log = logging.getLogger(__name__)
 
@@ -89,35 +86,6 @@ class _Stopped(Exception):
         self.end: End = end
 
 
-def _why(error: anthropic.APIError) -> tuple[str, KeyFailure | None]:
-    """The reason a failed request stops the batch, and what it says of the key."""
-    if isinstance(error, anthropic.APITimeoutError):  # a kind of connection error
-        return "timed-out", None
-    if isinstance(error, anthropic.APIConnectionError):
-        return "connection-error", None
-    if not isinstance(error, anthropic.APIStatusError):
-        return f"unexpected: {type(error).__name__}", None
-    status = error.status_code
-    if status == 401:
-        return "rejected", "rejected"
-    if status == 403:
-        return "not-permitted", "not-permitted"
-    if status == 404:
-        # Most likely this app names a model Anthropic no longer serves, which is no
-        # fault of the key: the key is left as it is and the operator is told.
-        return "model-not-found", None
-    if status == 402:  # the SDK has no class of its own for it
-        return "no-credit", "no-credit"
-    if status == 408:
-        return "timed-out", None
-    if status == 429:
-        return "rate-limited", None
-    if status >= 500:
-        return "server-error", None
-    codes = [code for code in (error.type, error.error_code) if code and _CODE.fullmatch(code)]
-    return f"refused-{status}" + (f" ({', '.join(codes)})" if codes else ""), None
-
-
 async def _record(
     sessionmaker: async_sessionmaker[AsyncSession],
     person_id: int,
@@ -136,26 +104,6 @@ async def _record(
                 model=SCORING_MODEL,
             )
             .on_conflict_do_nothing(index_elements=["person_id", "posting_id"])
-        )
-
-
-async def _mark(
-    sessionmaker: async_sessionmaker[AsyncSession],
-    person_id: int,
-    sealed_key: bytes,
-    failure: KeyFailure,
-) -> None:
-    """Record the key's failure, unless the person has saved another key meanwhile."""
-    async with sessionmaker() as session, session.begin():
-        await session.execute(
-            update(ModelKey)
-            .where(
-                ModelKey.person_id == person_id,
-                ModelKey.provider == PROVIDER,
-                ModelKey.sealed_key == sealed_key,
-                ModelKey.failure.is_(None),
-            )
-            .values(failure=failure, failed_at=func.now())
         )
 
 
@@ -213,9 +161,9 @@ async def _rate_batch(
         try:
             rating = await rate(model, profile, text)
         except anthropic.APIError as error:
-            reason, failure = _why(error)
+            reason, failure = failure_reason(error)
             if failure is not None:
-                await _mark(sessionmaker, person_id, found.sealed_key, failure)
+                await mark_key_failure(sessionmaker, person_id, found.sealed_key, failure)
             raise _Stopped(reason) from None
         if rating == "cut-off":
             # One line each, quoting nothing: the sign that MAX_TOKENS is too low.

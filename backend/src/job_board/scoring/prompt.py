@@ -11,15 +11,13 @@ Invariant: neither the posting nor the person's text can close or open a
 block. The posting is copied from a job board, written by whoever posted it,
 and the profile holds the person's own words; any such tag inside either is
 broken first, in any case or spacing, and however hidden by an invisible format
-character or written in fullwidth forms. Text holding no such tag is sent as it
-was, byte for byte.
+character or written in fullwidth forms (see ``job_board.prompt_data``). Text
+holding no such tag is sent as it was, byte for byte.
 """
-
-import re
-import unicodedata
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
+from job_board.prompt_data import tag_breaker
 from job_board.scoring.model import MAX_REASON_LENGTH, MAX_SCORE, MIN_SCORE
 
 INSTRUCTIONS = (
@@ -36,36 +34,8 @@ INSTRUCTIONS = (
     f"{MAX_REASON_LENGTH} characters, on one line, saying why."
 )
 
-# A block's tag in any case or spacing, the way a model might still read one.
-_BLOCK_TAG = re.compile(r"<\s*/?\s*(?:posting|profile)\b", re.IGNORECASE)
-_FORMAT = "Cf"  # the category of invisible format characters, such as a zero-width space
+_as_data = tag_breaker("posting", "profile")
 _CACHED = {"type": "ephemeral"}  # five minutes, renewed by each posting that reads it
-
-
-def _folded(text: str) -> tuple[str, list[int]]:
-    """``text`` as a model might read it, and where each of its characters came from.
-
-    Each character is put in its compatibility form, so fullwidth brackets and
-    letters read as plain ones, and every format character is dropped, so none
-    can hide a tag. The list gives each folded character's index in ``text``.
-    """
-    folded: list[str] = []
-    origins: list[int] = []
-    for index, character in enumerate(text):
-        for part in unicodedata.normalize("NFKC", character):
-            if unicodedata.category(part) != _FORMAT:
-                folded.append(part)
-                origins.append(index)
-    return "".join(folded), origins
-
-
-def _as_data(text: str) -> str:
-    """``text`` with the opening bracket of every block tag in it broken."""
-    folded, origins = _folded(text)
-    brackets = {origins[tag.start()] for tag in _BLOCK_TAG.finditer(folded)}
-    if not brackets:
-        return text
-    return "".join("&lt;" if index in brackets else c for index, c in enumerate(text))
 
 
 def prompt_messages(profile: str, text: str) -> list[BaseMessage]:
