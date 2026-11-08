@@ -4,6 +4,7 @@ import { BRIEF_CHOICES } from './profileChoices.ts'
 import { ChoiceField, WholeNumberField } from './ProfileFields.tsx'
 import { ProfilePart } from './ProfilePart.tsx'
 import { wholeNumberFrom } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { useProfilePart } from './useProfilePart.ts'
 
 type Pace = StoredSection<'/profile/pace'>
@@ -52,7 +53,7 @@ export function PacePart({ stored }: { stored: Pace | null }) {
   }
 
   return (
-    <ProfilePart heading="Pace" part={part} onSave={sendAll}>
+    <ProfilePart heading={SECTION_HEADINGS.pace} part={part} onSave={sendAll}>
       <WholeNumberField
         label={LEADS}
         value={leads}

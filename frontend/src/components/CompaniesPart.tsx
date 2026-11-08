@@ -9,6 +9,7 @@ import {
 } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { composed, lengthOf, repeatKey } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -42,7 +43,7 @@ export function CompaniesPart({ stored }: { stored: Companies | null }) {
 
   return (
     <ProfilePart
-      heading="Companies"
+      heading={SECTION_HEADINGS.companies}
       part={part}
       onSave={() => {
         part.send(

@@ -3,6 +3,7 @@ import type { StoredSection } from '../api/profile.ts'
 import { WholeNumberField } from './ProfileFields.tsx'
 import { ProfilePart } from './ProfilePart.tsx'
 import { grouped, wholeNumberFrom } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { useProfilePart } from './useProfilePart.ts'
 
 type Pay = StoredSection<'/profile/pay'>
@@ -45,7 +46,7 @@ export function PayPart({ stored }: { stored: Pay | null }) {
   }
 
   return (
-    <ProfilePart heading="Pay" part={part} onSave={sendAll}>
+    <ProfilePart heading={SECTION_HEADINGS.pay} part={part} onSave={sendAll}>
       <WholeNumberField
         label={FLOOR}
         value={floor}

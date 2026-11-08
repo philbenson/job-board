@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { StoredSection } from '../api/profile.ts'
 import { MAX_RULE_LENGTH, MAX_RULES } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -16,7 +17,7 @@ export function OwnRulesPart({ stored }: { stored: StoredSection<'/profile/own-r
 
   return (
     <ProfilePart
-      heading="Your own rules"
+      heading={SECTION_HEADINGS.own_rules}
       part={part}
       onSave={() => {
         part.send({ rules }, { rules }, (section) => {

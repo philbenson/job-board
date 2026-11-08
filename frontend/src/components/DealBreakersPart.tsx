@@ -5,6 +5,7 @@ import { SIZE_CHOICES } from './profileChoices.ts'
 import { YesNoField } from './ProfileFields.tsx'
 import { MAX_INDUSTRIES, MAX_INDUSTRY_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -31,7 +32,7 @@ export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
 
   return (
     <ProfilePart
-      heading="Deal-breakers"
+      heading={SECTION_HEADINGS.deal_breakers}
       part={part}
       onSave={() => {
         part.send(

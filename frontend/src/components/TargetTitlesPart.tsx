@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MAX_TARGET_TITLES, MAX_TITLE_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -15,7 +16,7 @@ export function TargetTitlesPart({ stored }: { stored: string[] }) {
 
   return (
     <ProfilePart
-      heading="Target titles"
+      heading={SECTION_HEADINGS.target_titles}
       part={part}
       onSave={() => {
         part.send({ titles }, { titles }, setTitles)

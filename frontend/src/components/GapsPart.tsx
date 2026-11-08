@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { StoredSection } from '../api/profile.ts'
 import { MAX_GAP_LENGTH, MAX_GAPS } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -24,7 +25,7 @@ export function GapsPart({ stored }: { stored: Gaps | null }) {
 
   return (
     <ProfilePart
-      heading="Gaps and trade-offs"
+      heading={SECTION_HEADINGS.gaps}
       part={part}
       onSave={() => {
         const body = { apply_with: applyWith, trade_offs: tradeOffs }

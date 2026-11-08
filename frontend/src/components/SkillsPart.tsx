@@ -4,6 +4,7 @@ import { PairsEditor } from './PairsEditor.tsx'
 import { MAX_SKILL_LENGTH, MAX_SKILLS } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { lengthOf, repeatKey, wholeNumberFrom } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { useProfilePart } from './useProfilePart.ts'
 
 type Skill = StoredSection<'/profile/skills'>['skills'][number]
@@ -25,7 +26,7 @@ export function SkillsPart({ stored }: { stored: StoredSection<'/profile/skills'
 
   return (
     <ProfilePart
-      heading="Skills"
+      heading={SECTION_HEADINGS.skills}
       part={part}
       onSave={() => {
         part.send({ skills }, { skills: skills.map((skill) => skill.name) }, (section) => {

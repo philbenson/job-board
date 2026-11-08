@@ -3,6 +3,7 @@ import type { StoredSection } from '../api/profile.ts'
 import { YesNoField } from './ProfileFields.tsx'
 import { MAX_NEARBY_TITLES, MAX_TITLE_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -27,7 +28,7 @@ export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
 
   return (
     <ProfilePart
-      heading="Nearby titles"
+      heading={SECTION_HEADINGS.title_range}
       part={part}
       onSave={() => {
         part.send(

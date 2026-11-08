@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SaveRefusalBody, TargetTitlesBody } from '../api/profile.ts'
+import { SAVED_SECTIONS } from '../api/interview.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import {
   answer,
   heldReply,
@@ -483,6 +485,16 @@ describe('ProfilePanel, as parts', () => {
     expect(
       screen.getByText('Scoring reads every section except pace, which nothing reads yet.'),
     ).toBeInTheDocument()
+  })
+
+  it('takes each part heading from the one list the interview names its saves by', async () => {
+    service([])
+    render(<ProfilePanel />)
+    await loaded()
+
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
+    ).toEqual(SAVED_SECTIONS.map((section) => SECTION_HEADINGS[section]))
   })
 
   it('says a part never saved is not answered yet, starting it empty, until a save lands', async () => {

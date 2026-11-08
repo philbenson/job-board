@@ -12,6 +12,7 @@ import {
 } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { lengthOf, repeatKey } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
@@ -51,7 +52,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
 
   return (
     <ProfilePart
-      heading="Places"
+      heading={SECTION_HEADINGS.places}
       part={part}
       onSave={() => {
         part.send(
