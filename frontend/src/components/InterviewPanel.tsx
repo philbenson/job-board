@@ -281,6 +281,12 @@ export function InterviewPanel({
   // The page counts changes to the key and the resume, each of which can
   // change what the interview is missing. A running turn's poll is already
   // reading, and its last read is current.
+  // A request the person makes answers with the interview as it now is, so a
+  // read for a change still out would show it as it was: the request drops it.
+  function dropReadOnce(): void {
+    readOnce.current?.abort()
+  }
+
   const seenChanges = useRef(changes)
   useEffect(() => {
     if (changes === seenChanges.current) {
@@ -298,6 +304,7 @@ export function InterviewPanel({
       return
     }
     setBusy('starting')
+    dropReadOnce()
     setProblem('')
     const started: InterviewStart | 'aborted' = await withToken(
       getToken,
@@ -326,6 +333,7 @@ export function InterviewPanel({
     }
     const answered = text
     setBusy('answering')
+    dropReadOnce()
     setProblem('')
     setReplied(false)
     const outcome: InterviewAnswer | 'aborted' = await withToken(
@@ -365,6 +373,7 @@ export function InterviewPanel({
       return
     }
     setBusy('retrying')
+    dropReadOnce()
     setProblem('')
     const retried: InterviewRetry | 'aborted' = await withToken(
       getToken,
@@ -397,6 +406,7 @@ export function InterviewPanel({
       return
     }
     setBusy('deleting')
+    dropReadOnce()
     setProblem('')
     const removed: InterviewRemoval | 'aborted' = await withToken(
       getToken,

@@ -1078,6 +1078,123 @@ describe('InterviewPanel', () => {
       expect(alertLine()).toHaveTextContent('')
     })
 
+    // Each request the person makes, from the interview it is made on, with
+    // the backend's answer to it and what the page then shows.
+    const REQUESTS = [
+      {
+        made: 'a start',
+        before: interviewWith(),
+        route: 'start',
+        reply: () =>
+          interviewAnswer(202, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 1) })),
+        make: () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Start the interview' }))
+        },
+        after: () => {
+          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+        },
+      },
+      {
+        made: 'an answer',
+        before: interviewWith({ status: 'waiting', entries: CONVERSATION, question: QUESTION }),
+        route: 'answer',
+        reply: () =>
+          interviewAnswer(
+            202,
+            interviewWith({
+              status: 'running',
+              entries: [...CONVERSATION, { kind: 'person', text: 'Staff roles' }],
+            }),
+          ),
+        make: () => {
+          fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), {
+            target: { value: 'Staff roles' },
+          })
+          fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+        },
+        after: () => {
+          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+        },
+      },
+      {
+        made: 'a retry',
+        before: interviewWith({ status: 'failed', entries: CONVERSATION.slice(0, 3) }),
+        route: 'retry',
+        reply: () =>
+          interviewAnswer(202, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 3) })),
+        make: () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+        },
+        after: () => {
+          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+        },
+      },
+      {
+        made: 'a delete',
+        before: interviewWith({ status: 'finished', entries: CONVERSATION.slice(0, 4) }),
+        route: 'remove',
+        reply: () => interviewAnswer(204),
+        make: () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Delete the conversation' }))
+          fireEvent.click(screen.getByRole('button', { name: 'Delete it' }))
+        },
+        after: () => {
+          expect(screen.getByRole('button', { name: 'Start the interview' })).toBeVisible()
+          expect(screen.queryByText(FINISHED)).toBeNull()
+        },
+      },
+    ] as const
+
+    it.each(REQUESTS)(
+      'drops the read for a change once the person sends $made, so its answer stands',
+      async ({ before, route, reply, make, after }) => {
+        // Each read held until the test answers it by its place in line.
+        const pending: ((response: Response) => void)[] = []
+        const answerRead = async (index: number, body: InterviewBody) => {
+          pending[index]?.(await interviewAnswer(200, body))
+        }
+        const held = heldInterviewReply()
+        const fetchMock = stubInterviewService({
+          read: () =>
+            new Promise<Response>((resolve) => {
+              pending.push(resolve)
+            }),
+          [route]: route === 'remove' ? reply : held.reply,
+        })
+        const { rerender } = render(<InterviewPanel changes={0} />)
+        await vi.waitFor(() => {
+          expect(pending).toHaveLength(1)
+        })
+        await act(() => answerRead(0, before))
+        rerender(<InterviewPanel changes={1} />)
+        await vi.waitFor(() => {
+          expect(pending).toHaveLength(2)
+        })
+
+        make()
+        if (route === 'remove') {
+          await vi.waitFor(() => {
+            expect(pending).toHaveLength(3)
+          })
+          await act(() => answerRead(2, interviewWith()))
+        } else {
+          await vi.waitFor(() => {
+            expect(held.count()).toBe(1)
+          })
+          const answered = await reply()
+          await act(async () => {
+            const body: unknown = await answered.json()
+            await held.finish(202, body as InterviewBody)
+          })
+        }
+        // The read for the change answers last, with what was true before.
+        await act(() => answerRead(1, before))
+
+        after()
+        expect(callsTo(fetchMock, 'read')[1]?.signal?.aborted).toBe(true)
+      },
+    )
+
     it('leaves a running turn to its poll, reading nothing more for a change', async () => {
       vi.useFakeTimers()
       const read = heldInterviewReply()
