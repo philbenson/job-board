@@ -26,6 +26,9 @@ def hidden_tags(*names: str) -> Iterator[object]:
             for kind, mark in HIDDEN.items():
                 tag = f"<{slash}{name[:3]}{mark}{name[3:]}>"
                 yield pytest.param(tag, id=f"{side}-{name}-{kind}")
+            # Upper case as well as hidden, so case is read past the hiding too.
+            upper = f"<{slash}{name[:3].upper()}{HIDDEN['zero-width-space']}{name[3:].upper()}>"
+            yield pytest.param(upper, id=f"{side}-{name}-upper-case-zero-width-space")
             yield pytest.param(f"\uff1c{slash}{name}\uff1e", id=f"{side}-{name}-fullwidth-brackets")
             yield pytest.param(f"<{slash}{fullwidth(name)}>", id=f"{side}-{name}-fullwidth-letters")
 
