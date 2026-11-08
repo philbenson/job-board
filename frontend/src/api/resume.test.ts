@@ -6,6 +6,7 @@ import {
   type ResumeBody,
   type StorageRefusalBody,
   type UploadedBody,
+  type UploadRefusalBody,
 } from './resume.ts'
 
 const TOKEN = 'header.payload.signature'
@@ -26,6 +27,9 @@ const NOT_SET_UP = {
 const DID_NOT_ANSWER = {
   detail: 'Resume storage did not answer; try again later',
 } satisfies StorageRefusalBody
+const READING_BUSY = {
+  detail: 'Resume reading is busy; try again in a minute',
+} satisfies UploadRefusalBody
 
 const A_PDF = new Blob(['%PDF-1.7\n%%EOF\n'], { type: 'application/pdf' })
 
@@ -189,6 +193,12 @@ describe('uploadResume', () => {
     await expect(uploadResume(TOKEN, A_PDF)).resolves.toBe(outcome)
   })
 
+  it('reports a 503 saying reading is busy as busy', async () => {
+    stubFetch(async () => answer(503, READING_BUSY))
+
+    await expect(uploadResume(TOKEN, A_PDF)).resolves.toBe('busy')
+  })
+
   it.each([
     ['a 200 with no resume', () => answer(200, RECORDED_NONE)],
     ['a 413', () => answerText(413, '{"detail": "A resume can be at most 5 MB"}')],
@@ -200,12 +210,12 @@ describe('uploadResume', () => {
     await expect(uploadResume(TOKEN, A_PDF)).resolves.toBe('unavailable')
   })
 
-  it('waits two minutes for a slow line before it gives up', async () => {
+  it('waits for a slow line, a turn to read and the reading before it gives up', async () => {
     vi.useFakeTimers()
     stubFetch(answerOnlyAbort)
     const upload = watched(() => uploadResume(TOKEN, A_PDF))
 
-    await vi.advanceTimersByTimeAsync(119_999)
+    await vi.advanceTimersByTimeAsync(149_999)
     expect(upload.result).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1)
     expect(upload.result).toBe('unavailable')

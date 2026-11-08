@@ -2,11 +2,16 @@
 
 The file goes to the resume store under a key made from the person's id, the
 same for every upload, and a row records its size and when it was uploaded.
-Reading answers from the row alone; the file is never served back from here.
+Its text is read once the file is in and before the store keeps it, and the
+row keeps what the reading gave, with the person's check cleared, so the text
+beside the row is the text of the file the row describes. Reading answers from
+the row alone; the file is never served back from here.
 
 Invariant: no database transaction or connection is held while the file
-arrives or the store answers, so a slow upload or store never ties up the
-pool. The sign-in's work is committed before the body is read.
+arrives, its text is read or the store answers, so a slow upload, reading or
+store never ties up the pool. The sign-in's work is committed before the body
+is read. The reading runs in a child process the server only waits on, so it
+never blocks the server; see ``text_reading``.
 
 The upload is the raw PDF as the request body, so no byte of it is read until
 the sign-in and the storage checks have passed; see ``upload``.
@@ -25,10 +30,13 @@ from job_board.database import get_session
 from job_board.models import Person, ResumeRow
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person
 from job_board.resumes.store import ResumeStore, StoreDidNotAnswer
+from job_board.resumes.text_reading import ReadingBusy, ResumeTextReader
+from job_board.resumes.text_rules import Reading
 from job_board.resumes.upload import read_pdf
 
 NOT_SET_UP = "Resume storage is not set up"
 DID_NOT_ANSWER = "Resume storage did not answer; try again later"
+READING_BUSY = "Resume reading is busy; try again in a minute"
 
 STORAGE_ANSWERS: dict[int | str, dict[str, Any]] = {
     503: {"model": Refused, "description": "Resume storage is not set up, or did not answer"},
@@ -84,7 +92,10 @@ async def read_resume(
         411: {"model": Refused, "description": "No declared length"},
         413: {"model": Refused, "description": "Over 5 MB, or longer than declared"},
         415: {"model": Refused, "description": "Not sent as a PDF, or not a PDF"},
-        **STORAGE_ANSWERS,
+        503: {
+            "model": Refused,
+            "description": "Resume storage is not set up, or did not answer, or reading is busy",
+        },
     },
     # The body is read by the route itself, so it is described here.
     openapi_extra={
@@ -101,8 +112,22 @@ async def upload_resume(
     store: Annotated[ResumeStore, Depends(resume_store)],
 ) -> Resume:
     """Stores the PDF in the body as the signed-in person's resume, replacing any before it."""
-    await session.commit()  # hold nothing open while the file arrives or the store answers
+    # Hold nothing open while the file arrives, its text is read or the store answers.
+    await session.commit()
     file = await read_pdf(request)
+    reader: ResumeTextReader = request.app.state.resume_text_reader
+    reading: Reading | None
+    try:
+        reading = await reader.read(file, person.id)
+    except ReadingBusy:
+        reading = None
+    if reading is None:
+        # Refused before anything is stored. The refusal, which holds the
+        # reading's frame and so the file, is let go as its except clause
+        # ends; dropping the file here too lets it go now, not once the
+        # answer is sent.
+        del file
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=READING_BUSY)
     key = object_key(person)
     try:
         await store.put(key, file)
@@ -117,7 +142,13 @@ async def upload_resume(
     # the removal deleted, or a file with no row. That is accepted for one
     # person's own resume.
     upsert = insert(ResumeRow).values(
-        person_id=person.id, object_key=key, size_bytes=len(file), uploaded_at=func.now()
+        person_id=person.id,
+        object_key=key,
+        size_bytes=len(file),
+        uploaded_at=func.now(),
+        text_state=reading.state,
+        text=reading.text,
+        text_checked_at=None,
     )
     row = await session.scalar(
         upsert.on_conflict_do_update(
@@ -126,6 +157,9 @@ async def upload_resume(
                 "object_key": upsert.excluded.object_key,
                 "size_bytes": upsert.excluded.size_bytes,
                 "uploaded_at": upsert.excluded.uploaded_at,
+                "text_state": upsert.excluded.text_state,
+                "text": upsert.excluded.text,
+                "text_checked_at": upsert.excluded.text_checked_at,
             },
         ).returning(ResumeRow)
     )

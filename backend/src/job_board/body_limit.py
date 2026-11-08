@@ -19,7 +19,8 @@ import json
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-LARGEST_BODY_BYTES = 64 * 1024  # far above any body a route here takes
+# Above any body a route here takes; the longest is a resume text save, about 60 KB.
+LARGEST_BODY_BYTES = 64 * 1024
 TOO_LARGE = json.dumps({"detail": "The request body is too large"}).encode()
 # Routes that read and cap their own bodies, matched exactly on the path the
 # router matches, with any root path taken off: a resume upload

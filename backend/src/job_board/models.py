@@ -161,6 +161,11 @@ class ResumeRow(Base):
     One per person. The file's key in the store is the same for every upload
     by that person, so a new upload replaces the file and this row in place.
 
+    The text read from the file at upload sits beside it: what the reading
+    gave, the text when there is some, and when the person checked and saved
+    it. Each upload reads its own file and clears the check. A row from before
+    the text was read has none of the three.
+
     Removing a person removes this row but not the file in the store.
     TODO: removing a person's data must also delete their resume from the store.
     """
@@ -168,6 +173,15 @@ class ResumeRow(Base):
     __tablename__ = "resumes"
     __table_args__ = (
         CheckConstraint("size_bytes BETWEEN 1 AND 5242880", name="size_bytes"),  # at most 5 MiB
+        CheckConstraint(
+            "text_state IN ('found', 'cut', 'none_found', 'failed')", name="text_state"
+        ),
+        # The cap on a resume's text, in characters, as the text rules count them.
+        CheckConstraint("char_length(text) BETWEEN 1 AND 15000", name="text_length"),
+        CheckConstraint(
+            "text_state NOT IN ('found', 'cut') OR text IS NOT NULL", name="text_when_found"
+        ),
+        CheckConstraint("text_checked_at IS NULL OR text IS NOT NULL", name="text_when_checked"),
     )
 
     person_id: Mapped[int] = mapped_column(
@@ -178,6 +192,9 @@ class ResumeRow(Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    text_state: Mapped[str | None] = mapped_column(Text)
+    text: Mapped[str | None] = mapped_column(Text)
+    text_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Score(Base):

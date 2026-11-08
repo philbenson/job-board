@@ -74,3 +74,81 @@ def test_removing_a_person_removes_their_resume_row(migrated_database_url: str) 
         migrated_database_url, "SELECT 1 FROM resumes WHERE person_id = :person", person=person
     )
     assert remaining == []
+
+
+def set_text(database_url: str, person: int, **columns: Any) -> None:
+    """Set the reading's columns, each a SQL expression, on the person's row."""
+    assignments = ", ".join(f"{name} = {value}" for name, value in columns.items())
+    run(database_url, f"UPDATE resumes SET {assignments} WHERE person_id = :person", person=person)
+
+
+def test_a_row_from_before_the_reading_has_no_state_text_or_check(
+    migrated_database_url: str,
+) -> None:
+    person = new_person(migrated_database_url)
+    add_resume(migrated_database_url, person, 1)
+
+    (row,) = run(
+        migrated_database_url,
+        "SELECT text_state, text, text_checked_at FROM resumes WHERE person_id = :person",
+        person=person,
+    )
+    run(migrated_database_url, "DELETE FROM people WHERE id = :person", person=person)
+
+    assert tuple(row) == (None, None, None)
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        {"text_state": "'found'", "text": "'Avery Example'"},
+        {"text_state": "'cut'", "text": "repeat('x', 15000)"},
+        {"text_state": "'none_found'"},
+        {"text_state": "'failed'"},
+        {"text_state": "'failed'", "text": "'typed in'", "text_checked_at": "now()"},
+        {"text": "'typed in'", "text_checked_at": "now()"},
+    ],
+    ids=["found", "cut at the cap", "none found", "failed", "failed then typed", "no state, typed"],
+)
+def test_keeps_each_state_a_reading_or_a_save_can_leave(
+    migrated_database_url: str, columns: dict[str, str]
+) -> None:
+    person = new_person(migrated_database_url)
+    add_resume(migrated_database_url, person, 1)
+    try:
+        set_text(migrated_database_url, person, **columns)
+    finally:
+        run(migrated_database_url, "DELETE FROM people WHERE id = :person", person=person)
+
+
+@pytest.mark.parametrize(
+    ("columns", "constraint"),
+    [
+        ({"text_state": "'read'"}, "ck_resumes_text_state"),
+        ({"text_state": "'found'"}, "ck_resumes_text_when_found"),
+        ({"text_state": "'cut'"}, "ck_resumes_text_when_found"),
+        ({"text_state": "'failed'", "text_checked_at": "now()"}, "ck_resumes_text_when_checked"),
+        ({"text": "''"}, "ck_resumes_text_length"),
+        ({"text": "repeat('x', 15001)"}, "ck_resumes_text_length"),
+        ({"text": "repeat('😀', 15001)"}, "ck_resumes_text_length"),
+    ],
+    ids=[
+        "a state no reading gives",
+        "found without text",
+        "cut without text",
+        "checked without text",
+        "empty text",
+        "text past the cap",
+        "text past the cap in four-byte characters",
+    ],
+)
+def test_refuses_a_reading_no_upload_or_save_can_leave(
+    migrated_database_url: str, columns: dict[str, str], constraint: str
+) -> None:
+    person = new_person(migrated_database_url)
+    add_resume(migrated_database_url, person, 1)
+    try:
+        with pytest.raises(IntegrityError, match=constraint):
+            set_text(migrated_database_url, person, **columns)
+    finally:
+        run(migrated_database_url, "DELETE FROM people WHERE id = :person", person=person)

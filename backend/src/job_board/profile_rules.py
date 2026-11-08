@@ -29,7 +29,7 @@ def sent_limit(cap: int) -> int:
     return SENT_TIMES_CAP * cap
 
 
-def _shows_something(character: str) -> bool:
+def shows_something(character: str) -> bool:
     # Format characters (Cf: zero-width spaces, joiners) and combining marks
     # (Mn) show nothing on their own.
     return not character.isspace() and unicodedata.category(character) not in {"Cf", "Mn"}
@@ -46,7 +46,7 @@ def _trims_away(character: str) -> bool:
     )
 
 
-def _trimmed(text: str) -> str:
+def trimmed(text: str) -> str:
     start, end = 0, len(text)
     while start < end and _trims_away(text[start]):
         start += 1
@@ -66,13 +66,13 @@ def checked_text(noun: str, max_length: int) -> Callable[[str], str]:
     named = noun[0].upper() + noun[1:]
 
     def check(text: str) -> str:
-        shown = unicodedata.normalize("NFC", _trimmed(text))
+        shown = unicodedata.normalize("NFC", trimmed(text))
         # Half of a surrogate pair is no character at all: JSON can spell one,
         # but no text encoding holds it, and the database would refuse the
         # document.
         if any(unicodedata.category(character) == "Cs" for character in shown):
             raise PydanticCustomError(f"{kind}_invalid_text", f"{named} must be valid text")
-        if not any(_shows_something(character) for character in shown):
+        if not any(shows_something(character) for character in shown):
             raise PydanticCustomError(f"{kind}_blank", f"{named} cannot be blank")
         if len(shown) > max_length:
             raise PydanticCustomError(

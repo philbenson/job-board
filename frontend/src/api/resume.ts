@@ -16,6 +16,10 @@ export type UploadedBody =
 export type StorageRefusalBody =
   ReadOperation['responses'][503]['content']['application/json']
 
+/** The backend's answer when storage, or a busy reading, is why an upload could not be done. */
+export type UploadRefusalBody =
+  UploadOperation['responses'][503]['content']['application/json']
+
 /** The signed-in person's resume, as the backend recorded it. */
 export type Resume = { sizeBytes: number; uploadedAt: Date }
 
@@ -28,11 +32,15 @@ export type NotSetUp = 'not set up'
 /** The service has storage set up, but the store did not answer it. */
 export type StorageDown = 'storage down'
 
+/** The service is reading other resumes and has no turn for this one yet. */
+export type Busy = 'busy'
+
 export type ResumeRead = Loaded | NotSetUp | StorageDown | 'unavailable' | 'aborted'
 export type ResumeUpload =
   | { kind: 'loaded'; resume: Resume }
   | NotSetUp
   | StorageDown
+  | Busy
   | 'unavailable'
   | 'aborted'
 export type ResumeRemoval = 'removed' | NotSetUp | StorageDown | 'unavailable' | 'aborted'
@@ -41,16 +49,21 @@ export type ResumeRemoval = 'removed' | NotSetUp | StorageDown | 'unavailable' |
 export const RESUME_READ_TIMEOUT_MS = 5_000
 // The service waits on the store for up to about 51 seconds: two tries, each
 // up to 5 seconds to connect and 20 to answer, and a pause of at most a second
-// between them (CLIENT_CONFIG in the backend's resumes/store.py).
+// between them (CLIENT_CONFIG in the backend's resumes/store.py). Before that
+// it waits up to 15 seconds for a turn to read the file's text, since each
+// worker reads one file at a time, then reads it for up to 15 more
+// (TURN_WAIT_SECONDS and wall_seconds in the backend's resumes/text_reading.py).
 // Up to 5 MB on a line as slow as about 600 kilobits a second, which takes the
-// other 69 seconds, then the store's answer.
-export const RESUME_UPLOAD_TIMEOUT_MS = 120_000
+// other 69 seconds, then the store's answer: 51 + 15 + 15 + 69.
+export const RESUME_UPLOAD_TIMEOUT_MS = 150_000
 // The store's answer, with room to spare for the request and the database.
 export const RESUME_REMOVE_TIMEOUT_MS = 60_000
 
-// The backend's sentences for its two storage answers, both 503.
+// The backend's sentences for its two storage answers, both 503, and for the
+// upload's third, when the reading is busy.
 const NOT_SET_UP_DETAIL = 'Resume storage is not set up'
 const DID_NOT_ANSWER_DETAIL = 'Resume storage did not answer; try again later'
+const READING_BUSY_DETAIL = 'Resume reading is busy; try again in a minute'
 
 /**
  * Reads the signed-in person's resume. Resolves to it, or to null before the
@@ -81,8 +94,9 @@ export function fetchResume(token: string, signal?: AbortSignal): Promise<Resume
  * Sends `file` as the signed-in person's resume, replacing any before it. The
  * file is the request's body as it is, so the browser declares its length,
  * which the service needs. Resolves to the resume as recorded for a 200; to
- * "not set up" or "storage down" for the service's two storage answers; and
- * like fetchResume otherwise, under RESUME_UPLOAD_TIMEOUT_MS. The service's
+ * "not set up" or "storage down" for the service's two storage answers; to
+ * "busy" when the service has no turn to read the file; and like fetchResume
+ * otherwise, under RESUME_UPLOAD_TIMEOUT_MS. The service's
  * own refusals of the file are "unavailable": the panel checks the size and
  * the first bytes before it sends. Never rejects.
  */
@@ -106,7 +120,8 @@ export function uploadResume(
         signal: requestSignal,
       })
       if (response.status === 503) {
-        return await storageRefusal(response)
+        const detail = await detailOf(response)
+        return detail === READING_BUSY_DETAIL ? 'busy' : storageRefusalOf(detail)
       }
       const loaded = await loadedFrom<UploadedBody>(response)
       return loaded === 'unavailable' || loaded.resume === null
@@ -142,18 +157,29 @@ export function removeResume(token: string, signal?: AbortSignal): Promise<Resum
   })
 }
 
-async function storageRefusal(
+/** Which of the service's two storage answers a 503 is, or "unavailable" for neither. */
+export async function storageRefusal(
   response: Response,
 ): Promise<NotSetUp | StorageDown | 'unavailable'> {
-  const body: unknown = await response.json()
-  if (typeof body !== 'object' || body === null) {
-    return 'unavailable'
-  }
-  const { detail } = body as Partial<Record<keyof StorageRefusalBody, unknown>>
+  return storageRefusalOf(await detailOf(response))
+}
+
+function storageRefusalOf(detail: unknown): NotSetUp | StorageDown | 'unavailable' {
   if (detail === NOT_SET_UP_DETAIL) {
     return 'not set up'
   }
   return detail === DID_NOT_ANSWER_DETAIL ? 'storage down' : 'unavailable'
+}
+
+// A refusal's sentence, of any type until checked; undefined for a body that
+// is not an object. Rejects for a body that does not parse.
+async function detailOf(response: Response): Promise<unknown> {
+  const body: unknown = await response.json()
+  if (typeof body !== 'object' || body === null) {
+    return undefined
+  }
+  const { detail } = body as Partial<Record<keyof UploadRefusalBody, unknown>>
+  return detail
 }
 
 // Body names the operation's own answer, so each route's fields are checked

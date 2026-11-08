@@ -1,7 +1,13 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ResumeBody, StorageRefusalBody, UploadedBody } from '../api/resume.ts'
+import type {
+  ResumeBody,
+  StorageRefusalBody,
+  UploadedBody,
+  UploadRefusalBody,
+} from '../api/resume.ts'
+import type { ResumeTextBody } from '../api/resumeText.ts'
 import { ResumePanel } from './ResumePanel.tsx'
 
 // Clerk replaced by a stand-in that hands out a session token, so no test
@@ -20,7 +26,7 @@ const LARGEST = 5 * 1024 * 1024
 const LOADING = 'Loading your resume…'
 const NOT_LOADED = 'Could not load your resume'
 const NONE_YET = 'No resume yet'
-const UPLOADING = 'Uploading your resume…'
+const UPLOADING = 'Uploading and reading your resume…'
 const UPLOADED = 'Resume uploaded'
 const REMOVING = 'Removing your resume…'
 const REMOVED = 'Resume removed'
@@ -30,11 +36,16 @@ const CHOOSE_FIRST = 'Choose a PDF first'
 const NOT_SET_UP = 'Resume storage is not set up on this service yet'
 const STORAGE_DOWN = 'Could not reach resume storage; try again later'
 const NOT_UPLOADED = 'Could not upload your resume'
+const READING_BUSY = 'The service is busy reading resumes. Try again in a minute.'
 const NOT_REMOVED = 'Could not remove your resume'
 const NOT_READ = 'Could not read that file; choose it again'
 
 const EARLIER = '2026-11-01T09:30:00Z'
 const LATER = '2026-11-07T20:29:59.747970Z'
+
+// On one line each, since a display value is matched with its spaces collapsed.
+const TEXT_READ = 'Avery Example, Staff Engineer at Example Widgets'
+const NEW_TEXT_READ = 'Avery Example, Principal Engineer at Example Widgets'
 
 // The page's own way of writing a time, so the tests hold in any locale and
 // time zone they run in.
@@ -61,11 +72,14 @@ const STORAGE_NOT_SET_UP = {
 const DID_NOT_ANSWER = {
   detail: 'Resume storage did not answer; try again later',
 } satisfies StorageRefusalBody
+const BUSY = {
+  detail: 'Resume reading is busy; try again in a minute',
+} satisfies UploadRefusalBody
 
 // A body the contract allows, typed so it changes when the backend's does.
 function answer(
   status: number,
-  body: ResumeBody | UploadedBody | StorageRefusalBody,
+  body: ResumeBody | UploadedBody | StorageRefusalBody | UploadRefusalBody,
 ): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
@@ -86,13 +100,16 @@ function answerOnlyAbort(init?: RequestInit): Promise<Response> {
 
 type Reply = (init?: RequestInit) => Promise<Response>
 
-// The resume route answers a read with `read`, an upload and a removal as the
-// test says; until a test says, they never answer.
+// The resume route answers a read with `read`, an upload, a removal and a read
+// of the resume's text as the test says; until a test says, they never answer.
 function service(
   read: Reply,
-  answers: { upload?: Reply; remove?: Reply } = {},
+  answers: { upload?: Reply; remove?: Reply; text?: Reply } = {},
 ) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+    if (url === '/api/resume/text') {
+      return (answers.text ?? answerOnlyAbort)(init)
+    }
     if (url !== '/api/resume') {
       return Promise.reject(new TypeError(`unexpected request to ${url}`))
     }
@@ -124,8 +141,17 @@ function chooser(): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>('Choose a PDF')
 }
 
+// The panel's own status line, not the one its text check holds.
 function status(): HTMLElement {
-  return screen.getByRole('status')
+  const check = screen.queryByRole('region', { name: 'Resume text' })
+  const lines = screen.getAllByRole('status').filter((line) => check?.contains(line) !== true)
+  expect(lines).toHaveLength(1)
+  return lines[0] as HTMLElement
+}
+
+function textRead(text: string, uploadedAt: string): Promise<Response> {
+  const body: ResumeTextBody = { uploaded_at: uploadedAt, state: 'found', text, checked_at: null }
+  return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }))
 }
 
 async function loaded(): Promise<void> {
@@ -356,6 +382,7 @@ describe('ResumePanel', () => {
   it.each([
     ['storage is not set up', () => answer(503, STORAGE_NOT_SET_UP), NOT_SET_UP],
     ['the store did not answer', () => answer(503, DID_NOT_ANSWER), STORAGE_DOWN],
+    ['reading is busy', () => answer(503, BUSY), READING_BUSY],
     ['the service answered something else', () => answer(503, { detail: 'down' }), NOT_UPLOADED],
     ['the request failed', () => Promise.reject(new TypeError('Failed to fetch')), NOT_UPLOADED],
   ])('says so when an upload fails because %s, keeping what was there', async (_case, reply, said) => {
@@ -437,7 +464,7 @@ describe('ResumePanel', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toHaveAttribute('aria-disabled', 'false')
   })
 
-  it('gives up on an upload after two minutes, the session token included', async () => {
+  it('gives up on an upload after two and a half minutes, the session token included', async () => {
     vi.useFakeTimers()
     service(() => answer(200, NONE))
     render(<ResumePanel />)
@@ -447,7 +474,7 @@ describe('ResumePanel', () => {
 
     fireEvent.change(chooser(), { target: { files: [pdf(2064)] } })
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
-    await act(() => vi.advanceTimersByTimeAsync(119_999))
+    await act(() => vi.advanceTimersByTimeAsync(149_999))
     expect(status()).toHaveTextContent(UPLOADING)
     await act(() => vi.advanceTimersByTimeAsync(1))
 
@@ -471,5 +498,48 @@ describe('ResumePanel', () => {
     unmount()
 
     expect(init?.signal?.aborted).toBe(true)
+  })
+
+  it('offers the text check once a resume is held, and none before', async () => {
+    service(() => answer(200, NONE), {
+      upload: () => answer(200, recorded(2064, LATER)),
+      text: () => textRead(TEXT_READ, LATER),
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel />)
+    await loaded()
+    expect(screen.queryByRole('region', { name: 'Resume text' })).not.toBeInTheDocument()
+
+    await user.upload(chooser(), pdf(2064))
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+
+    const check = await screen.findByRole('region', { name: 'Resume text' })
+    expect(await within(check).findByLabelText("Your resume's text")).toHaveValue(TEXT_READ)
+  })
+
+  it('reads the text again for a new upload, dropping what was typed for the old file', async () => {
+    const fetchMock = service(() => answer(200, held(2064, EARLIER)), {
+      upload: () => answer(200, recorded(4096, LATER)),
+      text: () =>
+        sent(fetchMock, 'PUT').length === 0
+          ? textRead(TEXT_READ, EARLIER)
+          : textRead(NEW_TEXT_READ, LATER),
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel />)
+    await loaded()
+    const box = await screen.findByLabelText<HTMLTextAreaElement>("Your resume's text")
+    await screen.findByDisplayValue(TEXT_READ)
+    fireEvent.change(box, { target: { value: 'typed for the old file' } })
+
+    await user.upload(chooser(), pdf(4096))
+    await user.click(screen.getByRole('button', { name: 'Replace' }))
+
+    expect(await screen.findByDisplayValue(NEW_TEXT_READ)).toBe(
+      screen.getByLabelText("Your resume's text"),
+    )
+    expect(screen.queryByDisplayValue('typed for the old file')).not.toBeInTheDocument()
+    const textReads = fetchMock.mock.calls.filter(([url]) => url === '/api/resume/text')
+    expect(textReads).toHaveLength(2)
   })
 })

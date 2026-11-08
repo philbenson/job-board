@@ -1,29 +1,34 @@
+import asyncio
 import logging
 import secrets
 from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
-from fastapi import FastAPI, Request
+from held_reader import FILLER, HeldReader
 from local_s3 import LocalBucket
-from session_tokens import claims, signed
+from pdf_files import pdf, resume_lines
+from resume_service import (
+    A_PDF,
+    A_PDF_TEXT,
+    ACCESS_KEY_ID,
+    SECRET_ACCESS_KEY,
+    Service,
+    Someone,
+    pdf_headers,
+    run,
+    service_for,
+    storage_settings,
+)
 from settings_for_tests import make_settings
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import Message
 
 from job_board.app import create_app
-from job_board.database import get_session
 
 LARGEST = 5 * 1024 * 1024
-ACCESS_KEY_ID = "resume-test-access-key-id"
-SECRET_ACCESS_KEY = "resume-test-secret-access-key"
-A_PDF = b"%PDF-1.7\n" + secrets.token_bytes(2048) + b"\n%%EOF\n"
 CHUNK = 64 * 1024
 
 NOT_SET_UP = {"detail": "Resume storage is not set up"}
@@ -34,53 +39,7 @@ SEND_THE_LENGTH = {"detail": "Send the file's length"}
 TOO_LARGE = {"detail": "A resume can be at most 5 MB"}
 LONGER_THAN_DECLARED = {"detail": "The file is longer than its declared length"}
 ENDED_EARLY = {"detail": "The file ended before its declared length"}
-
-
-def run(database_url: str, sql: str, **values: Any) -> list[Any]:
-    engine = create_engine(database_url)
-    try:
-        with engine.begin() as connection:
-            result = connection.execute(text(sql), values)
-            return list(result) if result.returns_rows else []
-    finally:
-        engine.dispose()
-
-
-class Someone:
-    """A person with a session token, whose rows the test removes after."""
-
-    def __init__(self, database_url: str) -> None:
-        self.database_url = database_url
-        self.clerk_user_id = f"user_{secrets.token_hex(12)}"
-        self.headers = {"Authorization": f"Bearer {signed(claims(sub=self.clerk_user_id))}"}
-
-    def person_id(self) -> int:
-        (row,) = run(
-            self.database_url,
-            "SELECT id FROM people WHERE clerk_user_id = :user",
-            user=self.clerk_user_id,
-        )
-        person_id: int = row.id
-        return person_id
-
-    def key(self) -> str:
-        return f"resumes/{self.person_id()}.pdf"
-
-    def rows(self) -> list[Any]:
-        return run(
-            self.database_url,
-            "SELECT r.object_key, r.size_bytes, r.uploaded_at "
-            "FROM resumes r JOIN people p ON p.id = r.person_id WHERE p.clerk_user_id = :user",
-            user=self.clerk_user_id,
-        )
-
-    def remove(self) -> None:
-        # The resume row goes with the person.
-        run(
-            self.database_url,
-            "DELETE FROM people WHERE clerk_user_id = :user",
-            user=self.clerk_user_id,
-        )
+READING_BUSY = {"detail": "Resume reading is busy; try again in a minute"}
 
 
 @pytest.fixture
@@ -97,42 +56,6 @@ def someone_else(migrated_database_url: str) -> Iterator[Someone]:
     person.remove()
 
 
-@dataclass
-class Service:
-    client: httpx.AsyncClient
-    app: FastAPI
-    sessions: list[AsyncSession] = field(default_factory=list)
-
-
-def storage_settings(endpoint: str, bucket: str) -> dict[str, str]:
-    return {
-        "s3_endpoint_url": endpoint,
-        "s3_region": "auto",  # R2's region, as the service is run against it
-        "s3_bucket": bucket,
-        "s3_access_key_id": ACCESS_KEY_ID,
-        "s3_secret_access_key": SECRET_ACCESS_KEY,
-    }
-
-
-@asynccontextmanager
-async def service_for(database_url: str, **storage: str) -> AsyncIterator[Service]:
-    app = create_app(make_settings(database_url=database_url, **storage))
-    sessions: list[AsyncSession] = []
-
-    async def recorded_session(request: Request) -> AsyncIterator[AsyncSession]:
-        # The session get_session gives, opened here rather than by iterating
-        # get_session, which would leave its session open when a route refuses.
-        async with request.app.state.sessionmaker() as session:
-            sessions.append(session)
-            yield session
-
-    app.dependency_overrides[get_session] = recorded_session
-    async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            yield Service(client, app, sessions)
-
-
 @pytest.fixture
 async def service(
     migrated_database_url: str, local_s3: str, s3_bucket: LocalBucket
@@ -140,10 +63,6 @@ async def service(
     settings = storage_settings(local_s3, s3_bucket.name)
     async with service_for(migrated_database_url, **settings) as running:
         yield running
-
-
-def pdf_headers(person: Someone, **more: str) -> dict[str, str]:
-    return {**person.headers, "Content-Type": "application/pdf", **more}
 
 
 @dataclass
@@ -229,6 +148,63 @@ async def test_a_second_upload_replaces_the_file_and_the_row(
     assert row.uploaded_at >= first_row.uploaded_at
     assert s3_bucket.stored_keys() == [someone.key()]
     assert s3_bucket.read(someone.key())[0] == second
+
+
+async def test_an_upload_keeps_the_text_read_from_the_file_unchecked(
+    service: Service, someone: Someone
+) -> None:
+    uploaded = await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+
+    assert uploaded.status_code == 200
+    assert uploaded.json().keys() == {"resume"}
+    assert uploaded.json()["resume"].keys() == {"size_bytes", "uploaded_at"}
+    assert tuple(someone.text_row()) == ("found", A_PDF_TEXT, None)
+
+
+async def test_a_second_upload_reads_its_own_text_and_clears_the_check(
+    service: Service, someone: Someone
+) -> None:
+    await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+    someone.check_text()
+    assert someone.text_row().text_checked_at is not None
+    unreadable = b"%PDF-1.7\n" + secrets.token_bytes(2048) + b"\n%%EOF\n"
+
+    replaced = await service.client.put("/resume", headers=pdf_headers(someone), content=unreadable)
+
+    assert replaced.status_code == 200
+    assert tuple(someone.text_row()) == ("failed", None, None)
+
+
+async def test_an_upload_refused_as_busy_changes_neither_the_store_nor_the_row(
+    service: Service, someone: Someone, s3_bucket: LocalBucket, caplog: pytest.LogCaptureFixture
+) -> None:
+    reader = HeldReader()
+    service.app.state.resume_text_reader = reader
+    reader.let_go.set()
+    await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+    before = (someone.rows(), tuple(someone.text_row()), s3_bucket.read(someone.key()))
+    reader.let_go.clear()
+    being_read = pdf(resume_lines()[:4])
+    first = asyncio.create_task(
+        service.client.put("/resume", headers=pdf_headers(someone), content=being_read)
+    )
+    await reader.reading_begins(2)
+
+    with caplog.at_level(logging.WARNING):
+        refused = await service.client.put(
+            "/resume", headers=pdf_headers(someone), content=pdf(resume_lines()[4:])
+        )
+
+    assert (refused.status_code, refused.json()) == (503, READING_BUSY)
+    assert (someone.rows(), tuple(someone.text_row()), s3_bucket.read(someone.key())) == before
+    ours = [record.getMessage() for record in caplog.records if record.name.startswith("job_board")]
+    assert ours == [
+        "resume text reading refused as busy: that person's upload is already being read or waiting"
+    ]
+    reader.let_go.set()
+    assert (await first).status_code == 200
+    assert s3_bucket.read(someone.key()) == (being_read, "application/pdf")
+    assert tuple(someone.text_row()) == ("found", FILLER, None)
 
 
 async def test_takes_the_media_type_whatever_its_case_and_parameters(
@@ -397,6 +373,18 @@ async def test_a_client_that_goes_away_mid_upload_leaves_nothing_stored(
 
 
 @dataclass
+class WatchedReader:
+    """Stands in front of the service's text reader, noting the request's database state."""
+
+    reader: Any
+    store: WatchedStore
+
+    async def read(self, file: bytes | bytearray, person: Any) -> Any:
+        self.store.look("read")
+        return await self.reader.read(file, person)
+
+
+@dataclass
 class WatchedStore:
     """Stands in front of the service's store, noting the request's database state at each call."""
 
@@ -418,17 +406,20 @@ class WatchedStore:
         await self.store.delete(key)
 
 
-async def test_holds_no_database_transaction_or_connection_while_the_store_answers(
+async def test_holds_no_database_transaction_or_connection_while_the_text_or_store_answers(
     service: Service, someone: Someone
 ) -> None:
     watched = WatchedStore(service.app.state.resume_store, service)
     service.app.state.resume_store = watched
+    reader = WatchedReader(service.app.state.resume_text_reader, watched)
+    service.app.state.resume_text_reader = reader
 
     uploaded = await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
     removed = await service.client.delete("/resume", headers=someone.headers)
 
     assert (uploaded.status_code, removed.status_code) == (200, 204)
-    assert watched.seen == [("put", False, 0), ("delete", False, 0)]
+    # The text is read once the file is in, and before the store keeps it.
+    assert watched.seen == [("read", False, 0), ("put", False, 0), ("delete", False, 0)]
 
 
 async def test_holds_no_database_transaction_or_connection_while_the_file_arrives(
@@ -616,6 +607,9 @@ def test_the_description_declares_each_answer_and_the_file_as_the_body() -> None
     assert set(route) == {"get", "put", "delete"}
     assert set(route["get"]["responses"]) == {"200", "401", "503"}
     assert set(route["put"]["responses"]) == {"200", "400", "401", "411", "413", "415", "503"}
+    assert route["put"]["responses"]["503"]["description"] == (
+        "Resume storage is not set up, or did not answer, or reading is busy"
+    )
     assert set(route["delete"]["responses"]) == {"204", "401", "503"}
     assert route["put"]["requestBody"] == {
         "required": True,

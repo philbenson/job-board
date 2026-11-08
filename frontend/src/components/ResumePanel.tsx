@@ -13,6 +13,8 @@ import {
   type ResumeUpload,
 } from '../api/resume.ts'
 import { withToken } from '../api/withToken.ts'
+import { ResumeTextCheck } from './ResumeTextCheck.tsx'
+import { timeOf } from './timeOf.ts'
 
 // The backend holds the same cap and refuses past it; checking here first lets
 // the person hear it at once, before 5 MB goes up a slow line for nothing.
@@ -25,6 +27,7 @@ const MEGABYTE = 1024 * 1024
 
 const NOT_SET_UP = 'Resume storage is not set up on this service yet'
 const STORAGE_DOWN = 'Could not reach resume storage; try again later'
+const READING_BUSY = 'The service is busy reading resumes. Try again in a minute.'
 
 type Loading =
   | { kind: 'loading' }
@@ -42,11 +45,12 @@ type Shown =
 /**
  * The signed-in person's resume: loads it once on mount, shows its size and
  * when it was uploaded, and uploads a chosen PDF or removes the one held.
+ * Below a resume held, the text read from it, for the person to check.
  *
- * Invariant: at most one request is out at a time, and what is shown after
- * one answers is what the backend recorded. While one is out the buttons are
- * held with aria-disabled and guarded handlers rather than disabled, which
- * would drop keyboard focus to the page, as ProfilePanel does.
+ * Invariant: at most one of the panel's own requests is out at a time, and
+ * what is shown after one answers is what the backend recorded. While one is
+ * out the buttons are held with aria-disabled and guarded handlers rather than
+ * disabled, which would drop keyboard focus to the page, as ProfilePanel does.
  */
 export function ResumePanel() {
   const { getToken } = useAuth()
@@ -238,6 +242,10 @@ export function ResumePanel() {
           {/* The status line stays on the page while the panel shows, and
               changes its words, which is what a screen reader announces. */}
           <p role="status">{statusLine(shown)}</p>
+          {/* Keyed on the upload, so a new file is read and checked afresh. */}
+          {loading.resume !== null && (
+            <ResumeTextCheck key={loading.resume.uploadedAt.getTime()} />
+          )}
         </>
       )}
     </section>
@@ -249,7 +257,7 @@ function statusLine(shown: Shown): string {
     case 'idle':
       return ''
     case 'uploading':
-      return 'Uploading your resume…'
+      return 'Uploading and reading your resume…'
     case 'removing':
       return 'Removing your resume…'
     case 'said':
@@ -257,11 +265,20 @@ function statusLine(shown: Shown): string {
   }
 }
 
-function failure(outcome: 'not set up' | 'storage down' | 'unavailable', otherwise: string): string {
-  if (outcome === 'not set up') {
-    return NOT_SET_UP
+function failure(
+  outcome: 'not set up' | 'storage down' | 'busy' | 'unavailable',
+  otherwise: string,
+): string {
+  switch (outcome) {
+    case 'not set up':
+      return NOT_SET_UP
+    case 'storage down':
+      return STORAGE_DOWN
+    case 'busy':
+      return READING_BUSY
+    case 'unavailable':
+      return otherwise
   }
-  return outcome === 'storage down' ? STORAGE_DOWN : otherwise
 }
 
 async function startsAsAPdf(file: File): Promise<boolean> {
@@ -276,12 +293,4 @@ function sizeOf(bytes: number): string {
     return `${Math.max(1, Math.floor(bytes / KILOBYTE))} KB`
   }
   return `${(bytes / MEGABYTE).toFixed(1)} MB`
-}
-
-// In the browser's own locale and time zone.
-function timeOf(uploadedAt: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(uploadedAt)
 }
