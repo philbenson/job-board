@@ -139,6 +139,32 @@ def test_the_tests_run_with_custom_anthropic_headers_unset() -> None:
     assert "ANTHROPIC_CUSTOM_HEADERS" not in os.environ
 
 
+@pytest.mark.parametrize("value", ["debug", "info"])
+def test_refuses_to_start_while_the_anthropic_librarys_own_logging_is_on(
+    scoring_environment: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
+) -> None:
+    scoring_environment.setenv("ANTHROPIC_LOG", value)
+    assert main(model_factory=never_built) == EXIT_REFUSED
+    refusals = [line for line in caplog.messages if "ANTHROPIC_LOG" in line]
+    assert len(refusals) == 1
+    assert f"={value}" not in refusals[0] and f"'{value}'" not in refusals[0]
+
+
+@pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
+async def test_starts_while_the_anthropic_librarys_own_logging_is_off(
+    scoring_environment: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        scoring_environment.delenv("ANTHROPIC_LOG", raising=False)
+    else:
+        scoring_environment.setenv("ANTHROPIC_LOG", value)
+    assert await _main_off_the_loop(never_built) == 0
+
+
+def test_the_tests_run_with_the_anthropic_librarys_own_logging_unset() -> None:
+    assert "ANTHROPIC_LOG" not in os.environ
+
+
 def test_the_command_refuses_tracing_as_a_process(tmp_path: Path) -> None:
     environment = {
         name: value

@@ -1,13 +1,16 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  ProfileBody,
-  SaveRefusalBody,
-  TargetTitlesBody,
-} from '../api/profile.ts'
+import type { SaveRefusalBody, TargetTitlesBody } from '../api/profile.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
-import { profileWith } from '../test/profileAnswers.ts'
+import {
+  answer,
+  heldReply,
+  profileWith,
+  sentTo,
+  stubProfileService,
+  type Reply,
+} from '../test/profileAnswers.ts'
 
 // Clerk replaced by a stand-in that hands out a session token, so no test
 // reaches Clerk's servers.
@@ -21,54 +24,31 @@ vi.mock('@clerk/react', () => ({
 
 const SESSION_TOKEN = 'header.payload.signature'
 
-const LOADING = 'Loading your target titles…'
-const NOT_LOADED = 'Could not load your target titles'
+const LOADING = 'Loading your profile…'
+const NOT_LOADED = 'Could not load your profile. Reload the page to try again.'
 const NONE_YET = 'No target titles yet'
 const AT_MOST_TWENTY = 'You can list at most 20 target titles'
 const SAVED = 'Saved'
 const SAVING = 'Saving…'
 const NOT_SAVED = 'Could not save your target titles; your changes are still here'
 
-// A body the contract allows, typed so it changes when the backend's does.
-function answer(status: number, body: ProfileBody | SaveRefusalBody): Promise<Response> {
-  return Promise.resolve(
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    }),
+// The profile route answers with `stored` titles and no other section; the
+// target titles' route as the test says.
+function service(stored: string[], save?: Reply) {
+  return stubProfileService(
+    profileWith(stored),
+    save === undefined ? {} : { '/profile/target-titles': save },
   )
 }
 
-// A request that never answers, and fails the way fetch does when aborted.
-function answerOnlyAbort(init?: RequestInit): Promise<Response> {
-  return new Promise<Response>((_resolve, reject) => {
-    init?.signal?.addEventListener('abort', () => {
-      reject(new DOMException('The request was aborted', 'AbortError'))
-    })
-  })
-}
-
-type Reply = (init?: RequestInit) => Promise<Response>
-
-// The profile route answers with `stored`; the save route as the test says.
-function service(stored: string[], save: Reply = () => answerOnlyAbort()) {
-  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-    if (url === '/api/profile') {
-      return answer(200, profileWith(stored))
-    }
-    if (url === '/api/profile/target-titles') {
-      return save(init)
-    }
-    return Promise.reject(new TypeError(`unexpected request to ${url}`))
-  })
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
-}
-
 function sentTitles(fetchMock: ReturnType<typeof service>): string[] {
-  const call = fetchMock.mock.calls.find(([url]) => url === '/api/profile/target-titles')
-  const body = JSON.parse(call?.[1]?.body as string) as TargetTitlesBody
-  return body.titles
+  const [body] = sentTo(fetchMock, '/profile/target-titles') as TargetTitlesBody[]
+  return body?.titles ?? []
+}
+
+// The target titles' part, where every query below looks.
+function titlesPart() {
+  return within(screen.getByRole('region', { name: 'Target titles' }))
 }
 
 function shownTitles(): string[] {
@@ -125,7 +105,7 @@ describe('ProfilePanel', () => {
     expect(screen.queryByText(NONE_YET)).not.toBeInTheDocument()
   })
 
-  it('says the titles could not load, and offers nothing to save over them', async () => {
+  it('says the profile could not load, and offers nothing to save over it', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.resolve(new Response('down', { status: 503 }))),
@@ -137,7 +117,7 @@ describe('ProfilePanel', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('says the titles could not load when Clerk has no token, asking the service nothing', async () => {
+  it('says the profile could not load when Clerk has no token, asking the service nothing', async () => {
     clerk.getToken.mockResolvedValue(null)
     const fetchMock = service(['Designer'])
 
@@ -154,7 +134,7 @@ describe('ProfilePanel', () => {
     clerk.getToken.mockResolvedValue(null)
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
     expect(await screen.findByText(NOT_SAVED)).toBeInTheDocument()
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
@@ -169,8 +149,8 @@ describe('ProfilePanel', () => {
 
     // A live region is announced when its words change, not when it arrives
     // already holding them.
-    const [addLine, saveLine] = screen.getAllByRole('status')
-    expect(screen.getAllByRole('status')).toHaveLength(2)
+    const [addLine, saveLine] = titlesPart().getAllByRole('status')
+    expect(titlesPart().getAllByRole('status')).toHaveLength(2)
     expect(addLine).toHaveTextContent('')
     expect(saveLine).toHaveTextContent('')
 
@@ -179,7 +159,7 @@ describe('ProfilePanel', () => {
       'designer{Enter}',
     )
     expect(addLine).toHaveTextContent('Designer is already in your list')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
     await screen.findByText(SAVED)
     expect(saveLine).toHaveTextContent(SAVED)
     expect(addLine).toHaveTextContent('')
@@ -211,7 +191,7 @@ describe('ProfilePanel', () => {
     const input = screen.getByRole('textbox', { name: 'Add a target title' })
 
     await user.type(input, '  Data analyst  ')
-    await user.click(screen.getByRole('button', { name: 'Add' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Add target title' }))
     await user.type(input, 'Writer{Enter}')
     await user.type(input, '   {Enter}')
 
@@ -317,9 +297,9 @@ describe('ProfilePanel', () => {
       screen.getByRole('textbox', { name: 'Add a target title' }),
       'Writer{Enter}',
     )
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
-    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText(SAVING)).toBeInTheDocument()
     expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
     const stored = profileWith(['Designer', 'Writer (stored)'])
@@ -329,7 +309,7 @@ describe('ProfilePanel', () => {
 
     expect(await screen.findByText(SAVED)).toBeInTheDocument()
     expect(shownTitles()).toEqual(['Designer', 'Writer (stored)'])
-    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'false')
     expect(screen.queryByText(SAVING)).not.toBeInTheDocument()
   })
 
@@ -343,12 +323,12 @@ describe('ProfilePanel', () => {
     render(<ProfilePanel />)
     await loaded()
     const input = screen.getByRole('textbox', { name: 'Add a target title' })
-    const save = screen.getByRole('button', { name: 'Save' })
+    const save = titlesPart().getByRole('button', { name: 'Save target titles' })
 
     await user.click(save)
     for (const control of [
       input,
-      screen.getByRole('button', { name: 'Add' }),
+      titlesPart().getByRole('button', { name: 'Add target title' }),
       screen.getByRole('button', { name: 'Remove Designer' }),
       save,
     ]) {
@@ -379,7 +359,7 @@ describe('ProfilePanel', () => {
     const user = userEvent.setup()
     render(<ProfilePanel />)
     await loaded()
-    const save = screen.getByRole('button', { name: 'Save' })
+    const save = titlesPart().getByRole('button', { name: 'Save target titles' })
 
     save.focus()
     await user.keyboard('{Enter}')
@@ -415,7 +395,7 @@ describe('ProfilePanel', () => {
       screen.getByRole('textbox', { name: 'Add a target title' }),
       'Writer{Enter}',
     )
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
 
     // The rule names the title by its place in the list that was sent.
     expect(
@@ -432,14 +412,14 @@ describe('ProfilePanel', () => {
     await act(() => vi.advanceTimersByTimeAsync(0))
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Designer' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(titlesPart().getByRole('button', { name: 'Save target titles' }))
     await act(() => vi.advanceTimersByTimeAsync(4_999))
-    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'true')
     await act(() => vi.advanceTimersByTimeAsync(1))
 
     expect(screen.getByText(NOT_SAVED)).toBeInTheDocument()
     expect(screen.getByText(NONE_YET)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
+    expect(titlesPart().getByRole('button', { name: 'Save target titles' })).toHaveAttribute('aria-disabled', 'false')
     expect(screen.queryByText(SAVED)).not.toBeInTheDocument()
   })
 
@@ -453,12 +433,183 @@ describe('ProfilePanel', () => {
       screen.getByRole('button', { name: 'Remove Designer' }),
       screen.getByRole('button', { name: 'Remove Writer' }),
       screen.getByRole('textbox', { name: 'Add a target title' }),
-      screen.getByRole('button', { name: 'Add' }),
-      screen.getByRole('button', { name: 'Save' }),
+      titlesPart().getByRole('button', { name: 'Add target title' }),
+      titlesPart().getByRole('button', { name: 'Save target titles' }),
     ]
     for (const control of order) {
       await user.tab()
       expect(control).toHaveFocus()
     }
+  })
+})
+
+// A part of the panel, found by its heading.
+function part(heading: string) {
+  return within(screen.getByRole('region', { name: heading }))
+}
+
+const NEARBY_TITLES = '/profile/title-range'
+
+describe('ProfilePanel, as parts', () => {
+  beforeEach(() => {
+    clerk.getToken.mockReset()
+    clerk.getToken.mockResolvedValue(SESSION_TOKEN)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('heads the profile and each part, in order, and says what scoring reads', async () => {
+    service([])
+    render(<ProfilePanel />)
+    await loaded()
+
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Your profile')
+    expect(
+      screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
+    ).toEqual([
+      'Target titles',
+      'Nearby titles',
+      'Places',
+      'Pay',
+      'Skills',
+      'Gaps and trade-offs',
+      'Deal-breakers',
+      'Companies',
+      'Pace',
+      'Your own rules',
+    ])
+    expect(
+      screen.getByText('Scoring reads every section except pace, which nothing reads yet.'),
+    ).toBeInTheDocument()
+  })
+
+  it('says a part never saved is not answered yet, starting it empty, until a save lands', async () => {
+    const fetchMock = service([])
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const nearby = part('Nearby titles')
+
+    expect(nearby.getByText('Not answered yet.')).toBeInTheDocument()
+    expect(part('Target titles').queryByText('Not answered yet.')).not.toBeInTheDocument()
+    expect(nearby.queryByRole('list')).not.toBeInTheDocument()
+    expect(nearby.getByRole('checkbox', { name: 'A lower level than my target titles is fine' })).not.toBeChecked()
+    expect(part('Pay').getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' })).toHaveValue('')
+
+    fetchMock.mockImplementation(() =>
+      answer(200, { ...profileWith([]), title_range: { nearby_titles: [], lower_level_ok: false } }),
+    )
+    await user.click(nearby.getByRole('button', { name: 'Save nearby titles' }))
+
+    expect(await nearby.findByText(SAVED)).toBeInTheDocument()
+    expect(nearby.queryByText('Not answered yet.')).not.toBeInTheDocument()
+    expect(part('Places').getByText('Not answered yet.')).toBeInTheDocument()
+  })
+
+  it("leaves another part's unsaved edits alone, and lets two parts save at once", async () => {
+    const nearbySave = heldReply()
+    const paySave = heldReply()
+    const fetchMock = stubProfileService(profileWith([]), {
+      [NEARBY_TITLES]: nearbySave.reply,
+      '/profile/pay': paySave.reply,
+    })
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const nearby = part('Nearby titles')
+    const pay = part('Pay')
+
+    await user.type(nearby.getByRole('textbox', { name: 'Add a nearby title' }), 'Data Scientist{Enter}')
+    await user.type(pay.getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' }), '90,000')
+    await user.type(pay.getByRole('textbox', { name: 'Base pay you would ask for, in US dollars a year' }), '120,000')
+    await user.click(part('Places').getByRole('checkbox', { name: 'A fully remote role is fine' }))
+    await user.click(nearby.getByRole('button', { name: 'Save nearby titles' }))
+    await user.click(pay.getByRole('button', { name: 'Save pay' }))
+
+    expect(sentTo(fetchMock, NEARBY_TITLES)).toHaveLength(1)
+    expect(sentTo(fetchMock, '/profile/pay')).toEqual([{ floor_usd: 90_000, ask_usd: 120_000 }])
+    const titleRange = { nearby_titles: ['Data Scientist'], lower_level_ok: false }
+    const payStored = { floor_usd: 90_000, ask_usd: 120_000 }
+    await act(async () => {
+      paySave.finish(await answer(200, { ...profileWith([]), pay: payStored }))
+    })
+    await act(async () => {
+      nearbySave.finish(
+        await answer(200, { ...profileWith([]), title_range: titleRange, pay: payStored }),
+      )
+    })
+
+    expect(nearby.getByText(SAVED)).toBeInTheDocument()
+    expect(pay.getByText(SAVED)).toBeInTheDocument()
+    expect(pay.getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' })).toHaveValue('90,000')
+    expect(within(nearby.getByRole('list', { name: 'Your nearby titles' })).getByText('Data Scientist')).toBeInTheDocument()
+    // Places was never sent: its tick is still on the page, unsaved.
+    expect(part('Places').getByRole('checkbox', { name: 'A fully remote role is fine' })).toBeChecked()
+    expect(part('Places').getByText('Not answered yet.')).toBeInTheDocument()
+  })
+
+  it('holds every control in a saving part, keeping focus on its Save, while the other parts stay live', async () => {
+    const placesSave = heldReply()
+    stubProfileService(profileWith(['Designer']), { '/profile/places': placesSave.reply })
+    const user = userEvent.setup()
+    render(<ProfilePanel />)
+    await loaded()
+    const places = screen.getByRole('region', { name: 'Places' })
+    await user.type(within(places).getByRole('textbox', { name: 'City' }), 'Boston{Enter}')
+    await user.type(within(places).getByRole('textbox', { name: 'Add a company you would move for' }), 'Example Corp{Enter}')
+    const save = within(places).getByRole('button', { name: 'Save places' })
+
+    save.focus()
+    await user.keyboard('{Enter}')
+
+    expect(save).toHaveFocus()
+    expect(save).not.toBeDisabled()
+    const controls = [
+      ...within(places).getAllByRole('textbox'),
+      ...within(places).getAllByRole('button'),
+      ...within(places).getAllByRole('checkbox'),
+      ...within(places).getAllByRole('combobox'),
+    ]
+    expect(controls.length).toBeGreaterThan(55)
+    for (const control of controls) {
+      expect(control).toHaveAttribute('aria-disabled', 'true')
+    }
+    for (const heading of [
+      'Target titles',
+      'Nearby titles',
+      'Pay',
+      'Skills',
+      'Gaps and trade-offs',
+      'Deal-breakers',
+      'Companies',
+      'Pace',
+      'Your own rules',
+    ]) {
+      const region = screen.getByRole('region', { name: heading })
+      for (const control of [
+        ...within(region).getAllByRole('textbox'),
+        ...within(region).getAllByRole('button'),
+      ]) {
+        expect(control).toHaveAttribute('aria-disabled', 'false')
+      }
+    }
+    await user.click(within(places).getByRole('checkbox', { name: 'Ohio' }))
+    expect(within(places).getByRole('checkbox', { name: 'Ohio' })).not.toBeChecked()
+  })
+
+  it('aborts a save still in flight when the panel goes', async () => {
+    const fetchMock = service([])
+    const user = userEvent.setup()
+    const { unmount } = render(<ProfilePanel />)
+    await loaded()
+
+    await user.click(part('Places').getByRole('button', { name: 'Save places' }))
+    const init = fetchMock.mock.calls.find(([url]) => url === '/api/profile/places')?.[1]
+    expect(init?.signal?.aborted).toBe(false)
+    unmount()
+
+    expect(init?.signal?.aborted).toBe(true)
   })
 })

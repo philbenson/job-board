@@ -36,6 +36,7 @@ from job_board.scoring.graph import rate
 from job_board.scoring.model import SCORING_MODEL, ModelFactory, Rating
 from job_board.scoring.people import PROVIDER, candidate, eligible_people, unscored_postings
 from job_board.scoring.posting_text import posting_text
+from job_board.scoring.profile_text import profile_text
 
 BATCH_SIZE = 25  # postings rated per person per run, which bounds what one run costs them
 # The first key of every lock scoring takes, the person's id the second. Its bytes spell "SCOR".
@@ -202,21 +203,30 @@ async def _rate_batch(
     model = model_factory(key)
     del key
 
+    # Rendered once, from the profile read above, so every posting in the batch
+    # is sent the same system block and all but the first can read it cached.
+    profile = profile_text(found.profile)
     for posting_id, title, company_name, location, content_html in postings:
         text = posting_text(
             title=title, company_name=company_name, location=location, content_html=content_html
         )
         try:
-            rating = await rate(model, found.titles, text)
+            rating = await rate(model, profile, text)
         except anthropic.APIError as error:
             reason, failure = _why(error)
             if failure is not None:
                 await _mark(sessionmaker, person_id, found.sealed_key, failure)
             raise _Stopped(reason) from None
+        if rating == "cut-off":
+            # One line each, quoting nothing: the sign that MAX_TOKENS is too low.
+            log.warning(
+                "person %d, posting %d: reply cut off at the token limit", person_id, posting_id
+            )
         if not await _still_locked(lock):
             raise _Stopped("lost-the-lock")
-        await _record(sessionmaker, person_id, posting_id, rating)
-        if rating is None:
+        scored = rating if isinstance(rating, Rating) else None
+        await _record(sessionmaker, person_id, posting_id, scored)
+        if scored is None:
             tally.unreadable += 1
         else:
             tally.rated += 1

@@ -5,17 +5,20 @@ run's context rather than its state, so it is never part of what the graph
 reads, returns or could keep.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 
-from job_board.scoring.model import Rating, RatingModel
+from job_board.scoring.model import Rating, RatingModel, ReplyCutOff
 from job_board.scoring.prompt import prompt_messages
+
+# Why a reply gave no rating: it could not be read as one, or it was cut off at
+# the token limit, which says the limit is wrong rather than the reply.
+type NoRating = Literal["unreadable", "cut-off"]
 
 
 @dataclass(frozen=True)
@@ -24,10 +27,9 @@ class Context:
 
 
 class State(TypedDict, total=False):
-    titles: list[str]
+    profile: str
     text: str
-    # None when the reply could not be read as a rating.
-    rating: Rating | None
+    rating: Rating | NoRating
 
 
 async def _rate(state: State, runtime: Runtime[Context]) -> State:
@@ -38,10 +40,14 @@ async def _rate(state: State, runtime: Runtime[Context]) -> State:
     reply, so it is dropped here, never logged. A failed request raises.
     """
     try:
-        reply = await runtime.context.model.ainvoke(prompt_messages(state["titles"], state["text"]))
+        reply = await runtime.context.model.ainvoke(
+            prompt_messages(state["profile"], state["text"])
+        )
+    except ReplyCutOff:
+        return {"rating": "cut-off"}
     except OutputParserException, ModelRefusalError:
-        return {"rating": None}
-    return {"rating": reply if isinstance(reply, Rating) else None}
+        return {"rating": "unreadable"}
+    return {"rating": reply if isinstance(reply, Rating) else "unreadable"}
 
 
 def _build() -> CompiledStateGraph[State, Context, State, State]:
@@ -55,10 +61,10 @@ def _build() -> CompiledStateGraph[State, Context, State, State]:
 RATING_GRAPH = _build()
 
 
-async def rate(model: RatingModel, titles: Sequence[str], text: str) -> Rating | None:
-    """The model's rating of one posting's ``text`` against ``titles``, or None."""
+async def rate(model: RatingModel, profile: str, text: str) -> Rating | NoRating:
+    """The model's rating of one posting's ``text`` against the rendered ``profile``, or why not."""
     result = await RATING_GRAPH.ainvoke(
-        {"titles": list(titles), "text": text}, context=Context(model=model)
+        {"profile": profile, "text": text}, context=Context(model=model)
     )
-    rating: Rating | None = result.get("rating")
+    rating: Rating | NoRating = result["rating"]
     return rating
