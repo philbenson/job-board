@@ -646,6 +646,32 @@ async def test_a_refused_key_fails_the_run_marks_the_key_and_a_retry_goes_on_fro
     assert retried_request == failing  # asked again from the step saved before the failure
 
 
+async def test_a_key_saved_again_while_the_run_waited_on_the_model_is_not_marked(
+    service: Service, ready: Someone
+) -> None:
+    refused = Hold(status_error(401))
+    service.script(refused)
+    await start(service, ready)
+    await refused.reached.wait()
+    # The person saves a new key while the model is refusing the one the run opened.
+    new_key = f"sk-ant-api03-{secrets.token_urlsafe(48)}"
+    person = ready.person_id()
+    run(
+        ready.database_url,
+        "UPDATE model_keys SET sealed_key = :sealed, last_four = :last_four, checked_at = now() "
+        "WHERE person_id = :person",
+        person=person,
+        sealed=seal(new_key, person, "anthropic", service_key=SERVICE_KEY),
+        last_four=new_key[-4:],
+    )
+    refused.released.set()
+    await service.settled()
+
+    failed = await read(service, ready)
+    assert (failed["status"], failed["failure"], failed["missing"]) == ("failed", "rejected", [])
+    assert key_failure(ready) is None
+
+
 async def test_an_answer_whose_run_failed_on_arrival_takes_a_retry_and_no_second_answer(
     service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
 ) -> None:
