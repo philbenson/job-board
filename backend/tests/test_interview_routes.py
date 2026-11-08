@@ -31,7 +31,7 @@ from settings_for_tests import MODEL_KEY_ENCRYPTION_KEY, make_settings
 
 from job_board.app import create_app
 from job_board.interview import answers, graph, runs
-from job_board.interview.claims import STALE_AFTER
+from job_board.interview.claims import STALE_AFTER, release_claim
 from job_board.interview.failures import INTERVIEW_FAILURES
 from job_board.interview.graph import INTERVIEW_MODEL_CALLS
 from job_board.interview.model import TIMEOUT_SECONDS
@@ -234,14 +234,15 @@ def steps_kept(who: Someone) -> int:
     return count
 
 
-def status_error(status: int) -> anthropic.APIStatusError:
+def status_error(status: int, said: str = "refused") -> anthropic.APIStatusError:
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
     response = httpx2.Response(status, request=request)
     kinds: dict[int, type[anthropic.APIStatusError]] = {
         401: anthropic.AuthenticationError,
         500: anthropic.InternalServerError,
     }
-    return kinds.get(status, anthropic.APIStatusError)("refused", response=response, body=None)
+    body = {"type": "error", "error": {"type": "api_error", "message": said}}
+    return kinds.get(status, anthropic.APIStatusError)(said, response=response, body=body)
 
 
 def timed_out() -> anthropic.APITimeoutError:
@@ -859,7 +860,10 @@ async def test_a_retry_clears_the_last_failure_so_a_retry_that_goes_quiet_shows_
 
 
 async def test_a_stale_claim_is_taken_over_and_the_run_that_held_it_stops_keeping_nothing(
-    service: Service, ready: Someone, caplog: pytest.LogCaptureFixture
+    service: Service,
+    ready: Someone,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     quiet = Hold(AIMessage("A question from the run that went quiet."))
     taking_over = Hold(AIMessage(FIRST_QUESTION))
@@ -872,7 +876,18 @@ async def test_a_stale_claim_is_taken_over_and_the_run_that_held_it_stops_keepin
 
     assert (await retry(service, ready)).status_code == 202
     await taking_over.reached.wait()
-    quiet.released.set()
+    taken = interview_row(ready).run_id
+    quiet_ended = asyncio.Event()
+
+    async def released(*arguments: Any) -> None:
+        await release_claim(*arguments)
+        quiet_ended.set()
+
+    monkeypatch.setattr(runs, "release_claim", released)
+    quiet.released.set()  # the quiet run first, so its release meets the claim that took over
+    await quiet_ended.wait()
+    row = interview_row(ready)
+    assert (row.run_id, row.failure) == (taken, None)
     taking_over.released.set()
     await service.settled()
 
@@ -991,6 +1006,22 @@ async def test_no_log_line_quotes_the_resume_an_answer_or_a_reply(
     logged = caplog.text
     assert "RuntimeError" in logged  # the failure is logged, by its type's name
     for sentinel in (RESUME_SENTINEL, ANSWER_SENTINEL, REPLY_SENTINEL):
+        assert sentinel not in logged
+
+
+async def test_a_failure_anthropic_gave_is_logged_by_its_code_and_never_its_message(
+    service: Service, ready: Someone, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    said = f"overloaded while reading {RESUME_SENTINEL} and {REPLY_SENTINEL}"
+    service.script(status_error(500, said))
+    await start(service, ready)
+    await service.settled()
+
+    assert (await read(service, ready))["failure"] == "server-error"
+    logged = caplog.text
+    assert "the interview's run failed: server-error" in logged
+    for sentinel in (RESUME_SENTINEL, REPLY_SENTINEL):
         assert sentinel not in logged
 
 

@@ -11,7 +11,9 @@ from langgraph.checkpoint.postgres.base import MIGRATIONS
 from per_run_database import per_run_database, server_url
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
-from sqlalchemy import create_engine, make_url, text
+from sqlalchemy import create_engine, text
+
+from job_board.interview.saver import libpq_url
 
 SAVER_TABLES = ("checkpoint_blobs", "checkpoint_migrations", "checkpoint_writes", "checkpoints")
 
@@ -53,16 +55,15 @@ def shape(database_url: str) -> Shape:
     return found
 
 
-def libpq(database_url: str) -> str:
-    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
-
-
 async def test_the_migrations_build_the_tables_the_saver_setup_would(
     migrated_database_url: str,
 ) -> None:
     with per_run_database(server_url()) as saver_database_url:
         async with await AsyncConnection.connect(
-            libpq(saver_database_url), autocommit=True, prepare_threshold=0, row_factory=dict_row
+            libpq_url(saver_database_url),
+            autocommit=True,
+            prepare_threshold=0,
+            row_factory=dict_row,
         ) as connection:
             await AsyncPostgresSaver(connection).setup()
         from_saver = shape(saver_database_url)
