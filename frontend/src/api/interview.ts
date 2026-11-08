@@ -11,7 +11,7 @@ export type InterviewBody =
 /** One line of the conversation, or a section the interviewer saved. */
 export type Entry = InterviewBody['entries'][number]
 
-export type InterviewStatus = InterviewBody['status']
+type InterviewStatus = InterviewBody['status']
 
 /** What a start still needs. */
 export type MissingItem = InterviewBody['missing'][number]
@@ -33,16 +33,16 @@ export type ConflictBody =
 export type AnswerRefusalBody = AnswerOperation['responses'][422]['content']['application/json']
 
 /** The interview as the backend answered it. */
-export type Got = { kind: 'interview'; interview: InterviewBody }
+type Got = { kind: 'interview'; interview: InterviewBody }
 
 /** The backend's 409: the interview is not in a state for this, with its sentence. */
-export type Conflict = { kind: 'conflict'; message: string }
+type Conflict = { kind: 'conflict'; message: string }
 
 /** The backend refused the answer, with the first rule it broke. */
 export type Refused = { kind: 'refused'; message: string }
 
 /** The backend's 404: the person has no interview to answer, retry or delete. */
-export type NoInterview = 'no interview'
+type NoInterview = 'no interview'
 
 type Failure = 'unavailable' | 'aborted'
 

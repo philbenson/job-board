@@ -16,7 +16,7 @@ export function interviewWith(overrides: Partial<InterviewBody> = {}): Interview
 }
 
 /** How one interview route answers, given what was sent. */
-export type InterviewReply = (init?: RequestInit) => Promise<Response>
+type InterviewReply = (init?: RequestInit) => Promise<Response>
 
 /** A body the contract allows, typed so it changes when the backend's does. */
 export function interviewAnswer(
@@ -32,7 +32,7 @@ export function interviewAnswer(
 }
 
 /** A request that never answers, and fails the way fetch does when aborted. */
-export function interviewOnlyAbort(init?: RequestInit): Promise<Response> {
+function interviewOnlyAbort(init?: RequestInit): Promise<Response> {
   return new Promise<Response>((_resolve, reject) => {
     init?.signal?.addEventListener('abort', () => {
       reject(new DOMException('The request was aborted', 'AbortError'))
@@ -63,7 +63,7 @@ export function heldInterviewReply() {
 }
 
 /** The interview's routes, each standing for one method and path. */
-export type InterviewRoutes = {
+type InterviewRoutes = {
   read: InterviewReply
   start: InterviewReply
   answer: InterviewReply

@@ -1,7 +1,17 @@
 import { useId } from 'react'
+import { composed, lengthOf } from './profileText.ts'
 
 // The backend holds the same cap and refuses past it.
-export const MAX_ANSWER_LENGTH = 4_000
+const MAX_ANSWER_LENGTH = 4_000
+
+/**
+ * The length of the answer as the backend stores it: line breaks unified to
+ * `\n`, then trimmed and composed as a profile value is. The backend stays
+ * the guard, and refuses what this lets past.
+ */
+function storedLength(text: string): number {
+  return lengthOf(composed(text.replaceAll('\r\n', '\n').replaceAll('\r', '\n')))
+}
 
 type Props = {
   text: string
@@ -16,9 +26,9 @@ type Props = {
 /**
  * The box the person answers the interviewer's question in, with Send. Enter
  * adds a line, as in the resume's text box; Send sends. The box describes
- * itself by the question and its count, which is in code points, as the
- * backend counts. Send is held while the box shows nothing but spaces or is
- * past the cap.
+ * itself by the question and its count, which is in code points of the
+ * answer as the backend stores it. Send is held while the box shows nothing
+ * but spaces or is past the cap.
  *
  * Held, the box is read-only and ignores input, and Send does nothing, so
  * focus stays where it is and what the box shows is what was sent.
@@ -26,7 +36,7 @@ type Props = {
 export function AnswerBox({ text, onText, held, questionId, onSend }: Props) {
   const boxId = useId()
   const countId = useId()
-  const length = [...text].length
+  const length = storedLength(text)
   const sendable = !held && /\S/.test(text) && length <= MAX_ANSWER_LENGTH
   return (
     <div className="answer">

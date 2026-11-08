@@ -425,6 +425,24 @@ describe('InterviewPanel', () => {
       expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
     })
 
+    it.each([
+      ['a trailing line break', `${'a'.repeat(4_000)}\n`],
+      ['letters and accents typed apart, which the backend composes', 'é'.repeat(4_000)],
+    ])('counts an answer as the backend stores it, so 4,000 characters and %s can be sent', async (_shape, typed) => {
+      const fetchMock = stubInterviewService({ read: always(WAITING) })
+      render(<InterviewPanel />)
+      await screen.findByLabelText('Your answer')
+
+      fireEvent.change(answerBox(), { target: { value: typed } })
+
+      expect(answerBox()).toHaveAccessibleDescription(`${QUESTION} 4,000 of 4,000 characters`)
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
+      fireEvent.click(sendButton())
+      await vi.waitFor(() => {
+        expect(callsTo(fetchMock, 'answer')).toHaveLength(1)
+      })
+    })
+
     it('holds Send, sending nothing, while the box shows only spaces or more than 4,000 characters', async () => {
       const fetchMock = stubInterviewService({ read: always(WAITING) })
       render(<InterviewPanel />)
