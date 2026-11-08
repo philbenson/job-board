@@ -541,6 +541,28 @@ async def test_a_run_whose_claim_was_taken_while_the_model_answered_keeps_nothin
     assert await interview.question() is None
 
 
+async def test_a_tool_step_run_again_after_its_claim_was_taken_over_saves_nothing(
+    interview: Run, engine: AsyncEngine
+) -> None:
+    shown = await profile_json(interview.sessionmaker, interview.who.person_id)
+    opened = start_input(RESUME, shown)
+    saving = [*opened["messages"], calling(("save_pace", PACE))]
+    await interview.graph.aupdate_state(
+        interview.who.config, {**opened, "messages": saving}, as_node="interviewer"
+    )
+    assert (await interview.snapshot()).next == ("tools",)
+    async with engine.begin() as connection:  # the claim went stale and was taken over
+        await connection.execute(
+            text("UPDATE interviews SET run_id = :other WHERE person_id = :person"),
+            {"other": str(uuid.uuid4()), "person": interview.who.person_id},
+        )
+
+    with pytest.raises(LostClaim):
+        await interview.graph.ainvoke(None, interview.who.config, context=interview.context)
+    assert await document_of(engine, interview.who.person_id) is None
+    assert interview.model.requests == []
+
+
 # What the saver keeps
 
 

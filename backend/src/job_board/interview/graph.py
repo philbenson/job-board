@@ -146,9 +146,12 @@ def _after_interviewer(state: InterviewState) -> str:
 async def _tools(state: InterviewState, runtime: Runtime[Context]) -> InterviewState:
     """Runs the reply's tool calls in order, then notes the profile the model now knows.
 
-    Run again, it repeats the same saves, which store the same sections.
+    Run again, it repeats the same saves, which store the same sections. The
+    claim is renewed first: a step run again by a run whose claim was taken
+    over, or whose interview was removed, saves nothing.
     """
     context = runtime.context
+    await _renew_claim(context)
     last = state["messages"][-1]
     calls = last.tool_calls if isinstance(last, AIMessage) else []
     answers: list[ToolMessage] = []

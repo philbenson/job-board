@@ -1,10 +1,10 @@
 """The claim a run holds on an interview: every statement that takes, renews or releases it.
 
 Invariant: one run at a time per person. A run holds the interview while its
-row names the run's id; the run renews the claim around each model call, so
-a claim older than ``STALE_AFTER`` belongs to a run that stopped without
-releasing it, and the next run may take it over. The run that lost it finds
-out at its next renewal and stops.
+row names the run's id; the run renews the claim around each model call and
+before each tool step, so a claim older than ``STALE_AFTER`` belongs to a run
+that stopped without releasing it, and the next run may take it over. The run
+that lost it finds out at its next renewal and stops, saving nothing more.
 """
 
 from datetime import timedelta
