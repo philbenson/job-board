@@ -43,9 +43,13 @@ from job_board.model_key.sealing import SealBroken, SealedUnderAnotherKey, open_
 logger = logging.getLogger(__name__)
 
 # How long shutdown waits for the runs in flight before it cancels them: enough
-# for a run between model calls to save its step, while a run waiting on the
-# model is cut off, recorded as interrupted, and retried by the person.
-SHUTDOWN_GRACE_SECONDS = 5.0
+# for most model calls to come back and their step to be saved. Render asks the
+# service to stop, then kills it after its shutdown delay, 30 seconds unless the
+# blueprint's maxShutdownDelaySeconds sets another. The grace stays under that
+# default, so a run still going is cut off, recorded as interrupted and retried
+# by the person, rather than killed holding its claim; it grows only with that
+# setting.
+SHUTDOWN_GRACE_SECONDS = 20.0
 
 
 @dataclass(frozen=True)

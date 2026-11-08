@@ -93,6 +93,13 @@ async def test_a_reply_at_the_token_limit_carries_the_stop_reason_the_interviewe
     assert reply.response_metadata["stop_reason"] == CUT_OFF
 
 
+def test_the_model_gives_up_connecting_after_five_seconds_and_reading_after_its_timeout() -> None:
+    model = anthropic_interviewer(fake_key(), base_url="http://127.0.0.1:9")
+    assert isinstance(model, ChatAnthropic)
+    expected = anthropic.Timeout(TIMEOUT_SECONDS, connect=5.0)
+    assert [model._async_client.timeout, model._client.timeout] == [expected, expected]
+
+
 def test_the_model_waits_out_its_timeout_and_shows_the_key_in_none_of_its_forms() -> None:
     key = fake_key()
     model = anthropic_interviewer(key, base_url="http://127.0.0.1:9")

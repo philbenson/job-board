@@ -47,7 +47,7 @@ from job_board.interview.routes import (
     RUNNING,
     interview_model_factory,
 )
-from job_board.interview.runs import InterviewRuns
+from job_board.interview.runs import SHUTDOWN_GRACE_SECONDS, InterviewRuns
 from job_board.interview.tools import FINISH
 from job_board.model_key.sealing import seal
 
@@ -944,6 +944,13 @@ def test_a_claim_goes_stale_only_after_the_longest_model_call_and_a_tool_step() 
     # A run renews its claim around each model call; a tool step's few short
     # statements are given a minute more.
     assert timedelta(seconds=TIMEOUT_SECONDS) + timedelta(minutes=1) < STALE_AFTER
+
+
+def test_shutdown_waits_on_the_runs_in_flight_well_inside_the_time_the_host_gives_it() -> None:
+    # Render kills the service 30 seconds after asking it to stop, unless the
+    # blueprint's maxShutdownDelaySeconds says otherwise; the runs cancelled
+    # after the grace need what is left to record themselves interrupted.
+    assert SHUTDOWN_GRACE_SECONDS == 20.0
 
 
 # Who may touch it

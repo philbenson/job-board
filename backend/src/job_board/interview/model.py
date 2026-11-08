@@ -8,8 +8,10 @@ service refuses to start while ``ANTHROPIC_CUSTOM_HEADERS`` is set.
 """
 
 from collections.abc import Callable
+from functools import cached_property
 
-from langchain.chat_models import init_chat_model
+import anthropic
+from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 
 from job_board.model_key.check import ANTHROPIC_API, CHECK_MODEL
@@ -33,6 +35,9 @@ THINKING = {"type": "adaptive", "display": "omitted"}
 # second and 30 seconds more make about 358 seconds. A reply that times out
 # fails the run, and the person retries it.
 TIMEOUT_SECONDS = MAX_TOKENS / SLOWEST_TOKENS_PER_SECOND + INPUT_READING_SECONDS
+# An unreachable host fails the run in seconds rather than after the whole
+# reply's timeout; a reachable one connects in well under a second.
+CONNECT_SECONDS = 5.0
 CUT_OFF = "max_tokens"  # the stop reason of a reply that reached the token limit
 DECLINED = "refusal"  # the stop reason of a reply the model declined to go on with
 
@@ -40,23 +45,40 @@ DECLINED = "refusal"  # the stop reason of a reply the model declined to go on w
 type InterviewModelFactory = Callable[[str], BaseChatModel]
 
 
-def anthropic_interviewer(
-    key: str, *, base_url: str = ANTHROPIC_API, timeout: float = TIMEOUT_SECONDS
-) -> BaseChatModel:
+_REQUEST_TIMEOUT = anthropic.Timeout(TIMEOUT_SECONDS, connect=CONNECT_SECONDS)
+
+
+class _Interviewer(ChatAnthropic):
+    """LangChain's Claude, its requests connecting within ``CONNECT_SECONDS``.
+
+    LangChain takes the timeout as one number, which the client applies to
+    connecting as much as to reading. Each client here is LangChain's own,
+    copied with the two set apart, so it keeps LangChain's shared connections.
+    """
+
+    @cached_property
+    def _client(self) -> anthropic.Client:
+        return super()._client.with_options(timeout=_REQUEST_TIMEOUT)
+
+    @cached_property
+    def _async_client(self) -> anthropic.AsyncClient:
+        return super()._async_client.with_options(timeout=_REQUEST_TIMEOUT)
+
+
+def anthropic_interviewer(key: str, *, base_url: str = ANTHROPIC_API) -> BaseChatModel:
     """Claude on the person's own key, to be bound to the interviewer's tools.
 
     No retries: a retried call costs the person twice, and a failed run is
-    retried by the person, from its last saved step. ``base_url`` and
-    ``timeout`` are for the tests, which point it at a local server.
+    retried by the person, from its last saved step. ``base_url`` is for the
+    tests, which point it at a local server.
     """
-    return init_chat_model(
-        INTERVIEW_MODEL,
-        model_provider="anthropic",
+    return _Interviewer(
+        model=INTERVIEW_MODEL,
         api_key=key,
         base_url=base_url,
         max_tokens=MAX_TOKENS,
         effort=EFFORT,
         thinking=THINKING,
         max_retries=0,
-        timeout=timeout,
+        timeout=TIMEOUT_SECONDS,
     )
