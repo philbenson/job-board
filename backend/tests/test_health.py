@@ -8,6 +8,7 @@ from settings_for_tests import make_settings
 
 from job_board import health
 from job_board.app import create_app
+from job_board.logging_setup import LOGGER_NAME
 
 OK = {"status": "ok", "database": "ok"}
 UNAVAILABLE = {"status": "unavailable", "database": "unreachable"}
@@ -52,13 +53,17 @@ async def test_unavailable_within_the_ceiling_when_the_server_hangs(
 
 
 async def test_a_failure_leaks_nothing_about_why(
-    closed_port: int, caplog: pytest.LogCaptureFixture
+    closed_port: int, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    with caplog.at_level(logging.WARNING, logger="job_board"):
+    # Building the service would set its own loggers to info, dropping their debug lines unread.
+    monkeypatch.setattr("job_board.app.configure_logging", lambda: None)
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         response = await get_health(unreachable_url(closed_port))
     for leak in ("127.0.0.1", str(closed_port), "s3cret", "postgresql", "refused", "Error"):
         assert leak not in response.text
-    assert [record.getMessage() for record in caplog.records] == [
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno >= logging.WARNING
+    ] == [
         "resume storage is not set up: the resume routes answer 503",  # logged at start
         "database health check failed: OperationalError",
     ]

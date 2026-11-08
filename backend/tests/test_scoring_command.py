@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from job_board.environment_refusal import TRACING_VARIABLES
+from job_board.logging_setup import LOGGER_NAME
 from job_board.model_key.sealing import seal
 from job_board.scoring.command import EXIT_REFUSED, EXIT_STOPPED, main
 from job_board.scoring.model import ModelFactory, Rating, RatingModel
@@ -130,6 +131,10 @@ def test_refuses_to_start_while_custom_anthropic_headers_are_set(
     scoring_environment: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
 ) -> None:
     scoring_environment.setenv("ANTHROPIC_CUSTOM_HEADERS", value)
+    # Starting the command would set the service's loggers to info, dropping their debug lines.
+    scoring_environment.setattr("job_board.scoring.command.configure_logging", lambda: None)
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     assert main(model_factory=never_built) == EXIT_REFUSED
     assert any("ANTHROPIC_CUSTOM_HEADERS" in line for line in caplog.messages)
     assert "someone-else" not in caplog.text
@@ -207,6 +212,10 @@ def test_refuses_a_bad_encryption_key_without_repeating_it(
     scoring_environment: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     scoring_environment.setenv("MODEL_KEY_ENCRYPTION_KEY", "not-a-key-but-a-secret-anyway")
+    # Starting the command would set the service's loggers to info, dropping their debug lines.
+    scoring_environment.setattr("job_board.scoring.command.configure_logging", lambda: None)
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     assert main(model_factory=never_built) == EXIT_REFUSED
     assert "MODEL_KEY_ENCRYPTION_KEY" in caplog.text
     assert "not-a-key-but-a-secret-anyway" not in caplog.text

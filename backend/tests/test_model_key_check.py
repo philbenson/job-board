@@ -132,10 +132,11 @@ async def test_warns_the_operator_when_the_model_is_not_found(
 ) -> None:
     recorder = Recorder(lambda: error(404, "not_found_error"))
 
-    with caplog.at_level(logging.WARNING):
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         assert await run_check(fake_key(), recorder) == "not-permitted"
 
-    (record,) = caplog.records
+    (record,) = [record for record in caplog.records if record.levelno >= logging.WARNING]
     assert record.levelno == logging.WARNING
     assert "404" in record.getMessage()
     assert "NotFoundError" in record.getMessage()

@@ -25,6 +25,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from job_board.database import make_sessionmaker
+from job_board.logging_setup import LOGGER_NAME
 from job_board.model_key.check import CHECK_MODEL
 from job_board.model_key.sealing import seal
 from job_board.scoring.batch import (
@@ -536,7 +537,9 @@ async def test_records_a_reason_holding_a_nul_as_unreadable_and_goes_on(
 async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_goes_on(
     engine: AsyncEngine, caplog: pytest.LogCaptureFixture, text: str, quoted: str
 ) -> None:
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     person = await add_person(engine)
     first, second, third = [
         await add_posting(engine, seen=START - timedelta(days=age)) for age in range(3)
@@ -552,7 +555,11 @@ async def test_records_a_reply_cut_off_at_the_limit_as_unreadable_logs_it_and_go
         (third, "scored", 2),
     ]
     assert len(server.received) == 3
-    ours = [record for record in caplog.records if record.name.startswith("job_board.scoring")]
+    ours = [
+        record
+        for record in caplog.records
+        if record.name.startswith("job_board.scoring") and record.levelno >= logging.INFO
+    ]
     assert [(record.levelno, record.getMessage()) for record in ours] == [
         (logging.WARNING, f"person {person}, posting {second}: reply cut off at the token limit"),
         (logging.INFO, f"person {person}: 2 rated, 1 unreadable, finished"),
@@ -720,7 +727,9 @@ async def test_names_an_unlisted_refusal_by_its_codes_never_its_message(
     error_body: dict[str, Any],
     reason: str,
 ) -> None:
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     person = await add_person(engine)
     await add_posting(engine)
     request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")

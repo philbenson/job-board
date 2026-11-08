@@ -1,10 +1,13 @@
 """The web service refuses to start while a setting could carry a person's text out."""
 
+import logging
+
 import pytest
 from settings_for_tests import make_settings
 
 from job_board.app import create_app
 from job_board.environment_refusal import RefusedEnvironment
+from job_board.logging_setup import LOGGER_NAME
 
 # Each setting with a value the refusal reads as on, spelled so that a message
 # repeating the value would show it.
@@ -23,6 +26,10 @@ def test_the_service_refuses_to_start_naming_the_setting_and_not_its_value(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, name: str, value: str
 ) -> None:
     monkeypatch.setenv(name, value)
+    # Building the service would set its own loggers to info, dropping their debug lines unread.
+    monkeypatch.setattr("job_board.app.configure_logging", lambda: None)
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     with pytest.raises(RefusedEnvironment) as refused:
         create_app(make_settings())
     assert name in str(refused.value)
