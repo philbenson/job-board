@@ -2,11 +2,16 @@ import { useAuth } from '@clerk/react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   answerInterview,
+  deleteInterview,
   fetchInterview,
   INTERVIEW_TIMEOUT_MS,
+  retryInterview,
   startInterview,
   type InterviewAnswer,
   type InterviewBody,
+  type InterviewRead,
+  type InterviewRemoval,
+  type InterviewRetry,
   type InterviewStart,
   type MissingItem,
 } from '../api/interview.ts'
@@ -25,6 +30,9 @@ const LOST_TOUCH = 'Lost touch with the service; still trying'
 const REPLIED = 'The interviewer replied.'
 const NOT_STARTED = 'Could not start the interview. Try again.'
 const NOT_SENT = 'Could not send your answer. Try again.'
+const NOT_RETRIED = 'Could not try the turn again. Try again.'
+const NOT_DELETED = 'Could not delete the conversation. Try again.'
+const CONFIRM = 'Delete this conversation? Your profile keeps what the interview saved.'
 const NO_INTERVIEW = 'No interview started'
 const KEPT = 'Your profile holds what it saved, and you can edit it at any time.'
 
@@ -42,11 +50,13 @@ const MISSING_LINES: Record<MissingItem, string> = {
 }
 
 // What the status line says while a request the person made is out.
-type Busy = 'starting' | 'answering'
+type Busy = 'starting' | 'answering' | 'retrying' | 'deleting'
 
 const BUSY_LINES: Record<Busy, string> = {
   starting: 'Starting the interview…',
   answering: 'Sending your answer…',
+  retrying: 'Trying the turn again…',
+  deleting: 'Deleting the conversation…',
 }
 
 type Shown =
@@ -58,9 +68,9 @@ type Shown =
 // did; a read with more holds the answer itself.
 type Sent = { text: string; after: number }
 
-// Where focus goes once the next render has put it on the page: the heading,
-// or the heading only if what held focus has left the page.
-type FocusTarget = 'heading' | 'heading if lost'
+// Where focus goes once the next render has put it on the page: a control,
+// the heading, or the heading only if what held focus has left the page.
+type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
 
 /**
  * The onboarding interview: before a start, what it does and what it still
@@ -91,10 +101,15 @@ export function InterviewPanel() {
   const [lostTouch, setLostTouch] = useState(false)
   // Whether the poll watched the turn end waiting on the next answer.
   const [replied, setReplied] = useState(false)
+  // Whether the delete is asking to be confirmed.
+  const [confirming, setConfirming] = useState(false)
   const headingId = useId()
   const questionId = useId()
   const section = useRef<HTMLElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
+  const startButton = useRef<HTMLButtonElement>(null)
+  const deleteButton = useRef<HTMLButtonElement>(null)
+  const keepButton = useRef<HTMLButtonElement>(null)
   const focusNext = useRef<FocusTarget | null>(null)
   // Aborted when the panel goes, so no answer lands on a panel that has gone.
   const lifetime = useRef<AbortController | null>(null)
@@ -107,6 +122,11 @@ export function InterviewPanel() {
       return
     }
     focusNext.current = null
+    if (target === 'start' || target === 'delete' || target === 'keep') {
+      const controls = { start: startButton, delete: deleteButton, keep: keepButton }
+      controls[target].current?.focus()
+      return
+    }
     const lost = !(section.current?.contains(document.activeElement) ?? false)
     if (target === 'heading' || lost) {
       heading.current?.focus()
@@ -128,6 +148,8 @@ export function InterviewPanel() {
     setLostTouch(false)
     setReplied(polled && interview.status === 'waiting')
     setBoxKept((kept) => kept && running)
+    // A running turn holds the interview, so it cannot be deleted.
+    setConfirming((asking) => asking && !running)
     setSent((answer) =>
       answer !== null && running && interview.entries.length <= answer.after ? answer : null,
     )
@@ -263,8 +285,8 @@ export function InterviewPanel() {
       setProblem(started === 'unavailable' ? NOT_STARTED : started.message)
       return
     }
-    // Start leaves the page with the running interview; the heading stays.
-    focusNext.current = 'heading'
+    // Start leaves the page with the running interview, handing focus to the
+    // heading.
     show(started.interview, false)
   }
 
@@ -308,6 +330,96 @@ export function InterviewPanel() {
     }
   }
 
+  async function retry(): Promise<void> {
+    const signal = lifetime.current?.signal
+    if (signal === undefined || busy !== null) {
+      return
+    }
+    setBusy('retrying')
+    setProblem('')
+    const retried: InterviewRetry | 'aborted' = await withToken(
+      getToken,
+      INTERVIEW_TIMEOUT_MS,
+      signal,
+      retryInterview,
+      'unavailable',
+    )
+    if (retried === 'aborted') {
+      return
+    }
+    setBusy(null)
+    if (retried === 'unavailable') {
+      setProblem(NOT_RETRIED)
+    } else if (retried === 'no interview') {
+      setProblem(NO_INTERVIEW)
+      readAgain()
+    } else if (retried.kind === 'conflict') {
+      setProblem(retried.message)
+    } else {
+      // Try again leaves the page with the running interview, handing focus to
+      // the heading.
+      show(retried.interview, false)
+    }
+  }
+
+  async function remove(): Promise<void> {
+    const signal = lifetime.current?.signal
+    if (signal === undefined || busy !== null) {
+      return
+    }
+    setBusy('deleting')
+    setProblem('')
+    const removed: InterviewRemoval | 'aborted' = await withToken(
+      getToken,
+      INTERVIEW_TIMEOUT_MS,
+      signal,
+      deleteInterview,
+      'unavailable',
+    )
+    if (removed === 'aborted') {
+      return
+    }
+    if (removed !== 'deleted') {
+      setBusy(null)
+      if (removed === 'unavailable') {
+        // The question stays open, with focus on Delete it, to ask again.
+        setProblem(NOT_DELETED)
+        return
+      }
+      setConfirming(false)
+      if (removed === 'no interview') {
+        setProblem(NO_INTERVIEW)
+        readAgain()
+      } else {
+        focusNext.current = 'delete'
+        setProblem(removed.message)
+      }
+      return
+    }
+    // The 204 carries no body, and what a start still needs is only the
+    // backend's to say, so the panel reads the interview, not-started now.
+    const read: InterviewRead | 'aborted' = await withToken(
+      getToken,
+      INTERVIEW_TIMEOUT_MS,
+      signal,
+      fetchInterview,
+      'unavailable',
+    )
+    if (read === 'aborted') {
+      return
+    }
+    setBusy(null)
+    setConfirming(false)
+    setText('')
+    if (read === 'unavailable') {
+      focusNext.current = 'heading'
+      setShown({ kind: 'unreadable' })
+      return
+    }
+    focusNext.current = read.interview.missing.length === 0 ? 'start' : 'heading'
+    show(read.interview, false)
+  }
+
   const interview = shown.kind === 'interview' ? shown.interview : null
   const status = interview?.status ?? null
 
@@ -343,6 +455,7 @@ export function InterviewPanel() {
           <>
             <p>{INTRODUCTION}</p>
             <button
+              ref={startButton}
               type="button"
               aria-disabled={busy !== null}
               onClick={() => {
@@ -384,9 +497,65 @@ export function InterviewPanel() {
         />
       )}
       <p role="alert">{alertLine}</p>
+      {status === 'failed' && (
+        <button
+          type="button"
+          aria-disabled={busy !== null}
+          onClick={() => {
+            void retry()
+          }}
+        >
+          Try again
+        </button>
+      )}
       {interview !== null && interview.status !== 'not-started' && (
         <p>{`${interview.model_calls} of ${interview.model_call_limit} model calls used`}</p>
       )}
+      {interview !== null &&
+        interview.status !== 'not-started' &&
+        interview.status !== 'running' &&
+        (confirming ? (
+          <div className="confirm">
+            <p>{CONFIRM}</p>
+            <button
+              type="button"
+              aria-disabled={busy !== null}
+              onClick={() => {
+                void remove()
+              }}
+            >
+              Delete it
+            </button>
+            <button
+              ref={keepButton}
+              type="button"
+              aria-disabled={busy !== null}
+              onClick={() => {
+                if (busy === null) {
+                  focusNext.current = 'delete'
+                  setConfirming(false)
+                }
+              }}
+            >
+              Keep it
+            </button>
+          </div>
+        ) : (
+          <button
+            ref={deleteButton}
+            type="button"
+            aria-disabled={busy !== null}
+            onClick={() => {
+              if (busy === null) {
+                focusNext.current = 'keep'
+                setProblem('')
+                setConfirming(true)
+              }
+            }}
+          >
+            Delete the conversation
+          </button>
+        ))}
     </section>
   )
 }

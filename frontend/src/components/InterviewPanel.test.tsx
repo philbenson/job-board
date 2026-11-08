@@ -41,6 +41,11 @@ const LOST_TOUCH = 'Lost touch with the service; still trying'
 const REPLIED = 'The interviewer replied.'
 const CHANGED = 'The interview has changed since it was read; reload it and try again'
 const NO_INTERVIEW = 'No interview started'
+const RETRYING = 'Trying the turn again…'
+const NOT_RETRIED = 'Could not try the turn again. Try again.'
+const CONFIRM = 'Delete this conversation? Your profile keeps what the interview saved.'
+const DELETING = 'Deleting the conversation…'
+const NOT_DELETED = 'Could not delete the conversation. Try again.'
 
 const QUESTION = 'Which titles are you aiming for next?'
 
@@ -720,6 +725,277 @@ describe('InterviewPanel', () => {
       cleanup()
 
       expect(vi.getTimerCount()).toBe(0)
+    })
+  })
+
+  describe('trying a failed turn again', () => {
+    const FAILED = interviewWith({
+      status: 'failed',
+      failure: 'rate-limited',
+      entries: CONVERSATION.slice(0, 3),
+      model_calls: 2,
+    })
+
+    function tryAgain(): HTMLElement {
+      return screen.getByRole('button', { name: 'Try again' })
+    }
+
+    it('offers Try again for every failure code', async () => {
+      stubInterviewService({ read: always({ ...FAILED, failure: 'unexpected' }) })
+
+      render(<InterviewPanel />)
+
+      expect(await screen.findByRole('button', { name: 'Try again' })).toBeVisible()
+      expect(alertLine()).toHaveTextContent("Something went wrong on the service's side.")
+    })
+
+    it('holds Try again while it runs, then shows the turn running with focus on the heading, and reads two seconds on', async () => {
+      vi.useFakeTimers()
+      const retry = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: always(FAILED), retry: retry.reply })
+      render(<InterviewPanel />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      tryAgain().focus()
+
+      fireEvent.click(tryAgain())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(status()).toHaveTextContent(RETRYING)
+      expect(tryAgain()).toHaveAttribute('aria-disabled', 'true')
+      expect(tryAgain()).toHaveFocus()
+      fireEvent.click(tryAgain())
+      expect(retry.count()).toBe(1)
+      const [init] = callsTo(fetchMock, 'retry')
+      expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${SESSION_TOKEN}`)
+
+      await act(() => retry.finish(202, { ...FAILED, status: 'running', failure: null }))
+
+      expect(heading()).toHaveFocus()
+      expect(status()).toHaveTextContent(TAKING_TURN)
+      expect(alertLine()).toHaveTextContent('')
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(callsTo(fetchMock, 'read')).toHaveLength(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+    })
+
+    it('shows the backend sentence when the retry is refused, and keeps Try again', async () => {
+      const user = userEvent.setup()
+      const sentence = 'The interview needs a working Anthropic key saved first'
+      stubInterviewService({
+        read: always(FAILED),
+        retry: () => interviewAnswer(409, { detail: sentence }),
+      })
+      render(<InterviewPanel />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+      expect(await screen.findByText(sentence)).toBe(alertLine())
+      expect(tryAgain()).toHaveAttribute('aria-disabled', 'false')
+      expect(tryAgain()).toHaveFocus()
+    })
+
+    it('says the retry did not go through when the service does not answer', async () => {
+      const user = userEvent.setup()
+      stubInterviewService({ read: always(FAILED), retry: () => interviewAnswer(500) })
+      render(<InterviewPanel />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+      expect(await screen.findByText(NOT_RETRIED)).toBe(alertLine())
+      expect(tryAgain()).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('says there is no interview when the backend has none, and reads it again', async () => {
+      const user = userEvent.setup()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 1 ? FAILED : interviewWith())
+        },
+        retry: () => interviewAnswer(404, { detail: NO_INTERVIEW }),
+      })
+      render(<InterviewPanel />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+      expect(await screen.findByRole('button', { name: 'Start the interview' })).toBeVisible()
+      expect(alertLine()).toHaveTextContent(NO_INTERVIEW)
+    })
+  })
+
+  describe('deleting the conversation', () => {
+    const FINISHED_INTERVIEW = interviewWith({
+      status: 'finished',
+      entries: CONVERSATION,
+      model_calls: 14,
+    })
+
+    function deleteButton(): HTMLElement {
+      return screen.getByRole('button', { name: 'Delete the conversation' })
+    }
+
+    function deleteIt(): HTMLElement {
+      return screen.getByRole('button', { name: 'Delete it' })
+    }
+
+    function keepIt(): HTMLElement {
+      return screen.getByRole('button', { name: 'Keep it' })
+    }
+
+    it.each([
+      interviewWith({ status: 'waiting', question: QUESTION, entries: CONVERSATION }),
+      interviewWith({ status: 'failed', failure: 'cut-off', entries: CONVERSATION }),
+      FINISHED_INTERVIEW,
+      interviewWith({ status: 'stopped', entries: CONVERSATION }),
+    ])('offers the delete while the interview is $status', async (interview) => {
+      stubInterviewService({ read: always(interview) })
+
+      render(<InterviewPanel />)
+
+      expect(await screen.findByRole('button', { name: 'Delete the conversation' })).toBeVisible()
+    })
+
+    it.each([interviewWith(), interviewWith({ status: 'running', entries: CONVERSATION })])(
+      'offers no delete while the interview is $status',
+      async (interview) => {
+        stubInterviewService({ read: always(interview) })
+
+        render(<InterviewPanel />)
+
+        await vi.waitFor(() => {
+          expect(status()).not.toHaveTextContent(LOADING)
+        })
+        expect(screen.queryByRole('button', { name: 'Delete the conversation' })).toBeNull()
+      },
+    )
+
+    it('asks first, with focus on Keep it, and Keep it goes back with focus on the delete', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubInterviewService({ read: always(FINISHED_INTERVIEW) })
+      render(<InterviewPanel />)
+
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      expect(screen.getByText(CONFIRM)).toBeVisible()
+      expect(keepIt()).toHaveFocus()
+      expect(deleteIt()).toBeVisible()
+      expect(screen.queryByRole('button', { name: 'Delete the conversation' })).toBeNull()
+
+      await user.click(keepIt())
+
+      expect(deleteButton()).toHaveFocus()
+      expect(screen.queryByText(CONFIRM)).toBeNull()
+      expect(callsTo(fetchMock, 'remove')).toHaveLength(0)
+    })
+
+    it('deletes with the token, holds Delete it while it runs, then reads as not started with focus on Start', async () => {
+      const user = userEvent.setup()
+      const remove = heldInterviewReply()
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 1 ? FINISHED_INTERVIEW : interviewWith())
+        },
+        remove: remove.reply,
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(status()).toHaveTextContent(DELETING)
+      expect(deleteIt()).toHaveAttribute('aria-disabled', 'true')
+      expect(deleteIt()).toHaveFocus()
+      await user.click(deleteIt())
+      expect(remove.count()).toBe(1)
+      const [init] = callsTo(fetchMock, 'remove')
+      expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${SESSION_TOKEN}`)
+
+      await act(() => remove.finish(204))
+
+      expect(await screen.findByText(INTRODUCTION)).toBeVisible()
+      expect(startButton()).toHaveFocus()
+      expect(status()).toHaveTextContent('')
+      expect(within(panel()).queryByRole('list', { name: 'Conversation' })).toBeNull()
+      expect(within(panel()).queryByText(/model calls used/)).toBeNull()
+    })
+
+    it('puts focus on the heading after the delete when a start still needs something', async () => {
+      const user = userEvent.setup()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(
+            200,
+            reads === 1 ? FINISHED_INTERVIEW : interviewWith({ missing: ['working-key'] }),
+          )
+        },
+        remove: () => interviewAnswer(204),
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(await screen.findByText(NEEDS_KEY)).toBeVisible()
+      expect(heading()).toHaveFocus()
+    })
+
+    it('shows the backend sentence when the delete is refused, with focus back on the delete', async () => {
+      const user = userEvent.setup()
+      const sentence = 'The interview is taking its turn; wait for it to finish'
+      stubInterviewService({
+        read: always(FINISHED_INTERVIEW),
+        remove: () => interviewAnswer(409, { detail: sentence }),
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(await screen.findByText(sentence)).toBe(alertLine())
+      expect(deleteButton()).toHaveFocus()
+      expect(screen.queryByText(CONFIRM)).toBeNull()
+    })
+
+    it('says there is no interview when the backend has none, and reads it again', async () => {
+      const user = userEvent.setup()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 1 ? FINISHED_INTERVIEW : interviewWith())
+        },
+        remove: () => interviewAnswer(404, { detail: NO_INTERVIEW }),
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(await screen.findByRole('button', { name: 'Start the interview' })).toBeVisible()
+      expect(alertLine()).toHaveTextContent(NO_INTERVIEW)
+    })
+
+    it('says the delete did not go through when the service does not answer, and keeps the question open', async () => {
+      const user = userEvent.setup()
+      stubInterviewService({
+        read: always(FINISHED_INTERVIEW),
+        remove: () => interviewAnswer(500),
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(await screen.findByText(NOT_DELETED)).toBe(alertLine())
+      expect(deleteIt()).toHaveAttribute('aria-disabled', 'false')
+      expect(deleteIt()).toHaveFocus()
+      expect(lines()).toHaveLength(CONVERSATION.length)
     })
   })
 })
