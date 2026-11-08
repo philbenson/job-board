@@ -31,8 +31,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from job_board.interview.claims import renew_claim
-from job_board.interview.failures import EmptyReply, LostClaim, ReplyCutOff
-from job_board.interview.model import CUT_OFF
+from job_board.interview.failures import EmptyReply, LostClaim, ModelDeclined, ReplyCutOff
+from job_board.interview.model import CUT_OFF, DECLINED
 from job_board.interview.prompt import (
     LIMIT_REACHED,
     SAY_IT_AGAIN,
@@ -106,8 +106,9 @@ async def _renew_claim(context: Context) -> None:
 async def _interviewer(state: InterviewState, runtime: Runtime[Context]) -> InterviewState:
     """The model's next reply, or the service's own line when a limit is reached.
 
-    A reply cut off at the token limit, or holding nothing, raises, and nothing
-    of it is kept: the run fails, and a retry asks again from the step before.
+    A reply cut off at the token limit, declined by the model, or holding
+    nothing raises, and nothing of it is kept, so none of its tool calls runs:
+    the run fails, and a retry asks again from the step before.
     """
     context = runtime.context
     await _renew_claim(context)
@@ -121,8 +122,11 @@ async def _interviewer(state: InterviewState, runtime: Runtime[Context]) -> Inte
     # Renewed again, so a run whose claim was taken while the model answered
     # keeps nothing of the reply and writes no step over the run that took it.
     await _renew_claim(context)
-    if reply.response_metadata.get("stop_reason") == CUT_OFF:
+    stop_reason = reply.response_metadata.get("stop_reason")
+    if stop_reason == CUT_OFF:
         raise ReplyCutOff
+    if stop_reason == DECLINED:
+        raise ModelDeclined
     if not reply.tool_calls and not reply.text.strip():
         raise EmptyReply
     return {

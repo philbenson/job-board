@@ -540,7 +540,7 @@ export interface components {
             /** Missing */
             missing: ("working-key" | "checked-resume-text")[];
             /** Failure */
-            failure: ("timed-out" | "connection-error" | "rejected" | "not-permitted" | "model-not-found" | "no-credit" | "rate-limited" | "server-error" | "refused" | "cut-off" | "empty-reply" | "not-sealed-here" | "unopenable" | "lost-claim" | "interrupted" | "unexpected") | null;
+            failure: ("timed-out" | "connection-error" | "rejected" | "not-permitted" | "model-not-found" | "no-credit" | "rate-limited" | "server-error" | "refused" | "cut-off" | "declined" | "empty-reply" | "not-sealed-here" | "unopenable" | "interrupted" | "unexpected") | null;
             /** Question */
             question: string | null;
             /** Entries */

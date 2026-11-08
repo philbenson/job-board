@@ -13,14 +13,14 @@ InterviewFailure = Literal[
     "rate-limited",
     "server-error",
     "refused",
-    # The reply reached the token limit, or held neither text nor a tool call.
+    # The reply reached the token limit, the model declined to give one, or it
+    # held neither text nor a tool call.
     "cut-off",
+    "declined",
     "empty-reply",
     # The person's key was sealed under another service key, or will not open.
     "not-sealed-here",
     "unopenable",
-    # Another run took over this one's stale claim.
-    "lost-claim",
     # The service stopped while the run was in flight.
     "interrupted",
     # Anything else, logged by its type's name.
@@ -41,6 +41,15 @@ class ReplyCutOff(Exception):
     code: InterviewFailure = "cut-off"
 
 
+class ModelDeclined(Exception):
+    """The model stopped its reply by declining to go on; nothing of it is kept.
+
+    Not ``refused``, which is Anthropic refusing the request itself.
+    """
+
+    code: InterviewFailure = "declined"
+
+
 class EmptyReply(Exception):
     """The model's reply held neither text nor a tool call; nothing of it is kept."""
 
@@ -48,6 +57,7 @@ class EmptyReply(Exception):
 
 
 class LostClaim(Exception):
-    """Another run took over this run's claim when it went stale, so this run must stop."""
+    """Another run took over this run's claim when it went stale, so this run must stop.
 
-    code: InterviewFailure = "lost-claim"
+    It records no failure: the interview belongs to the run that took it over.
+    """

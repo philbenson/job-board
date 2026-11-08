@@ -26,6 +26,7 @@ from job_board.interview.failures import (
     EmptyReply,
     InterviewFailure,
     LostClaim,
+    ModelDeclined,
     ReplyCutOff,
 )
 from job_board.interview.graph import Context, InterviewGraph, InterviewState, thread_config
@@ -129,7 +130,7 @@ async def _run(services: RunServices, turn: Turn) -> InterviewFailure | None:
                 services.sessionmaker, turn.person_id, turn.sealed_key, key_failure
             )
         return _failed(turn, _stored(reason), reason)
-    except (ReplyCutOff, EmptyReply) as error:
+    except (ReplyCutOff, ModelDeclined, EmptyReply) as error:
         return _failed(turn, error.code)
     return None
 

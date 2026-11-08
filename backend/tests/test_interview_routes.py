@@ -237,6 +237,10 @@ def cut_off() -> AIMessage:
     return AIMessage("Saving your", response_metadata={"stop_reason": "max_tokens"})
 
 
+def declined() -> AIMessage:
+    return AIMessage("Saving your", response_metadata={"stop_reason": "refusal"})
+
+
 # Every status
 
 
@@ -509,10 +513,19 @@ async def test_an_answer_whose_run_failed_on_arrival_takes_a_retry_and_no_second
         (status_error(418), "refused"),
         (timed_out(), "timed-out"),
         (cut_off(), "cut-off"),
+        (declined(), "declined"),
         (AIMessage(""), "empty-reply"),
         (RuntimeError("no such thing"), "unexpected"),
     ],
-    ids=["server-error", "refused", "timed-out", "cut-off", "empty-reply", "unexpected"],
+    ids=[
+        "server-error",
+        "refused",
+        "timed-out",
+        "cut-off",
+        "declined",
+        "empty-reply",
+        "unexpected",
+    ],
 )
 async def test_a_failed_run_records_why_leaves_the_key_and_can_be_retried(
     service: Service, ready: Someone, reply: AIMessage | BaseException, failure: str

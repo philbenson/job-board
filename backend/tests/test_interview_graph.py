@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from job_board.database import make_sessionmaker
-from job_board.interview.failures import EmptyReply, LostClaim, ReplyCutOff
+from job_board.interview.failures import EmptyReply, LostClaim, ModelDeclined, ReplyCutOff
 from job_board.interview.graph import (
     ANSWER_MODEL_CALLS,
     INTERVIEW_MODEL_CALLS,
@@ -479,17 +479,21 @@ async def test_finishing_ends_the_interview_finished(interview: Run) -> None:
 
 CUT_OFF_SAVE = calling(("save_pace", PACE), text="Saving")
 CUT_OFF_SAVE.response_metadata = {"stop_reason": "max_tokens"}
+# A reply the model stopped by declining, part way through a save.
+DECLINED_SAVE = calling(("save_target_titles", {"titles": ["Staff"]}), text="Saving")
+DECLINED_SAVE.response_metadata = {"stop_reason": "refusal"}
 
 
 @pytest.mark.parametrize(
     ("reply", "raised"),
     [
         pytest.param(CUT_OFF_SAVE, ReplyCutOff, id="cut-off"),
+        pytest.param(DECLINED_SAVE, ModelDeclined, id="declined"),
         pytest.param(AIMessage(""), EmptyReply, id="empty"),
         pytest.param(AIMessage([{"type": "text", "text": "  \n"}]), EmptyReply, id="blank"),
     ],
 )
-async def test_a_reply_cut_off_or_empty_fails_and_keeps_and_saves_nothing(
+async def test_a_reply_cut_off_declined_or_empty_fails_and_keeps_and_saves_nothing(
     interview: Run, engine: AsyncEngine, reply: AIMessage, raised: type[Exception]
 ) -> None:
     script(interview, reply)

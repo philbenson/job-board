@@ -69,16 +69,14 @@ async def release_claim(
     person_id: int,
     run_id: str,
     failure: InterviewFailure | None,
-) -> bool:
-    """Ends ``run_id``'s claim, recording ``failure``; False when it no longer held one.
+) -> None:
+    """Ends ``run_id``'s claim, recording ``failure``.
 
     A run that lost its claim, or whose interview was deleted, records nothing.
     """
     async with sessionmaker() as session, session.begin():
-        released = await session.scalar(
+        await session.execute(
             update(InterviewRow)
             .where(InterviewRow.person_id == person_id, InterviewRow.run_id == run_id)
             .values(run_id=None, running_since=None, failure=failure)
-            .returning(InterviewRow.person_id)
         )
-    return released is not None

@@ -34,6 +34,7 @@ THINKING = {"type": "adaptive", "display": "omitted"}
 # fails the run, and the person retries it.
 TIMEOUT_SECONDS = MAX_TOKENS / SLOWEST_TOKENS_PER_SECOND + INPUT_READING_SECONDS
 CUT_OFF = "max_tokens"  # the stop reason of a reply that reached the token limit
+DECLINED = "refusal"  # the stop reason of a reply the model declined to go on with
 
 # Builds the chat model for one run from the person's key.
 type InterviewModelFactory = Callable[[str], BaseChatModel]

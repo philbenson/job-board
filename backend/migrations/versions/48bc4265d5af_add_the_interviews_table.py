@@ -27,7 +27,7 @@ SAVER_TABLES = ("checkpoints", "checkpoint_blobs", "checkpoint_writes")
 FAILURE_IS_KNOWN = (
     "failure IN ('timed-out', 'connection-error', 'rejected', 'not-permitted', "
     "'model-not-found', 'no-credit', 'rate-limited', 'server-error', 'refused', 'cut-off', "
-    "'empty-reply', 'not-sealed-here', 'unopenable', 'lost-claim', 'interrupted', 'unexpected')"
+    "'declined', 'empty-reply', 'not-sealed-here', 'unopenable', 'interrupted', 'unexpected')"
 )
 
 

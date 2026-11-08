@@ -1611,10 +1611,10 @@
                   "server-error",
                   "refused",
                   "cut-off",
+                  "declined",
                   "empty-reply",
                   "not-sealed-here",
                   "unopenable",
-                  "lost-claim",
                   "interrupted",
                   "unexpected"
                 ]
