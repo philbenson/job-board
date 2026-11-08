@@ -27,6 +27,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from job_board.interview.failures import failure_is_known
+
 # Constraint names are derived, not left to the database, so a migration can
 # name the constraint it drops and every database gets the same names. A
 # constraint over several columns is named after all of them.
@@ -230,10 +232,36 @@ class Score(Base):
     scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Interview(Base):
+    """A person's onboarding interview: its thread in the saver's tables, and the run holding it.
+
+    Invariant: at most one per person, and one run at a time. A run holds the
+    interview by its claim, ``run_id`` and ``running_since``, both set or both
+    null, renewed at each step; a claim gone stale may be taken over. Deleting
+    the row, or the person, deletes every step the saver kept of it.
+    """
+
+    __tablename__ = "interviews"
+    __table_args__ = (
+        CheckConstraint("(run_id IS NULL) = (running_since IS NULL)", name="claim_whole"),
+        CheckConstraint(failure_is_known("failure"), name="failure_is_known"),
+    )
+
+    person_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True
+    )
+    thread_id: Mapped[str] = mapped_column(Text, unique=True)  # the saver's key, a random UUID
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    run_id: Mapped[str | None] = mapped_column(Text)
+    running_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure: Mapped[str | None] = mapped_column(Text)  # one of interview.failures' codes
+
+
 # The checkpoint saver's tables, as its own setup would leave them after its
 # migration 9: the same columns, keys and thread_id indexes, under the saver's
 # names. The migrations make them and the service never runs that setup;
 # tests/test_checkpoint_tables.py fails when a saver upgrade changes them.
+# Each step belongs to an interview, and goes with it.
 
 
 class CheckpointMigration(Base):
@@ -256,7 +284,9 @@ class Checkpoint(Base):
         Index("checkpoints_thread_id_idx", "thread_id"),
     )
 
-    thread_id: Mapped[str] = mapped_column(Text)
+    thread_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("interviews.thread_id", ondelete="CASCADE")
+    )
     checkpoint_ns: Mapped[str] = mapped_column(Text, server_default=text("''"))
     checkpoint_id: Mapped[str] = mapped_column(Text)
     parent_checkpoint_id: Mapped[str | None] = mapped_column(Text)
@@ -279,7 +309,9 @@ class CheckpointBlob(Base):
         Index("checkpoint_blobs_thread_id_idx", "thread_id"),
     )
 
-    thread_id: Mapped[str] = mapped_column(Text)
+    thread_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("interviews.thread_id", ondelete="CASCADE")
+    )
     checkpoint_ns: Mapped[str] = mapped_column(Text, server_default=text("''"))
     channel: Mapped[str] = mapped_column(Text)
     version: Mapped[str] = mapped_column(Text)
@@ -303,7 +335,9 @@ class CheckpointWrite(Base):
         Index("checkpoint_writes_thread_id_idx", "thread_id"),
     )
 
-    thread_id: Mapped[str] = mapped_column(Text)
+    thread_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("interviews.thread_id", ondelete="CASCADE")
+    )
     checkpoint_ns: Mapped[str] = mapped_column(Text, server_default=text("''"))
     checkpoint_id: Mapped[str] = mapped_column(Text)
     task_id: Mapped[str] = mapped_column(Text)

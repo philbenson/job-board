@@ -15,6 +15,7 @@ HEAD_TABLES = [
     "checkpoint_writes",
     "checkpoints",
     "fetch_runs",
+    "interviews",
     "model_keys",
     "people",
     "postings",
