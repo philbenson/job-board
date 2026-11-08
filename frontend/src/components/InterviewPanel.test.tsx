@@ -246,6 +246,28 @@ describe('InterviewPanel', () => {
       expect(heading()).toHaveFocus()
     })
 
+    it('lets a start out finish when Clerk hands the panel a new token function', async () => {
+      const start = heldInterviewReply()
+      stubInterviewService({ read: always(interviewWith()), start: start.reply })
+      const { rerender } = render(<InterviewPanel />)
+      fireEvent.click(await screen.findByRole('button', { name: 'Start the interview' }))
+      await vi.waitFor(() => {
+        expect(start.count()).toBe(1)
+      })
+      const first = clerk.getToken
+      clerk.getToken = vi.fn<() => Promise<string | null>>().mockResolvedValue(SESSION_TOKEN)
+      try {
+        rerender(<InterviewPanel />)
+
+        await act(() => start.finish(202, interviewWith({ status: 'running' })))
+
+        expect(status()).toHaveTextContent(TAKING_TURN)
+        expect(screen.queryByRole('button', { name: 'Start the interview' })).toBeNull()
+      } finally {
+        clerk.getToken = first
+      }
+    })
+
     it('says the start did not go through when the service does not answer', async () => {
       const user = userEvent.setup()
       stubInterviewService({ read: always(interviewWith()), start: () => interviewAnswer(500) })
@@ -1043,23 +1065,32 @@ describe('InterviewPanel', () => {
       expect(heading()).toHaveFocus()
     })
 
-    it('says there is no interview when the backend has none, and reads it again', async () => {
+    it('says there is no interview when the backend has none, and reads it again, focus on the heading', async () => {
       const user = userEvent.setup()
-      let reads = 0
+      const read = heldInterviewReply()
       stubInterviewService({
-        read: () => {
-          reads += 1
-          return interviewAnswer(200, reads === 1 ? FINISHED_INTERVIEW : interviewWith())
-        },
+        read: read.reply,
         remove: () => interviewAnswer(404, { detail: NO_INTERVIEW }),
       })
       render(<InterviewPanel />)
-      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(1)
+      })
+      await act(() => read.finish(200, FINISHED_INTERVIEW))
+      await user.click(screen.getByRole('button', { name: 'Delete the conversation' }))
 
       await user.click(deleteIt())
 
-      expect(await screen.findByRole('button', { name: 'Start the interview' })).toBeVisible()
+      // The confirm step has closed, taking Delete it, and the read is out.
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(2)
+      })
+      expect(screen.queryByText(CONFIRM)).toBeNull()
+      expect(heading()).toHaveFocus()
+      await act(() => read.finish(200, interviewWith()))
+      expect(startButton()).toBeVisible()
       expect(alertLine()).toHaveTextContent(NO_INTERVIEW)
+      expect(heading()).toHaveFocus()
     })
 
     it('says the delete did not go through when the service does not answer, and keeps the question open', async () => {

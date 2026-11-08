@@ -211,15 +211,23 @@ export function InterviewPanel({
     })
   }, [getToken, show])
 
+  // The latest readAgain, so the panel's lifetime below depends on nothing:
+  // were it to end and begin again while a request was out, the request would
+  // be aborted, and its handler would return with the panel still held.
+  const firstRead = useRef(readAgain)
+  useEffect(() => {
+    firstRead.current = readAgain
+  })
+
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
-    readAgain()
+    firstRead.current()
     return () => {
       controller.abort()
       readOnce.current?.abort()
     }
-  }, [readAgain])
+  }, [])
 
   const running = shown.kind === 'interview' && shown.interview.status === 'running'
 
@@ -462,6 +470,9 @@ export function InterviewPanel({
       }
       setConfirming(false)
       if (removed === 'no interview') {
+        // Delete it leaves the page with the confirm step, and the read for
+        // the interview is still out.
+        focusNext.current = 'heading'
         setProblem(NO_INTERVIEW)
       } else {
         focusNext.current = 'delete'
