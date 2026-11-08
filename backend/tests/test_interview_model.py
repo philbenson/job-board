@@ -22,7 +22,7 @@ from job_board.interview.prompt import (
     system_message,
 )
 from job_board.interview.tools import TOOLS
-from job_board.model_key.check import CHECK_MODEL
+from job_board.model_key.check import ANTHROPIC_API, CHECK_MODEL
 
 RESUME = "Staff engineer at Example Co since 2019, writing Python and Go."
 PACE = {"leads_per_day": 10, "brief_from_score": None}
@@ -99,6 +99,25 @@ def test_the_model_gives_up_connecting_after_five_seconds_and_reading_after_its_
     assert isinstance(model, ChatAnthropic)
     expected = anthropic.Timeout(TIMEOUT_SECONDS, connect=5.0)
     assert [model._async_client.timeout, model._client.timeout] == [expected, expected]
+
+
+async def test_the_model_ignores_the_environments_anthropic_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Either variable would otherwise send the person's key to whatever it names.
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("ANTHROPIC_API_URL", "http://127.0.0.1:9")
+    model = anthropic_interviewer(fake_key())
+    assert isinstance(model, ChatAnthropic)
+    sent_to = [str(model._async_client.base_url), str(model._client.base_url)]
+    assert sent_to == [ANTHROPIC_API, ANTHROPIC_API]
+
+    key = fake_key()
+    with canned_anthropic(message("Which places will you work in?")) as server:
+        model = anthropic_interviewer(key, base_url=server.url)
+        await model.bind_tools(TOOLS).ainvoke([system_message(RESUME), *CONVERSATION])
+    [request] = server.received
+    assert request.headers["authorization"] == f"Bearer {key}"
 
 
 def test_langchain_still_sends_through_the_two_clients_the_interviewer_replaces() -> None:
