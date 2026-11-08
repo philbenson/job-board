@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InterviewBody } from '../api/interview.ts'
@@ -35,6 +35,12 @@ const FINISHED =
   'The interview is finished. Your profile holds what it saved, and you can edit it at any time.'
 const ALREADY_STARTED = 'Your interview has already started'
 const NOT_STARTED = 'Could not start the interview. Try again.'
+const SENDING = 'Sending your answer…'
+const NOT_SENT = 'Could not send your answer. Try again.'
+const LOST_TOUCH = 'Lost touch with the service; still trying'
+const REPLIED = 'The interviewer replied.'
+const CHANGED = 'The interview has changed since it was read; reload it and try again'
+const NO_INTERVIEW = 'No interview started'
 
 const QUESTION = 'Which titles are you aiming for next?'
 
@@ -69,6 +75,21 @@ function alertLine(): HTMLElement {
 
 function startButton(): HTMLElement {
   return screen.getByRole('button', { name: 'Start the interview' })
+}
+
+function answerBox(): HTMLTextAreaElement {
+  return screen.getByLabelText<HTMLTextAreaElement>('Your answer')
+}
+
+function sendButton(): HTMLElement {
+  return screen.getByRole('button', { name: 'Send' })
+}
+
+function showPage(state: DocumentVisibilityState): void {
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(state)
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
 }
 
 function lines(): string[] {
@@ -317,6 +338,388 @@ describe('InterviewPanel', () => {
       expect(await screen.findByText('Your Anthropic account is out of credit.')).toBe(alertLine())
       expect(lines()).toHaveLength(3)
       expect(screen.queryByLabelText('Your answer')).toBeNull()
+    })
+  })
+
+  describe('answering', () => {
+    const WAITING = interviewWith({
+      status: 'waiting',
+      question: QUESTION,
+      entries: CONVERSATION,
+      model_calls: 3,
+    })
+
+    it('names the question and the count as the box describes itself, counting in code points', async () => {
+      stubInterviewService({ read: always(WAITING) })
+      render(<InterviewPanel />)
+
+      expect(await screen.findByLabelText('Your answer')).toHaveAccessibleDescription(
+        `${QUESTION} 0 of 4,000 characters`,
+      )
+      fireEvent.change(answerBox(), { target: { value: '🙂'.repeat(4_000) } })
+
+      expect(answerBox()).toHaveAccessibleDescription(`${QUESTION} 4,000 of 4,000 characters`)
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('holds Send, sending nothing, while the box shows only spaces or more than 4,000 characters', async () => {
+      const fetchMock = stubInterviewService({ read: always(WAITING) })
+      render(<InterviewPanel />)
+      await screen.findByLabelText('Your answer')
+
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.change(answerBox(), { target: { value: ' \n\t ' } })
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.click(sendButton())
+      fireEvent.change(answerBox(), { target: { value: 'a'.repeat(4_001) } })
+      expect(answerBox()).toHaveAccessibleDescription(`${QUESTION} 4,001 of 4,000 characters`)
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.click(sendButton())
+
+      expect(callsTo(fetchMock, 'answer')).toHaveLength(0)
+    })
+
+    it('sends several lines as typed, and holds the box and Send while the answer is out, focus kept', async () => {
+      const user = userEvent.setup()
+      const answer = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: always(WAITING), answer: answer.reply })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer{Enter}or principal')
+
+      await user.click(sendButton())
+
+      const [init] = callsTo(fetchMock, 'answer')
+      expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${SESSION_TOKEN}`)
+      expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json')
+      expect(JSON.parse(String(init?.body))).toEqual({ text: 'Staff engineer\nor principal' })
+      expect(status()).toHaveTextContent(SENDING)
+      expect(sendButton()).toHaveFocus()
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'true')
+      expect(answerBox()).toHaveAttribute('readonly')
+      expect(answerBox()).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.change(answerBox(), { target: { value: 'something else' } })
+      expect(answerBox()).toHaveValue('Staff engineer\nor principal')
+      await user.click(sendButton())
+      expect(answer.count()).toBe(1)
+    })
+
+    it('shows the sent answer last, holds the emptied box while the turn runs, and drops the line once the conversation holds it', async () => {
+      vi.useFakeTimers()
+      const read = heldInterviewReply()
+      stubInterviewService({
+        read: read.reply,
+        answer: () =>
+          interviewAnswer(202, { ...WAITING, status: 'running', question: null }),
+      })
+      render(<InterviewPanel />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => read.finish(200, WAITING))
+      fireEvent.change(answerBox(), { target: { value: 'Staff engineer\nor principal' } })
+      sendButton().focus()
+
+      fireEvent.click(sendButton())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      expect(lines().at(-1)).toBe('You (sent)Staff engineer\nor principal')
+      expect(lines()).toHaveLength(CONVERSATION.length + 1)
+      expect(status()).toHaveTextContent(TAKING_TURN)
+      expect(answerBox()).toHaveValue('')
+      expect(answerBox()).toHaveAttribute('readonly')
+      expect(answerBox()).toHaveAccessibleDescription('0 of 4,000 characters')
+      expect(sendButton()).toHaveFocus()
+
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      await act(() =>
+        read.finish(
+          200,
+          interviewWith({
+            status: 'running',
+            entries: [...CONVERSATION, { kind: 'person', text: 'Staff engineer\nor principal' }],
+          }),
+        ),
+      )
+
+      expect(lines().at(-1)).toBe('YouStaff engineer\nor principal')
+      expect(lines()).toHaveLength(CONVERSATION.length + 1)
+    })
+
+    it.each([
+      ['keeps focus on Send when the next question comes', 'waiting', 'Send'],
+      ['hands focus to the heading when the interview ends instead', 'finished', 'heading'],
+    ] as const)('%s', async (_name, ending, focused) => {
+      vi.useFakeTimers()
+      const read = heldInterviewReply()
+      stubInterviewService({
+        read: read.reply,
+        answer: () => interviewAnswer(202, { ...WAITING, status: 'running', question: null }),
+      })
+      render(<InterviewPanel />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => read.finish(200, WAITING))
+      fireEvent.change(answerBox(), { target: { value: 'Staff engineer' } })
+      sendButton().focus()
+      fireEvent.click(sendButton())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+
+      await act(() =>
+        read.finish(200, {
+          ...WAITING,
+          status: ending,
+          question: ending === 'waiting' ? QUESTION : null,
+          entries: [...CONVERSATION, { kind: 'person', text: 'Staff engineer' }],
+        }),
+      )
+
+      expect(focused === 'Send' ? sendButton() : heading()).toHaveFocus()
+    })
+
+    it('drops the sent line when a read finds the turn no longer running', async () => {
+      vi.useFakeTimers()
+      const read = heldInterviewReply()
+      stubInterviewService({
+        read: read.reply,
+        answer: () => interviewAnswer(202, { ...WAITING, status: 'running', question: null }),
+      })
+      render(<InterviewPanel />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => read.finish(200, WAITING))
+      fireEvent.change(answerBox(), { target: { value: 'Staff engineer' } })
+      fireEvent.click(sendButton())
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+
+      await act(() =>
+        read.finish(200, { ...WAITING, status: 'failed', failure: 'interrupted', question: null }),
+      )
+
+      expect(lines()).toHaveLength(CONVERSATION.length)
+      expect(screen.queryByText('You (sent)')).toBeNull()
+    })
+
+    it.each([
+      'The interview is taking its turn; wait for it to finish',
+      'The interview is not waiting on an answer',
+    ])('shows the refusal "%s" and keeps the text', async (sentence) => {
+      const user = userEvent.setup()
+      const fetchMock = stubInterviewService({
+        read: always(WAITING),
+        answer: () => interviewAnswer(409, { detail: sentence }),
+      })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      expect(await screen.findByText(sentence)).toBe(alertLine())
+      expect(answerBox()).toHaveValue('Staff engineer')
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(callsTo(fetchMock, 'read')).toHaveLength(1)
+    })
+
+    it('reads the interview again when it changed since it was read, keeping the text under the newest question', async () => {
+      const user = userEvent.setup()
+      const newest = 'And which places would you work from?'
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(
+            200,
+            reads === 1
+              ? WAITING
+              : {
+                  ...WAITING,
+                  question: newest,
+                  entries: [...CONVERSATION, { kind: 'interviewer', text: newest }],
+                },
+          )
+        },
+        answer: () => interviewAnswer(409, { detail: CHANGED }),
+      })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      await vi.waitFor(() => {
+        expect(lines().at(-1)).toBe(`Interviewer${newest}`)
+      })
+      expect(alertLine()).toHaveTextContent(CHANGED)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(answerBox()).toHaveValue('Staff engineer')
+      expect(answerBox()).toHaveAccessibleDescription(`${newest} 14 of 4,000 characters`)
+    })
+
+    it('shows the first rule a refused answer broke, and keeps the text', async () => {
+      const user = userEvent.setup()
+      stubInterviewService({
+        read: always(WAITING),
+        answer: () =>
+          interviewAnswer(422, {
+            detail: [
+              { loc: ['body', 'text'], msg: 'An answer cannot contain text direction controls', type: 'value_error' },
+              { loc: ['body', 'text'], msg: 'A second rule', type: 'value_error' },
+            ],
+          }),
+      })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      expect(await screen.findByText('An answer cannot contain text direction controls')).toBe(alertLine())
+      expect(answerBox()).toHaveValue('Staff engineer')
+    })
+
+    it('says the answer did not go through when the service does not answer, and keeps the text', async () => {
+      const user = userEvent.setup()
+      stubInterviewService({ read: always(WAITING), answer: () => interviewAnswer(500) })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      expect(await screen.findByText(NOT_SENT)).toBe(alertLine())
+      expect(answerBox()).toHaveValue('Staff engineer')
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('says there is no interview when the backend has none, and reads it again', async () => {
+      const user = userEvent.setup()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 1 ? WAITING : interviewWith())
+        },
+        answer: () => interviewAnswer(404, { detail: NO_INTERVIEW }),
+      })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      expect(await screen.findByRole('button', { name: 'Start the interview' })).toBeVisible()
+      expect(alertLine()).toHaveTextContent(NO_INTERVIEW)
+    })
+  })
+
+  describe('while a turn runs', () => {
+    const RUNNING = interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 3), model_calls: 2 })
+
+    async function mountRunning() {
+      vi.useFakeTimers()
+      const read = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: read.reply })
+      render(<InterviewPanel />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() => read.finish(200, RUNNING))
+      return { read, fetchMock }
+    }
+
+    it('reads again two seconds after each read answers, never while one is out', async () => {
+      const { read } = await mountRunning()
+
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(read.count()).toBe(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(read.count()).toBe(2)
+      // Short of the read's own limit, after which it is a failed read.
+      await act(() => vi.advanceTimersByTimeAsync(4_999))
+      expect(read.count()).toBe(2)
+
+      await act(() => read.finish(200, { ...RUNNING, model_calls: 3 }))
+      expect(within(panel()).getByText('3 of 60 model calls used')).toBeVisible()
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(read.count()).toBe(2)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(read.count()).toBe(3)
+    })
+
+    it('says it lost touch when a read fails, and goes on reading', async () => {
+      const { read } = await mountRunning()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+
+      await act(() => read.finish(500))
+
+      expect(status()).toHaveTextContent(LOST_TOUCH)
+      expect(lines()).toHaveLength(3)
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      expect(read.count()).toBe(3)
+      await act(() => read.finish(200, RUNNING))
+      expect(status()).toHaveTextContent(TAKING_TURN)
+    })
+
+    it('stops reading once the turn ends waiting on an answer, and says the interviewer replied', async () => {
+      const { read } = await mountRunning()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+
+      await act(() =>
+        read.finish(200, { ...RUNNING, status: 'waiting', question: QUESTION, entries: CONVERSATION }),
+      )
+
+      expect(status()).toHaveTextContent(REPLIED)
+      expect(answerBox()).toHaveAttribute('aria-disabled', 'false')
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(read.count()).toBe(2)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('reads nothing while the page is hidden, and at once when it shows again', async () => {
+      const { read } = await mountRunning()
+
+      showPage('hidden')
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(read.count()).toBe(1)
+
+      showPage('visible')
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      expect(read.count()).toBe(2)
+    })
+
+    it('reads nothing more after a read that answers once the page is hidden', async () => {
+      const { read } = await mountRunning()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      showPage('hidden')
+
+      await act(() => read.finish(200, RUNNING))
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+
+      expect(read.count()).toBe(2)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('lets a newer read, as the page shows, abort the one in flight', async () => {
+      const { read, fetchMock } = await mountRunning()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      const [, inFlight] = callsTo(fetchMock, 'read')
+
+      showPage('visible')
+      await act(() => vi.advanceTimersByTimeAsync(0))
+
+      expect(inFlight?.signal?.aborted).toBe(true)
+      expect(read.count()).toBe(3)
+    })
+
+    it('aborts the read in flight and leaves no timer when the panel goes', async () => {
+      const { fetchMock } = await mountRunning()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      const [, inFlight] = callsTo(fetchMock, 'read')
+
+      cleanup()
+
+      expect(inFlight?.signal?.aborted).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('leaves no timer when the panel goes between reads', async () => {
+      await mountRunning()
+      expect(vi.getTimerCount()).toBe(1)
+
+      cleanup()
+
+      expect(vi.getTimerCount()).toBe(0)
     })
   })
 })

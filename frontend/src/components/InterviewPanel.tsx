@@ -1,22 +1,37 @@
 import { useAuth } from '@clerk/react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
+  answerInterview,
   fetchInterview,
   INTERVIEW_TIMEOUT_MS,
   startInterview,
+  type InterviewAnswer,
   type InterviewBody,
   type InterviewStart,
   type MissingItem,
 } from '../api/interview.ts'
 import { withToken } from '../api/withToken.ts'
+import { AnswerBox } from './AnswerBox.tsx'
 import { Conversation } from './Conversation.tsx'
 import { FAILURE_SENTENCES } from './interviewFailures.ts'
+
+// How long after a read answers the next one goes, while a turn runs.
+const POLL_INTERVAL_MS = 2_000
 
 const LOADING = 'Loading your interview…'
 const NOT_LOADED = 'Could not load your interview. Reload the page to try again.'
 const TAKING_TURN = 'The interviewer is taking its turn…'
+const LOST_TOUCH = 'Lost touch with the service; still trying'
+const REPLIED = 'The interviewer replied.'
 const NOT_STARTED = 'Could not start the interview. Try again.'
+const NOT_SENT = 'Could not send your answer. Try again.'
+const NO_INTERVIEW = 'No interview started'
 const KEPT = 'Your profile holds what it saved, and you can edit it at any time.'
+
+// The backend's sentence for an answer to a question the interview has moved
+// past. Only this refusal means what is shown is out of date, so only it
+// reads the interview again.
+const CHANGED = 'The interview has changed since it was read; reload it and try again'
 
 const INTRODUCTION =
   "The interviewer reads your resume's text, asks you one question at a time, and saves what it learns into your profile beside it. It runs on your own Anthropic key."
@@ -27,10 +42,11 @@ const MISSING_LINES: Record<MissingItem, string> = {
 }
 
 // What the status line says while a request the person made is out.
-type Busy = 'starting'
+type Busy = 'starting' | 'answering'
 
 const BUSY_LINES: Record<Busy, string> = {
   starting: 'Starting the interview…',
+  answering: 'Sending your answer…',
 }
 
 type Shown =
@@ -38,18 +54,28 @@ type Shown =
   | { kind: 'unreadable' }
   | { kind: 'interview'; interview: InterviewBody }
 
-// Where focus goes once the next render has put it on the page.
-type FocusTarget = 'heading'
+// An answer the backend took, and how many entries the interview held when it
+// did; a read with more holds the answer itself.
+type Sent = { text: string; after: number }
+
+// Where focus goes once the next render has put it on the page: the heading,
+// or the heading only if what held focus has left the page.
+type FocusTarget = 'heading' | 'heading if lost'
 
 /**
  * The onboarding interview: before a start, what it does and what it still
- * needs; once started, the conversation so far, how many model calls it has
- * used, and how it ended. Reads the interview once on mount.
+ * needs; once started, the conversation so far, the box to answer the
+ * question it waits on, how many model calls it has used, and how it ended.
+ * Reads the interview on mount, and while a turn runs reads it again two
+ * seconds after each read answers, one read at a time, none while the page is
+ * hidden and one at once when it shows again, a newer read aborting the one
+ * in flight, as the leads panel does.
  *
  * The status and alert lines stay on the page, empty when there is nothing to
  * say, so a screen reader hears each change of their words. While a request
- * runs its button is held with aria-disabled rather than disabled, which
- * would drop keyboard focus to the page, and its handler does nothing.
+ * runs its controls are held with aria-disabled rather than disabled, which
+ * would drop keyboard focus to the page, and their handlers do nothing. A
+ * control that leaves the page with focus on it hands focus to the heading.
  */
 export function InterviewPanel() {
   const { getToken } = useAuth()
@@ -57,12 +83,23 @@ export function InterviewPanel() {
   const [busy, setBusy] = useState<Busy | null>(null)
   // A refusal or failure of the person's last request, until their next one.
   const [problem, setProblem] = useState('')
+  const [text, setText] = useState('')
+  const [sent, setSent] = useState<Sent | null>(null)
+  // Whether the answer box stays, held, through the turn an answer started.
+  const [boxKept, setBoxKept] = useState(false)
+  // Whether the newest read of a running turn failed.
+  const [lostTouch, setLostTouch] = useState(false)
+  // Whether the poll watched the turn end waiting on the next answer.
+  const [replied, setReplied] = useState(false)
   const headingId = useId()
   const questionId = useId()
+  const section = useRef<HTMLElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const focusNext = useRef<FocusTarget | null>(null)
   // Aborted when the panel goes, so no answer lands on a panel that has gone.
   const lifetime = useRef<AbortController | null>(null)
+  // A read the panel asks for once, outside the poll; a newer one aborts it.
+  const readOnce = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const target = focusNext.current
@@ -70,8 +107,31 @@ export function InterviewPanel() {
       return
     }
     focusNext.current = null
-    heading.current?.focus()
+    const lost = !(section.current?.contains(document.activeElement) ?? false)
+    if (target === 'heading' || lost) {
+      heading.current?.focus()
+    }
   })
+
+  // Every interview the backend gives goes through here. `polled` says the
+  // read was the poll's, which watched the turn.
+  const show = useCallback((interview: InterviewBody, polled: boolean): void => {
+    const running = interview.status === 'running'
+    // A control holding focus may leave with the new state.
+    if (
+      focusNext.current === null &&
+      (section.current?.contains(document.activeElement) ?? false)
+    ) {
+      focusNext.current = 'heading if lost'
+    }
+    setShown({ kind: 'interview', interview })
+    setLostTouch(false)
+    setReplied(polled && interview.status === 'waiting')
+    setBoxKept((kept) => kept && running)
+    setSent((answer) =>
+      answer !== null && running && interview.entries.length <= answer.after ? answer : null,
+    )
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -88,16 +148,98 @@ export function InterviewPanel() {
       if (read === 'aborted') {
         return
       }
-      setShown(
-        read === 'unavailable'
-          ? { kind: 'unreadable' }
-          : { kind: 'interview', interview: read.interview },
-      )
+      if (read === 'unavailable') {
+        setShown({ kind: 'unreadable' })
+      } else {
+        show(read.interview, false)
+      }
     })
     return () => {
       controller.abort()
+      readOnce.current?.abort()
     }
-  }, [getToken])
+  }, [getToken, show])
+
+  const running = shown.kind === 'interview' && shown.interview.status === 'running'
+
+  useEffect(() => {
+    if (!running) {
+      return
+    }
+    let controller: AbortController | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    function read(): void {
+      clearTimeout(timer)
+      timer = undefined
+      controller?.abort()
+      const current = new AbortController()
+      controller = current
+      void withToken(
+        getToken,
+        INTERVIEW_TIMEOUT_MS,
+        current.signal,
+        fetchInterview,
+        'unavailable',
+      ).then((got) => {
+        // Replaced by a newer read, or the poll has stopped.
+        if (got === 'aborted') {
+          return
+        }
+        if (got === 'unavailable') {
+          setLostTouch(true)
+        } else {
+          show(got.interview, true)
+        }
+        // A turn no longer running ends the poll as this effect is cleaned up.
+        if (got === 'unavailable' || got.interview.status === 'running') {
+          readLater()
+        }
+      })
+    }
+
+    function readLater(): void {
+      if (document.visibilityState === 'visible') {
+        timer = setTimeout(read, POLL_INTERVAL_MS)
+      }
+    }
+
+    function readWhenVisible(): void {
+      if (document.visibilityState === 'visible') {
+        read()
+      } else {
+        clearTimeout(timer)
+        timer = undefined
+      }
+    }
+
+    readLater()
+    document.addEventListener('visibilitychange', readWhenVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', readWhenVisible)
+      clearTimeout(timer)
+      controller?.abort()
+    }
+  }, [running, getToken, show])
+
+  // Reads the interview again outside the poll, when what is shown is out of
+  // date. A read that fails leaves it shown: the alert line already says why.
+  const readAgain = useCallback((): void => {
+    readOnce.current?.abort()
+    const controller = new AbortController()
+    readOnce.current = controller
+    void withToken(
+      getToken,
+      INTERVIEW_TIMEOUT_MS,
+      controller.signal,
+      fetchInterview,
+      'unavailable',
+    ).then((read) => {
+      if (read !== 'aborted' && read !== 'unavailable') {
+        show(read.interview, false)
+      }
+    })
+  }, [getToken, show])
 
   async function start(): Promise<void> {
     const signal = lifetime.current?.signal
@@ -123,7 +265,47 @@ export function InterviewPanel() {
     }
     // Start leaves the page with the running interview; the heading stays.
     focusNext.current = 'heading'
-    setShown({ kind: 'interview', interview: started.interview })
+    show(started.interview, false)
+  }
+
+  async function answer(): Promise<void> {
+    const signal = lifetime.current?.signal
+    if (signal === undefined || busy !== null) {
+      return
+    }
+    const answered = text
+    setBusy('answering')
+    setProblem('')
+    setReplied(false)
+    const outcome: InterviewAnswer | 'aborted' = await withToken(
+      getToken,
+      INTERVIEW_TIMEOUT_MS,
+      signal,
+      (token, requestSignal) => answerInterview(token, answered, requestSignal),
+      'unavailable',
+    )
+    if (outcome === 'aborted') {
+      return
+    }
+    setBusy(null)
+    if (outcome === 'unavailable') {
+      setProblem(NOT_SENT)
+    } else if (outcome === 'no interview') {
+      setProblem(NO_INTERVIEW)
+      readAgain()
+    } else if (outcome.kind === 'conflict' || outcome.kind === 'refused') {
+      setProblem(outcome.message)
+      if (outcome.message === CHANGED) {
+        readAgain()
+      }
+    } else {
+      // The box empties and stays, held, through the turn the answer starts,
+      // so focus on it or on Send stays where it is.
+      setText('')
+      setBoxKept(true)
+      setSent({ text: answered, after: outcome.interview.entries.length })
+      show(outcome.interview, false)
+    }
   }
 
   const interview = shown.kind === 'interview' ? shown.interview : null
@@ -135,7 +317,9 @@ export function InterviewPanel() {
   } else if (shown.kind === 'loading') {
     statusLine = LOADING
   } else if (status === 'running') {
-    statusLine = TAKING_TURN
+    statusLine = lostTouch ? LOST_TOUCH : TAKING_TURN
+  } else if (replied) {
+    statusLine = REPLIED
   }
 
   let alertLine = problem
@@ -146,8 +330,10 @@ export function InterviewPanel() {
     alertLine = FAILURE_SENTENCES[interview.failure ?? 'unexpected']
   }
 
+  const boxShown = status === 'waiting' || (status === 'running' && boxKept)
+
   return (
-    <section aria-labelledby={headingId} className="interview">
+    <section ref={section} aria-labelledby={headingId} className="interview">
       <h2 id={headingId} ref={heading} tabIndex={-1}>
         Interview
       </h2>
@@ -175,12 +361,27 @@ export function InterviewPanel() {
         ))}
       {interview !== null && interview.status !== 'not-started' && (
         <>
-          <Conversation entries={interview.entries} sent={null} questionId={questionId} />
+          <Conversation
+            entries={interview.entries}
+            sent={sent?.text ?? null}
+            questionId={questionId}
+          />
           {interview.status === 'finished' && <p>{`The interview is finished. ${KEPT}`}</p>}
           {interview.status === 'stopped' && (
             <p>{`The interview reached its limit of ${interview.model_call_limit} model calls. ${KEPT}`}</p>
           )}
         </>
+      )}
+      {boxShown && (
+        <AnswerBox
+          text={text}
+          onText={setText}
+          held={busy !== null || status !== 'waiting'}
+          questionId={interview?.question == null ? null : questionId}
+          onSend={() => {
+            void answer()
+          }}
+        />
       )}
       <p role="alert">{alertLine}</p>
       {interview !== null && interview.status !== 'not-started' && (
