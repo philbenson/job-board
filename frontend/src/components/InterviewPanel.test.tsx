@@ -222,20 +222,28 @@ describe('InterviewPanel', () => {
       expect(within(panel()).getByText('0 of 60 model calls used')).toBeVisible()
     })
 
-    it('shows the backend sentence when the start is refused, and keeps Start', async () => {
+    it('shows the backend sentence when the start is refused, and reads the interview it describes', async () => {
       const user = userEvent.setup()
-      stubInterviewService({
-        read: always(interviewWith()),
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(
+            200,
+            reads === 1 ? interviewWith() : interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 1) }),
+          )
+        },
         start: () => interviewAnswer(409, { detail: ALREADY_STARTED }),
       })
       render(<InterviewPanel />)
 
       await user.click(await screen.findByRole('button', { name: 'Start the interview' }))
 
-      expect(await screen.findByText(ALREADY_STARTED)).toBe(alertLine())
-      expect(status()).toHaveTextContent('')
-      expect(startButton()).toHaveAttribute('aria-disabled', 'false')
-      expect(startButton()).toHaveFocus()
+      expect(await screen.findByText(TAKING_TURN)).toBe(status())
+      expect(alertLine()).toHaveTextContent(ALREADY_STARTED)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(screen.queryByRole('button', { name: 'Start the interview' })).toBeNull()
+      expect(heading()).toHaveFocus()
     })
 
     it('says the start did not go through when the service does not answer', async () => {
@@ -502,13 +510,16 @@ describe('InterviewPanel', () => {
       expect(screen.queryByText('You (sent)')).toBeNull()
     })
 
-    it.each([
-      'The interview is taking its turn; wait for it to finish',
-      'The interview is not waiting on an answer',
-    ])('shows the refusal "%s" and keeps the text', async (sentence) => {
-      const user = userEvent.setup()
+    it('shows the refusal while a turn runs, reads the running turn, and keeps the text for its next question', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+      const user = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) })
+      const sentence = 'The interview is taking its turn; wait for it to finish'
+      let reads = 0
       const fetchMock = stubInterviewService({
-        read: always(WAITING),
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 2 ? { ...WAITING, status: 'running', question: null } : WAITING)
+        },
         answer: () => interviewAnswer(409, { detail: sentence }),
       })
       render(<InterviewPanel />)
@@ -516,10 +527,36 @@ describe('InterviewPanel', () => {
 
       await user.click(sendButton())
 
-      expect(await screen.findByText(sentence)).toBe(alertLine())
+      expect(await screen.findByText(TAKING_TURN)).toBe(status())
+      expect(alertLine()).toHaveTextContent(sentence)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(screen.queryByLabelText('Your answer')).toBeNull()
+      expect(heading()).toHaveFocus()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
       expect(answerBox()).toHaveValue('Staff engineer')
-      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
-      expect(callsTo(fetchMock, 'read')).toHaveLength(1)
+    })
+
+    it('shows the refusal when the interview no longer waits, and reads how it ended', async () => {
+      const user = userEvent.setup()
+      const sentence = 'The interview is not waiting on an answer'
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, reads === 1 ? WAITING : { ...WAITING, status: 'finished', question: null })
+        },
+        answer: () => interviewAnswer(409, { detail: sentence }),
+      })
+      render(<InterviewPanel />)
+      await user.type(await screen.findByLabelText('Your answer'), 'Staff engineer')
+
+      await user.click(sendButton())
+
+      expect(await screen.findByText(FINISHED)).toBeVisible()
+      expect(alertLine()).toHaveTextContent(sentence)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(screen.queryByLabelText('Your answer')).toBeNull()
+      expect(heading()).toHaveFocus()
     })
 
     it('reads the interview again when it changed since it was read, keeping the text under the newest question', async () => {
@@ -779,10 +816,10 @@ describe('InterviewPanel', () => {
       expect(callsTo(fetchMock, 'read')).toHaveLength(2)
     })
 
-    it('shows the backend sentence when the retry is refused, and keeps Try again', async () => {
+    it('shows the backend sentence when the retry is refused, reads again, and keeps Try again while it still failed', async () => {
       const user = userEvent.setup()
       const sentence = 'The interview needs a working Anthropic key saved first'
-      stubInterviewService({
+      const fetchMock = stubInterviewService({
         read: always(FAILED),
         retry: () => interviewAnswer(409, { detail: sentence }),
       })
@@ -791,8 +828,38 @@ describe('InterviewPanel', () => {
       await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
       expect(await screen.findByText(sentence)).toBe(alertLine())
+      await vi.waitFor(() => {
+        expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      })
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+      expect(alertLine()).toHaveTextContent(sentence)
       expect(tryAgain()).toHaveAttribute('aria-disabled', 'false')
       expect(tryAgain()).toHaveFocus()
+    })
+
+    it('shows the backend sentence when there is nothing to retry, and reads the question it waits on', async () => {
+      const user = userEvent.setup()
+      const sentence = 'The interview has not failed, so there is nothing to retry'
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(
+            200,
+            reads === 1 ? FAILED : interviewWith({ status: 'waiting', question: QUESTION, entries: CONVERSATION }),
+          )
+        },
+        retry: () => interviewAnswer(409, { detail: sentence }),
+      })
+      render(<InterviewPanel />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+      expect(await screen.findByLabelText('Your answer')).toBeVisible()
+      expect(alertLine()).toHaveTextContent(sentence)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+      expect(heading()).toHaveFocus()
     })
 
     it('says the retry did not go through when the service does not answer', async () => {
@@ -945,21 +1012,35 @@ describe('InterviewPanel', () => {
       expect(heading()).toHaveFocus()
     })
 
-    it('shows the backend sentence when the delete is refused, with focus back on the delete', async () => {
+    it('shows the backend sentence when the delete is refused, and reads the turn that holds it', async () => {
       const user = userEvent.setup()
       const sentence = 'The interview is taking its turn; wait for it to finish'
-      stubInterviewService({
-        read: always(FINISHED_INTERVIEW),
+      const read = heldInterviewReply()
+      const fetchMock = stubInterviewService({
+        read: read.reply,
         remove: () => interviewAnswer(409, { detail: sentence }),
       })
       render(<InterviewPanel />)
-      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(1)
+      })
+      await act(() => read.finish(200, FINISHED_INTERVIEW))
+      await user.click(screen.getByRole('button', { name: 'Delete the conversation' }))
 
       await user.click(deleteIt())
 
       expect(await screen.findByText(sentence)).toBe(alertLine())
       expect(deleteButton()).toHaveFocus()
       expect(screen.queryByText(CONFIRM)).toBeNull()
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(2)
+      })
+      await act(() => read.finish(200, interviewWith({ status: 'running', entries: CONVERSATION })))
+      expect(status()).toHaveTextContent(TAKING_TURN)
+      expect(alertLine()).toHaveTextContent(sentence)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      expect(screen.queryByRole('button', { name: 'Delete the conversation' })).toBeNull()
+      expect(heading()).toHaveFocus()
     })
 
     it('says there is no interview when the backend has none, and reads it again', async () => {
@@ -1078,120 +1159,230 @@ describe('InterviewPanel', () => {
       expect(alertLine()).toHaveTextContent('')
     })
 
-    // Each request the person makes, from the interview it is made on, with
-    // the backend's answer to it and what the page then shows.
-    const REQUESTS = [
+    // Each request the person makes: the interview it is made on, the
+    // backend's acceptance of it and what the page then shows, and a refusal
+    // with the interview a read then finds.
+    type Request = {
+      made: string
+      before: InterviewBody
+      route: 'start' | 'answer' | 'retry' | 'remove'
+      accepted: { status: 202; body: InterviewBody } | { status: 204 }
+      make: () => void
+      after: () => void
+      refusal: string
+      refused: InterviewBody
+    }
+
+    const TURN_RUNNING = interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 3) })
+
+    const REQUESTS: Request[] = [
       {
         made: 'a start',
         before: interviewWith(),
         route: 'start',
-        reply: () =>
-          interviewAnswer(202, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 1) })),
+        accepted: { status: 202, body: interviewWith({ status: 'running' }) },
         make: () => {
           fireEvent.click(screen.getByRole('button', { name: 'Start the interview' }))
         },
         after: () => {
-          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+          expect(status()).toHaveTextContent(TAKING_TURN)
         },
+        refusal: ALREADY_STARTED,
+        refused: TURN_RUNNING,
       },
       {
         made: 'an answer',
         before: interviewWith({ status: 'waiting', entries: CONVERSATION, question: QUESTION }),
         route: 'answer',
-        reply: () =>
-          interviewAnswer(
-            202,
-            interviewWith({
-              status: 'running',
-              entries: [...CONVERSATION, { kind: 'person', text: 'Staff roles' }],
-            }),
-          ),
+        accepted: {
+          status: 202,
+          body: interviewWith({
+            status: 'running',
+            entries: [...CONVERSATION, { kind: 'person', text: 'Staff roles' }],
+          }),
+        },
         make: () => {
-          fireEvent.change(screen.getByRole('textbox', { name: 'Your answer' }), {
-            target: { value: 'Staff roles' },
-          })
-          fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+          fireEvent.change(answerBox(), { target: { value: 'Staff roles' } })
+          fireEvent.click(sendButton())
         },
         after: () => {
-          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+          expect(status()).toHaveTextContent(TAKING_TURN)
         },
+        refusal: 'The interview is not waiting on an answer',
+        refused: interviewWith({ status: 'finished', entries: CONVERSATION }),
       },
       {
         made: 'a retry',
         before: interviewWith({ status: 'failed', entries: CONVERSATION.slice(0, 3) }),
         route: 'retry',
-        reply: () =>
-          interviewAnswer(202, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 3) })),
+        accepted: { status: 202, body: TURN_RUNNING },
         make: () => {
           fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
         },
         after: () => {
-          expect(screen.getByRole('status')).toHaveTextContent(TAKING_TURN)
+          expect(status()).toHaveTextContent(TAKING_TURN)
         },
+        refusal: 'The interview has not failed, so there is nothing to retry',
+        refused: interviewWith({ status: 'waiting', entries: CONVERSATION, question: QUESTION }),
       },
       {
         made: 'a delete',
         before: interviewWith({ status: 'finished', entries: CONVERSATION.slice(0, 4) }),
         route: 'remove',
-        reply: () => interviewAnswer(204),
+        accepted: { status: 204 },
         make: () => {
           fireEvent.click(screen.getByRole('button', { name: 'Delete the conversation' }))
           fireEvent.click(screen.getByRole('button', { name: 'Delete it' }))
         },
         after: () => {
-          expect(screen.getByRole('button', { name: 'Start the interview' })).toBeVisible()
+          expect(startButton()).toBeVisible()
           expect(screen.queryByText(FINISHED)).toBeNull()
         },
+        refusal: 'The interview is taking its turn; wait for it to finish',
+        refused: TURN_RUNNING,
       },
-    ] as const
+    ]
+
+    // Each read held until the test answers it by its place in line.
+    function heldReads() {
+      const pending: ((response: Response) => void)[] = []
+      return {
+        reply: () =>
+          new Promise<Response>((resolve) => {
+            pending.push(resolve)
+          }),
+        count: () => pending.length,
+        answer: async (index: number, body: InterviewBody) => {
+          pending[index]?.(await interviewAnswer(200, body))
+        },
+      }
+    }
+
+    // The panel loaded with what the request is made on, its reads and the
+    // request held.
+    async function madeOn(request: Request) {
+      const reads = heldReads()
+      const held = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: reads.reply, [request.route]: held.reply })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      await vi.waitFor(() => {
+        expect(reads.count()).toBe(1)
+      })
+      await act(() => reads.answer(0, request.before))
+      return { reads, held, fetchMock, rerender }
+    }
+
+    async function sent(held: ReturnType<typeof heldInterviewReply>): Promise<void> {
+      await vi.waitFor(() => {
+        expect(held.count()).toBe(1)
+      })
+    }
+
+    async function accept(
+      held: ReturnType<typeof heldInterviewReply>,
+      accepted: Request['accepted'],
+    ): Promise<void> {
+      await act(() =>
+        accepted.status === 204 ? held.finish(204) : held.finish(202, accepted.body),
+      )
+    }
+
+    // Every answer and render the last step started has run.
+    async function settled(): Promise<void> {
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+    }
 
     it.each(REQUESTS)(
       'drops the read for a change once the person sends $made, so its answer stands',
-      async ({ before, route, reply, make, after }) => {
-        // Each read held until the test answers it by its place in line.
-        const pending: ((response: Response) => void)[] = []
-        const answerRead = async (index: number, body: InterviewBody) => {
-          pending[index]?.(await interviewAnswer(200, body))
-        }
-        const held = heldInterviewReply()
-        const fetchMock = stubInterviewService({
-          read: () =>
-            new Promise<Response>((resolve) => {
-              pending.push(resolve)
-            }),
-          [route]: route === 'remove' ? reply : held.reply,
-        })
-        const { rerender } = render(<InterviewPanel changes={0} />)
-        await vi.waitFor(() => {
-          expect(pending).toHaveLength(1)
-        })
-        await act(() => answerRead(0, before))
+      async (request) => {
+        const { reads, held, fetchMock, rerender } = await madeOn(request)
         rerender(<InterviewPanel changes={1} />)
         await vi.waitFor(() => {
-          expect(pending).toHaveLength(2)
+          expect(reads.count()).toBe(2)
         })
 
-        make()
-        if (route === 'remove') {
+        request.make()
+        await sent(held)
+        await accept(held, request.accepted)
+        if (request.route === 'remove') {
           await vi.waitFor(() => {
-            expect(pending).toHaveLength(3)
+            expect(reads.count()).toBe(3)
           })
-          await act(() => answerRead(2, interviewWith()))
-        } else {
-          await vi.waitFor(() => {
-            expect(held.count()).toBe(1)
-          })
-          const answered = await reply()
-          await act(async () => {
-            const body: unknown = await answered.json()
-            await held.finish(202, body as InterviewBody)
-          })
+          await act(() => reads.answer(2, interviewWith()))
         }
         // The read for the change answers last, with what was true before.
-        await act(() => answerRead(1, before))
+        await act(() => reads.answer(1, request.before))
 
-        after()
+        request.after()
         expect(callsTo(fetchMock, 'read')[1]?.signal?.aborted).toBe(true)
+      },
+    )
+
+    it.each(REQUESTS)(
+      'reads nothing for a change that comes while $made is out, and nothing more once it is taken',
+      async (request) => {
+        const { reads, held, rerender } = await madeOn(request)
+        request.make()
+        await sent(held)
+
+        rerender(<InterviewPanel changes={1} />)
+        await settled()
+        expect(reads.count()).toBe(1)
+
+        await accept(held, request.accepted)
+        if (request.route === 'remove') {
+          // The read that follows a delete is sent after it, so it is current.
+          await vi.waitFor(() => {
+            expect(reads.count()).toBe(2)
+          })
+          await act(() => reads.answer(1, interviewWith()))
+        }
+        await settled()
+        expect(reads.count()).toBe(request.route === 'remove' ? 2 : 1)
+        request.after()
+      },
+    )
+
+    it.each(REQUESTS)(
+      'reads once after $made fails, when a change came while it was out',
+      async (request) => {
+        const { reads, held, rerender } = await madeOn(request)
+        request.make()
+        await sent(held)
+        rerender(<InterviewPanel changes={1} />)
+        await settled()
+        expect(reads.count()).toBe(1)
+
+        await act(() => held.finish(500))
+
+        await vi.waitFor(() => {
+          expect(reads.count()).toBe(2)
+        })
+        await act(() => reads.answer(1, request.before))
+        await settled()
+        expect(reads.count()).toBe(2)
+      },
+    )
+
+    it.each(REQUESTS)(
+      'reads once after $made is refused, a change while it was out included, and keeps the sentence',
+      async (request) => {
+        const { reads, held, rerender } = await madeOn(request)
+        request.make()
+        await sent(held)
+        rerender(<InterviewPanel changes={1} />)
+        await settled()
+        expect(reads.count()).toBe(1)
+
+        await act(() => held.finish(409, { detail: request.refusal }))
+
+        await vi.waitFor(() => {
+          expect(reads.count()).toBe(2)
+        })
+        await act(() => reads.answer(1, request.refused))
+        await settled()
+        expect(reads.count()).toBe(2)
+        expect(alertLine()).toHaveTextContent(request.refusal)
       },
     )
 

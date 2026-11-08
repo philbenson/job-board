@@ -36,11 +36,6 @@ const CONFIRM = 'Delete this conversation? Your profile keeps what the interview
 const NO_INTERVIEW = 'No interview started'
 const KEPT = 'Your profile holds what it saved, and you can edit it at any time.'
 
-// The backend's sentence for an answer to a question the interview has moved
-// past. Only this refusal means what is shown is out of date, so only it
-// reads the interview again.
-const CHANGED = 'The interview has changed since it was read; reload it and try again'
-
 const INTRODUCTION =
   "The interviewer reads your resume's text, asks you one question at a time, and saves what it learns into your profile beside it. It runs on your own Anthropic key."
 
@@ -68,6 +63,11 @@ type Shown =
 // did; a read with more holds the answer itself.
 type Sent = { text: string; after: number }
 
+// What a request's answer leaves to read: the interview it refused or found
+// gone, which is not the one shown; nothing, when the answer brings the
+// interview or a read sent after it; or only a change that came meanwhile.
+type Then = 'read' | 'covered' | 'read if changed'
+
 // Where focus goes once the next render has put it on the page: a control,
 // the heading, or the heading only if what held focus has left the page.
 type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
@@ -79,9 +79,12 @@ type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
  * Reads the interview on mount, and while a turn runs reads it again two
  * seconds after each read answers, one read at a time, none while the page is
  * hidden and one at once when it shows again, a newer read aborting the one
- * in flight, as the leads panel does. `changes` counts the page's changes to
- * the key and the resume: each new count reads the interview once more,
- * unless a turn's poll is reading it already. `onSaved` hears when a read
+ * in flight, as the leads panel does. Every refusal and every "no interview"
+ * reads it again, the backend's sentence staying in the alert line. `changes`
+ * counts the page's changes to the key and the resume: each new count reads
+ * the interview once more, unless a turn's poll is reading it already; one
+ * that comes while a request is out waits for the request's answer, and reads
+ * only if the answer brings no read of its own. `onSaved` hears when a read
  * holds more saved entries than the one before it; the first read does not
  * count, since the profile's own load is current.
  *
@@ -125,6 +128,8 @@ export function InterviewPanel({
   const lifetime = useRef<AbortController | null>(null)
   // A read the panel asks for once, outside the poll; a newer one aborts it.
   const readOnce = useRef<AbortController | null>(null)
+  // Whether a change came while a request was out.
+  const changeWaiting = useRef(false)
   // How many saved entries the last interview shown held; null before any.
   const savedCount = useRef<number | null>(null)
   // The page's latest callback, read when a save shows rather than when
@@ -282,9 +287,22 @@ export function InterviewPanel({
   // change what the interview is missing. A running turn's poll is already
   // reading, and its last read is current.
   // A request the person makes answers with the interview as it now is, so a
-  // read for a change still out would show it as it was: the request drops it.
+  // read for a change still out would show it as it was: the request drops it
+  // as it is sent, and again once its answer is in.
   function dropReadOnce(): void {
     readOnce.current?.abort()
+  }
+
+  // Once a request's answer is in, reads again what it leaves out of date. A
+  // change that came while it was out reads now, after the request committed,
+  // so the backend's answer to the read cannot be older than the request's.
+  function settle(then: Then): void {
+    dropReadOnce()
+    const changed = changeWaiting.current
+    changeWaiting.current = false
+    if (then === 'read' || (then === 'read if changed' && changed)) {
+      readAgain()
+    }
   }
 
   const seenChanges = useRef(changes)
@@ -293,10 +311,12 @@ export function InterviewPanel({
       return
     }
     seenChanges.current = changes
-    if (!running) {
+    if (busy !== null) {
+      changeWaiting.current = true
+    } else if (!running) {
       readAgain()
     }
-  }, [changes, running, readAgain])
+  }, [changes, busy, running, readAgain])
 
   async function start(): Promise<void> {
     const signal = lifetime.current?.signal
@@ -317,12 +337,19 @@ export function InterviewPanel({
       return
     }
     setBusy(null)
-    if (started === 'unavailable' || started.kind === 'conflict') {
-      setProblem(started === 'unavailable' ? NOT_STARTED : started.message)
+    if (started === 'unavailable') {
+      setProblem(NOT_STARTED)
+      settle('read if changed')
+      return
+    }
+    if (started.kind === 'conflict') {
+      setProblem(started.message)
+      settle('read')
       return
     }
     // Start leaves the page with the running interview, handing focus to the
-    // heading.
+    // heading; the poll reads it next.
+    settle('covered')
     show(started.interview, false)
   }
 
@@ -349,15 +376,19 @@ export function InterviewPanel({
     setBusy(null)
     if (outcome === 'unavailable') {
       setProblem(NOT_SENT)
+      settle('read if changed')
     } else if (outcome === 'no interview') {
       setProblem(NO_INTERVIEW)
-      readAgain()
-    } else if (outcome.kind === 'conflict' || outcome.kind === 'refused') {
+      settle('read')
+    } else if (outcome.kind === 'conflict') {
+      // The text stays in the box for the question the read brings.
       setProblem(outcome.message)
-      if (outcome.message === CHANGED) {
-        readAgain()
-      }
+      settle('read')
+    } else if (outcome.kind === 'refused') {
+      setProblem(outcome.message)
+      settle('read if changed')
     } else {
+      settle('covered')
       // The box empties and stays, held, through the turn the answer starts,
       // so focus on it or on Send stays where it is.
       setText('')
@@ -388,14 +419,17 @@ export function InterviewPanel({
     setBusy(null)
     if (retried === 'unavailable') {
       setProblem(NOT_RETRIED)
+      settle('read if changed')
     } else if (retried === 'no interview') {
       setProblem(NO_INTERVIEW)
-      readAgain()
+      settle('read')
     } else if (retried.kind === 'conflict') {
       setProblem(retried.message)
+      settle('read')
     } else {
       // Try again leaves the page with the running interview, handing focus to
-      // the heading.
+      // the heading; the poll reads it next.
+      settle('covered')
       show(retried.interview, false)
     }
   }
@@ -423,18 +457,21 @@ export function InterviewPanel({
       if (removed === 'unavailable') {
         // The question stays open, with focus on Delete it, to ask again.
         setProblem(NOT_DELETED)
+        settle('read if changed')
         return
       }
       setConfirming(false)
       if (removed === 'no interview') {
         setProblem(NO_INTERVIEW)
-        readAgain()
       } else {
         focusNext.current = 'delete'
         setProblem(removed.message)
       }
+      settle('read')
       return
     }
+    // The read below is sent after the delete, so it covers any change so far.
+    settle('covered')
     // The 204 carries no body, and what a start still needs is only the
     // backend's to say, so the panel reads the interview, not-started now.
     const read: InterviewRead | 'aborted' = await withToken(
@@ -450,6 +487,7 @@ export function InterviewPanel({
     setBusy(null)
     setConfirming(false)
     setText('')
+    settle('read if changed')
     if (read === 'unavailable') {
       focusNext.current = 'heading'
       setShown({ kind: 'unreadable' })
