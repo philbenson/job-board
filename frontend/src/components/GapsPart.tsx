@@ -9,14 +9,16 @@ import { useProfilePart } from './useProfilePart.ts'
 type Gaps = StoredSection<'/profile/gaps'>
 
 /** What the person lacks but would apply anyway, and what they would give up. */
-export function GapsPart({ stored }: { stored: Gaps | null }) {
+export function GapsPart({ stored, version }: { stored: Gaps | null; version: number }) {
+  const [applyWith, setApplyWith] = useState(stored?.apply_with ?? [])
+  const [tradeOffs, setTradeOffs] = useState(stored?.trade_offs ?? [])
   const part = useProfilePart(
     '/profile/gaps',
     stored,
     'Could not save your gaps and trade-offs; your changes are still here',
+    version,
+    show,
   )
-  const [applyWith, setApplyWith] = useState(stored?.apply_with ?? [])
-  const [tradeOffs, setTradeOffs] = useState(stored?.trade_offs ?? [])
 
   function show(section: Gaps): void {
     setApplyWith(section.apply_with)
@@ -29,7 +31,7 @@ export function GapsPart({ stored }: { stored: Gaps | null }) {
       part={part}
       onSave={() => {
         const body = { apply_with: applyWith, trade_offs: tradeOffs }
-        part.send(body, body, show)
+        part.send(body, body)
       }}
     >
       <TextListEditor

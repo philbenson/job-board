@@ -29,18 +29,20 @@ function officeShown({ city, days_a_week: days }: Office): string {
 }
 
 /** Remote, offices by city, the states worked from, and moving. */
-export function PlacesPart({ stored }: { stored: Places | null }) {
-  const part = useProfilePart(
-    '/profile/places',
-    stored,
-    'Could not save your places; your changes are still here',
-  )
+export function PlacesPart({ stored, version }: { stored: Places | null; version: number }) {
   const [remoteOk, setRemoteOk] = useState(stored?.remote_ok ?? false)
   const [offices, setOffices] = useState(stored?.offices ?? [])
   const [states, setStates] = useState<StateCode[]>(stored?.states ?? [])
   const [willRelocate, setWillRelocate] = useState(stored?.will_relocate ?? false)
   const [relocateFor, setRelocateFor] = useState(stored?.relocate_for ?? [])
   const conditionId = useId()
+  const part = useProfilePart(
+    '/profile/places',
+    stored,
+    'Could not save your places; your changes are still here',
+    version,
+    show,
+  )
 
   function show(section: Places): void {
     setRemoteOk(section.remote_ok)
@@ -70,7 +72,6 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
             will_relocate: RELOCATE,
             relocate_for: relocateFor,
           },
-          show,
         )
       }}
     >

@@ -27,14 +27,16 @@ function sameJob({ company, title }: Application): string {
 }
 
 /** Companies to watch, and the jobs already applied to. */
-export function CompaniesPart({ stored }: { stored: Companies | null }) {
+export function CompaniesPart({ stored, version }: { stored: Companies | null; version: number }) {
+  const [watch, setWatch] = useState(stored?.watch ?? [])
+  const [applied, setApplied] = useState(stored?.applied ?? [])
   const part = useProfilePart(
     '/profile/companies',
     stored,
     'Could not save your companies; your changes are still here',
+    version,
+    show,
   )
-  const [watch, setWatch] = useState(stored?.watch ?? [])
-  const [applied, setApplied] = useState(stored?.applied ?? [])
 
   function show(section: Companies): void {
     setWatch(section.watch)
@@ -49,7 +51,6 @@ export function CompaniesPart({ stored }: { stored: Companies | null }) {
         part.send(
           { watch, applied },
           { watch, applied: applied.map((job) => job.company) },
-          show,
         )
       }}
     >

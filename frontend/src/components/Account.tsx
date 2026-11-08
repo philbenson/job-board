@@ -22,12 +22,18 @@ import { ResumePanel } from './ResumePanel.tsx'
  *
  * The page counts the changes the key and resume panels report, and the
  * interview reads itself again for each, so what it says is missing stays
- * current without a reload.
+ * current without a reload. It counts the interviewer's saves the same way,
+ * and the profile reads itself again for each, so they show beside the
+ * conversation.
  */
 export function Account() {
   const [changes, setChanges] = useState(0)
   const changed = useCallback(() => {
     setChanges((count) => count + 1)
+  }, [])
+  const [saves, setSaves] = useState(0)
+  const saved = useCallback(() => {
+    setSaves((count) => count + 1)
   }, [])
 
   return (
@@ -50,8 +56,8 @@ export function Account() {
         <ResumePanel onChange={changed} />
         {/* Side by side on a wide window, the conversation first; see index.css. */}
         <div className="interview-area">
-          <InterviewPanel changes={changes} />
-          <ProfilePanel />
+          <InterviewPanel changes={changes} onSaved={saved} />
+          <ProfilePanel saves={saves} />
         </div>
         <LeadsPanel />
       </Show>

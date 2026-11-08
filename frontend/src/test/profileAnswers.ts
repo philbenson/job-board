@@ -97,16 +97,17 @@ export function heldReply() {
 }
 
 /**
- * Stands in for the service: the profile route answers `stored`, and each
- * save route as `saves` says, never answering when it says nothing.
+ * Stands in for the service: the profile route answers `stored`, or as it
+ * says when it is a reply, and each save route as `saves` says, never
+ * answering when it says nothing.
  */
 export function stubProfileService(
-  stored: ProfileBody,
+  stored: ProfileBody | Reply,
   saves: Partial<Record<SectionRoute, Reply>> = {},
 ) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === '/api/profile') {
-      return answer(200, stored)
+      return typeof stored === 'function' ? stored(init) : answer(200, stored)
     }
     const route = Object.keys(saves).find((key) => url === `/api${key}`) as
       | SectionRoute

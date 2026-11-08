@@ -7,22 +7,30 @@ import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
 /** Rules of the person's own, in their words, for each posting. */
-export function OwnRulesPart({ stored }: { stored: StoredSection<'/profile/own-rules'> | null }) {
+export function OwnRulesPart({
+  stored,
+  version,
+}: {
+  stored: StoredSection<'/profile/own-rules'> | null
+  version: number
+}) {
+  const [rules, setRules] = useState(stored?.rules ?? [])
   const part = useProfilePart(
     '/profile/own-rules',
     stored,
     'Could not save your own rules; your changes are still here',
+    version,
+    (section) => {
+      setRules(section.rules)
+    },
   )
-  const [rules, setRules] = useState(stored?.rules ?? [])
 
   return (
     <ProfilePart
       heading={SECTION_HEADINGS.own_rules}
       part={part}
       onSave={() => {
-        part.send({ rules }, { rules }, (section) => {
-          setRules(section.rules)
-        })
+        part.send({ rules }, { rules })
       }}
     >
       <TextListEditor

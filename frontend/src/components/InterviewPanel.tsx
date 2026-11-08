@@ -81,7 +81,9 @@ type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
  * hidden and one at once when it shows again, a newer read aborting the one
  * in flight, as the leads panel does. `changes` counts the page's changes to
  * the key and the resume: each new count reads the interview once more,
- * unless a turn's poll is reading it already.
+ * unless a turn's poll is reading it already. `onSaved` hears when a read
+ * holds more saved entries than the one before it; the first read does not
+ * count, since the profile's own load is current.
  *
  * The status and alert lines stay on the page, empty when there is nothing to
  * say, so a screen reader hears each change of their words. While a request
@@ -89,7 +91,13 @@ type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
  * would drop keyboard focus to the page, and their handlers do nothing. A
  * control that leaves the page with focus on it hands focus to the heading.
  */
-export function InterviewPanel({ changes = 0 }: { changes?: number }) {
+export function InterviewPanel({
+  changes = 0,
+  onSaved,
+}: {
+  changes?: number
+  onSaved?: () => void
+}) {
   const { getToken } = useAuth()
   const [shown, setShown] = useState<Shown>({ kind: 'loading' })
   const [busy, setBusy] = useState<Busy | null>(null)
@@ -117,6 +125,14 @@ export function InterviewPanel({ changes = 0 }: { changes?: number }) {
   const lifetime = useRef<AbortController | null>(null)
   // A read the panel asks for once, outside the poll; a newer one aborts it.
   const readOnce = useRef<AbortController | null>(null)
+  // How many saved entries the last interview shown held; null before any.
+  const savedCount = useRef<number | null>(null)
+  // The page's latest callback, read when a save shows rather than when
+  // `show` was made, so `show` stays the same for the panel's life.
+  const tellSaved = useRef(onSaved)
+  useEffect(() => {
+    tellSaved.current = onSaved
+  })
 
   useEffect(() => {
     const target = focusNext.current
@@ -146,6 +162,11 @@ export function InterviewPanel({ changes = 0 }: { changes?: number }) {
     ) {
       focusNext.current = 'heading if lost'
     }
+    const saved = interview.entries.filter((entry) => entry.kind === 'saved').length
+    if (savedCount.current !== null && saved > savedCount.current) {
+      tellSaved.current?.()
+    }
+    savedCount.current = saved
     setShown({ kind: 'interview', interview })
     setLostTouch(false)
     setReplied(polled && interview.status === 'waiting')

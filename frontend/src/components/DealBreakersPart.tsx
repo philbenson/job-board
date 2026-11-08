@@ -14,15 +14,23 @@ type DealBreakers = StoredSection<'/profile/deal-breakers'>
 const NO_AGENCIES = 'No recruiting agencies'
 
 /** Industries and company sizes ruled out, and whether agencies are. */
-export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
+export function DealBreakersPart({
+  stored,
+  version,
+}: {
+  stored: DealBreakers | null
+  version: number
+}) {
+  const [industries, setIndustries] = useState(stored?.industries ?? [])
+  const [sizes, setSizes] = useState<CompanySize[]>(stored?.company_sizes ?? [])
+  const [noAgencies, setNoAgencies] = useState(stored?.no_agencies ?? false)
   const part = useProfilePart(
     '/profile/deal-breakers',
     stored,
     'Could not save your deal-breakers; your changes are still here',
+    version,
+    show,
   )
-  const [industries, setIndustries] = useState(stored?.industries ?? [])
-  const [sizes, setSizes] = useState<CompanySize[]>(stored?.company_sizes ?? [])
-  const [noAgencies, setNoAgencies] = useState(stored?.no_agencies ?? false)
 
   function show(section: DealBreakers): void {
     setIndustries(section.industries)
@@ -42,7 +50,6 @@ export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
             company_sizes: sizes.map((size) => COMPANY_SIZE_NAMES[size]),
             no_agencies: NO_AGENCIES,
           },
-          show,
         )
       }}
     >

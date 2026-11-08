@@ -12,14 +12,22 @@ type TitleRange = StoredSection<'/profile/title-range'>
 const LOWER_LEVEL = 'A lower level than my target titles is fine'
 
 /** Titles close to the target titles, and whether one level down is fine. */
-export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
+export function NearbyTitlesPart({
+  stored,
+  version,
+}: {
+  stored: TitleRange | null
+  version: number
+}) {
+  const [titles, setTitles] = useState(stored?.nearby_titles ?? [])
+  const [lowerOk, setLowerOk] = useState(stored?.lower_level_ok ?? false)
   const part = useProfilePart(
     '/profile/title-range',
     stored,
     'Could not save your nearby titles; your changes are still here',
+    version,
+    show,
   )
-  const [titles, setTitles] = useState(stored?.nearby_titles ?? [])
-  const [lowerOk, setLowerOk] = useState(stored?.lower_level_ok ?? false)
 
   function show(section: TitleRange): void {
     setTitles(section.nearby_titles)
@@ -34,7 +42,6 @@ export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
         part.send(
           { nearby_titles: titles, lower_level_ok: lowerOk },
           { nearby_titles: titles, lower_level_ok: LOWER_LEVEL },
-          show,
         )
       }}
     >

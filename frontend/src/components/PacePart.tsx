@@ -18,14 +18,16 @@ function briefChoice(score: number | null): string {
 }
 
 /** How many postings a day, and the lowest score that gets a brief. */
-export function PacePart({ stored }: { stored: Pace | null }) {
+export function PacePart({ stored, version }: { stored: Pace | null; version: number }) {
+  const [leads, setLeads] = useState(stored === null ? '' : String(stored.leads_per_day))
+  const [brief, setBrief] = useState(briefChoice(stored?.brief_from_score ?? null))
   const part = useProfilePart(
     '/profile/pace',
     stored,
     'Could not save your pace; your changes are still here',
+    version,
+    show,
   )
-  const [leads, setLeads] = useState(stored === null ? '' : String(stored.leads_per_day))
-  const [brief, setBrief] = useState(briefChoice(stored?.brief_from_score ?? null))
 
   function show(section: Pace): void {
     setLeads(String(section.leads_per_day))
@@ -48,7 +50,6 @@ export function PacePart({ stored }: { stored: Pace | null }) {
     part.send(
       { leads_per_day: leadsPerDay, brief_from_score: brief === '' ? null : Number(brief) },
       { leads_per_day: LEADS, brief_from_score: BRIEF },
-      show,
     )
   }
 

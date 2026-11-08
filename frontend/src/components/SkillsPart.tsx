@@ -16,22 +16,30 @@ function skillShown({ name, years }: Skill): string {
 }
 
 /** Each skill the person has, with the whole years they have used it. */
-export function SkillsPart({ stored }: { stored: StoredSection<'/profile/skills'> | null }) {
+export function SkillsPart({
+  stored,
+  version,
+}: {
+  stored: StoredSection<'/profile/skills'> | null
+  version: number
+}) {
+  const [skills, setSkills] = useState(stored?.skills ?? [])
   const part = useProfilePart(
     '/profile/skills',
     stored,
     'Could not save your skills; your changes are still here',
+    version,
+    (section) => {
+      setSkills(section.skills)
+    },
   )
-  const [skills, setSkills] = useState(stored?.skills ?? [])
 
   return (
     <ProfilePart
       heading={SECTION_HEADINGS.skills}
       part={part}
       onSave={() => {
-        part.send({ skills }, { skills: skills.map((skill) => skill.name) }, (section) => {
-          setSkills(section.skills)
-        })
+        part.send({ skills }, { skills: skills.map((skill) => skill.name) })
       }}
     >
       <PairsEditor

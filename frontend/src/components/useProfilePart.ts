@@ -15,6 +15,10 @@ import { refusalSentence, type Named } from './profileRefusals.ts'
 // starts later, so this one is always the one that gives up.
 export const EXCHANGE_TIMEOUT_MS = 5_000
 
+/** The save line's words when the interviewer saved a section being edited. */
+export const KEPT_YOURS =
+  "The interviewer saved this section too. Save keeps your version; reloading the page shows the interviewer's."
+
 /** What the line under Save says; nothing until a save has been tried. */
 type SaveShown =
   | { kind: 'idle' }
@@ -40,35 +44,67 @@ export type ProfilePart<Route extends SectionRoute> = {
   edit: (apply: () => void) => void
   /**
    * Sends `body` whole, unless held. `named` says what a refusal pointing
-   * into the body names; `stored` is given the section the backend answers.
+   * into the body names; the section the backend answers goes to `take`.
    */
-  send: (
-    body: SectionBody<Route>,
-    named: Named<SectionBody<Route>>,
-    stored: (section: StoredSection<Route>) => void,
-  ) => void
+  send: (body: SectionBody<Route>, named: Named<SectionBody<Route>>) => void
 }
 
 /**
  * The save of one section, kept apart from every other part's: its own
- * request, aborted when the part goes, and its own lines.
+ * request, aborted when the part goes, and its own lines. `stored` is the
+ * section as the profile panel last read it, and `version` counts the
+ * panel's reads after its first, which happen when the interviewer saves.
+ * `take` shows a stored section in the part's editors: the one a save
+ * answers, or one a later read brings, which it takes while rendering, so a
+ * part declares the state `take` sets before it calls this hook.
  *
  * Invariant: what the part shows after "Saved" is what the database holds
  * for its section, and at most one of its saves is in flight. So the part
  * is held while a save is out: nothing can change what the answer will
- * replace, and Save cannot send a second body.
+ * replace, and Save cannot send a second body. A later read never replaces
+ * what the person has typed: a part with unsaved edits keeps them and says
+ * the interviewer saved the section too.
  */
 export function useProfilePart<Route extends SectionRoute>(
   route: Route,
-  initial: StoredSection<Route> | null,
+  stored: StoredSection<Route> | null,
   notSaved: string,
+  version: number,
+  take: (section: StoredSection<Route>) => void,
 ): ProfilePart<Route> {
   const { getToken } = useAuth()
-  const [answered, setAnswered] = useState(initial !== null)
+  const [answered, setAnswered] = useState(stored !== null)
   const [notice, setNotice] = useState('')
   const [save, setSave] = useState<SaveShown>({ kind: 'idle' })
+  // Edits made since the part last took a stored section.
+  const [unsaved, setUnsaved] = useState(false)
   const controller = useRef<AbortController | null>(null)
+  // The section as the part last heard it stored, by any read or save, so a
+  // read that brings it unchanged changes nothing.
+  const [known, setKnown] = useState(stored)
+  const [seenVersion, setSeenVersion] = useState(version)
   const held = save.kind === 'saving'
+
+  // A newer read of the profile, taken in render as a prop change is, so the
+  // part never shows the old section beside the new version.
+  if (version !== seenVersion) {
+    setSeenVersion(version)
+    // A save out answers with what it stored, which the part then shows. So
+    // the read is dropped here, and a section the interviewer saved just
+    // after that save landed is not shown until the next read or a reload.
+    if (!held && stored !== null && !sameSection(stored, known)) {
+      setKnown(stored)
+      setAnswered(true)
+      if (unsaved) {
+        setSave({ kind: 'said', message: KEPT_YOURS })
+      } else {
+        take(stored)
+        // Both lines spoke of what the part showed before.
+        setNotice('')
+        setSave({ kind: 'idle' })
+      }
+    }
+  }
 
   // A save still in flight when the part goes has nobody to tell.
   useEffect(
@@ -83,15 +119,12 @@ export function useProfilePart<Route extends SectionRoute>(
       return
     }
     apply()
+    setUnsaved(true)
     setNotice('')
     setSave({ kind: 'idle' })
   }
 
-  function send(
-    body: SectionBody<Route>,
-    named: Named<SectionBody<Route>>,
-    stored: (section: StoredSection<Route>) => void,
-  ): void {
+  function send(body: SectionBody<Route>, named: Named<SectionBody<Route>>): void {
     if (held) {
       return
     }
@@ -118,7 +151,9 @@ export function useProfilePart<Route extends SectionRoute>(
           message: refusalSentence(saved.message, saved.at, named),
         })
       } else {
-        stored(saved.section)
+        setKnown(saved.section)
+        take(saved.section)
+        setUnsaved(false)
         setAnswered(true)
         setSave({ kind: 'said', message: 'Saved' })
       }
@@ -134,4 +169,10 @@ export function useProfilePart<Route extends SectionRoute>(
     edit,
     send,
   }
+}
+
+// Two reads of one section, each as the backend wrote it, so the same
+// section is the same text.
+function sameSection(one: unknown, other: unknown): boolean {
+  return JSON.stringify(one) === JSON.stringify(other)
 }

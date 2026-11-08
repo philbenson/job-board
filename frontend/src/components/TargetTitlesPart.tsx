@@ -6,20 +6,22 @@ import { TextListEditor } from './TextListEditor.tsx'
 import { useProfilePart } from './useProfilePart.ts'
 
 /** The job titles the person is looking for, which scoring reads. */
-export function TargetTitlesPart({ stored }: { stored: string[] }) {
+export function TargetTitlesPart({ stored, version }: { stored: string[]; version: number }) {
+  const [titles, setTitles] = useState(stored)
   const part = useProfilePart(
     '/profile/target-titles',
     stored,
     'Could not save your target titles; your changes are still here',
+    version,
+    setTitles,
   )
-  const [titles, setTitles] = useState(stored)
 
   return (
     <ProfilePart
       heading={SECTION_HEADINGS.target_titles}
       part={part}
       onSave={() => {
-        part.send({ titles }, { titles }, setTitles)
+        part.send({ titles }, { titles })
       }}
     >
       <TextListEditor

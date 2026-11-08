@@ -12,14 +12,16 @@ const FLOOR = 'Lowest base pay you would take, in US dollars a year'
 const ASK = 'Base pay you would ask for, in US dollars a year'
 
 /** The lowest annual base pay the person would take, and what they ask. */
-export function PayPart({ stored }: { stored: Pay | null }) {
+export function PayPart({ stored, version }: { stored: Pay | null; version: number }) {
+  const [floor, setFloor] = useState(stored === null ? '' : grouped(stored.floor_usd))
+  const [ask, setAsk] = useState(stored === null ? '' : grouped(stored.ask_usd))
   const part = useProfilePart(
     '/profile/pay',
     stored,
     'Could not save your pay; your changes are still here',
+    version,
+    show,
   )
-  const [floor, setFloor] = useState(stored === null ? '' : grouped(stored.floor_usd))
-  const [ask, setAsk] = useState(stored === null ? '' : grouped(stored.ask_usd))
 
   function show(section: Pay): void {
     setFloor(grouped(section.floor_usd))
@@ -41,7 +43,7 @@ export function PayPart({ stored }: { stored: Pay | null }) {
     } else if (askUsd === 'too large') {
       part.say('The base pay you would ask for is too large')
     } else {
-      part.send({ floor_usd: floorUsd, ask_usd: askUsd }, { floor_usd: FLOOR, ask_usd: ASK }, show)
+      part.send({ floor_usd: floorUsd, ask_usd: askUsd }, { floor_usd: FLOOR, ask_usd: ASK })
     }
   }
 

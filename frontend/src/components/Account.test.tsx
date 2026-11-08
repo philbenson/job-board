@@ -1,16 +1,19 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SavedModelKeyBody } from '../api/modelKey.ts'
+import type { ProfileBody } from '../api/profile.ts'
 import type { ResumeBody } from '../api/resume.ts'
 import type { ResumeTextBody } from '../api/resumeText.ts'
 import {
   callsTo,
+  heldInterviewReply,
   interviewAnswer,
   interviewWith,
   stubInterviewService,
 } from '../test/interviewAnswers.ts'
+import { profileWith } from '../test/profileAnswers.ts'
 import { Account } from './Account.tsx'
 
 // Clerk replaced by a stand-in whose sign-in state each test sets, so no test
@@ -35,7 +38,10 @@ const NEEDS_TEXT = "Check your resume's text above first"
 const UPLOADED_AT = '2026-11-07T20:29:59.747970Z'
 
 // A body the contract allows, typed so it changes when the backend's does.
-function json(status: number, body: SavedModelKeyBody | ResumeBody | ResumeTextBody): Promise<Response> {
+function json(
+  status: number,
+  body: SavedModelKeyBody | ResumeBody | ResumeTextBody | ProfileBody,
+): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
       status,
@@ -77,6 +83,7 @@ describe('Account', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -171,6 +178,47 @@ describe('Account', () => {
     expect(await within(interview).findByRole('button', { name: 'Start the interview' })).toBeVisible()
     expect(within(interview).queryByText(NEEDS_TEXT)).toBeNull()
     expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+  })
+
+  it('reads the profile again once a read of the interview holds a new save, and shows it', async () => {
+    vi.useFakeTimers()
+    clerk.signedIn = true
+    clerk.getToken.mockResolvedValue('header.payload.signature')
+    const read = heldInterviewReply()
+    let profileReads = 0
+    stubInterviewService({ read: read.reply }, (url) => {
+      if (url !== '/api/profile') {
+        return new Promise<Response>(() => {})
+      }
+      profileReads += 1
+      return json(200, profileWith(profileReads === 1 ? ['Designer'] : ['Designer', 'Platform Engineer']))
+    })
+    render(<Account />)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    await act(() =>
+      read.finish(200, interviewWith({ status: 'running', entries: [{ kind: 'person', text: 'Platform work' }] })),
+    )
+    const titles = within(screen.getByRole('region', { name: 'Target titles' }))
+    expect(titles.getByText('Designer')).toBeVisible()
+    expect(profileReads).toBe(1)
+
+    await act(() => vi.advanceTimersByTimeAsync(2_000))
+    await act(() =>
+      read.finish(
+        200,
+        interviewWith({
+          status: 'running',
+          entries: [
+            { kind: 'person', text: 'Platform work' },
+            { kind: 'saved', section: 'target_titles' },
+          ],
+        }),
+      ),
+    )
+    await act(() => vi.advanceTimersByTimeAsync(0))
+
+    expect(titles.getByText('Platform Engineer')).toBeVisible()
+    expect(profileReads).toBe(2)
   })
 
   it('shows no target titles and no leads when signed out', () => {

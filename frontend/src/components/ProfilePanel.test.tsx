@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SaveRefusalBody, TargetTitlesBody } from '../api/profile.ts'
+import type { ProfileBody, SaveRefusalBody, TargetTitlesBody } from '../api/profile.ts'
 import { SAVED_SECTIONS } from '../api/interview.ts'
 import { ProfilePanel } from './ProfilePanel.tsx'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
@@ -623,5 +623,232 @@ describe('ProfilePanel, as parts', () => {
     unmount()
 
     expect(init?.signal?.aborted).toBe(true)
+  })
+})
+
+describe('ProfilePanel, after the interviewer saves', () => {
+  const KEPT_YOURS =
+    "The interviewer saved this section too. Save keeps your version; reloading the page shows the interviewer's."
+  const NOT_REFRESHED =
+    "Could not load the interviewer's latest saves. Reload the page to see them."
+  const DEAL_BREAKERS = { industries: ['Gambling'], company_sizes: [], no_agencies: true }
+
+  beforeEach(() => {
+    clerk.getToken.mockReset()
+    clerk.getToken.mockResolvedValue(SESSION_TOKEN)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The profile's reads answer each body in turn, the last for every read
+  // after.
+  function reads(...bodies: ProfileBody[]) {
+    let count = 0
+    const fetchMock = stubProfileService(() => {
+      count += 1
+      return answer(200, bodies[Math.min(count, bodies.length) - 1] as ProfileBody)
+    })
+    return { fetchMock, count: () => count }
+  }
+
+  function addTitle(user: ReturnType<typeof userEvent.setup>, title: string) {
+    return user.type(screen.getByRole('textbox', { name: 'Add a target title' }), `${title}{Enter}`)
+  }
+
+  function saveLine(heading: string): HTMLElement {
+    const [, line] = part(heading).getAllByRole('status')
+    return line as HTMLElement
+  }
+
+  it('reads the profile once for each new count, and not on its first load', async () => {
+    const read = reads(profileWith(['Designer']), profileWith(['Designer', 'Writer']))
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    rerender(<ProfilePanel saves={0} />)
+    expect(read.count()).toBe(1)
+    // Not even begun: a second read would first ask Clerk for a token.
+    expect(clerk.getToken).toHaveBeenCalledTimes(1)
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await part('Target titles').findByText('Writer')).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    expect(read.count()).toBe(2)
+  })
+
+  it('shows a section the interviewer saved in a part never answered', async () => {
+    reads(profileWith(['Designer']), { ...profileWith(['Designer']), deal_breakers: DEAL_BREAKERS })
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    const dealBreakers = part('Deal-breakers')
+    expect(dealBreakers.getByText('Not answered yet.')).toBeInTheDocument()
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await dealBreakers.findByText('Gambling')).toBeInTheDocument()
+    expect(dealBreakers.queryByText('Not answered yet.')).not.toBeInTheDocument()
+    expect(saveLine('Deal-breakers')).toHaveTextContent(/^$/)
+  })
+
+  it("keeps a part's unsaved edits over the interviewer's save, says so, and saves the person's version", async () => {
+    const read = reads(profileWith(['Designer']), profileWith(['Designer', 'Analyst']))
+    const fetchMock = read.fetchMock
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await part('Target titles').findByText(KEPT_YOURS)).toBe(saveLine('Target titles'))
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    fetchMock.mockImplementation((url: string) =>
+      answer(200, profileWith(url === '/api/profile' ? ['Designer', 'Analyst'] : ['Designer', 'Writer'])),
+    )
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+    expect(await part('Target titles').findByText(SAVED)).toBe(saveLine('Target titles'))
+    expect(sentTitles(fetchMock)).toEqual(['Designer', 'Writer'])
+  })
+
+  it('says nothing to a part with unsaved edits whose section the interviewer left alone', async () => {
+    reads(profileWith(['Designer']), { ...profileWith(['Designer']), deal_breakers: DEAL_BREAKERS })
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await part('Deal-breakers').findByText('Gambling')).toBeInTheDocument()
+    expect(saveLine('Target titles')).toHaveTextContent(/^$/)
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+  })
+
+  it('takes the next interviewer save once the edits are saved', async () => {
+    const read = reads(profileWith(['Designer']), profileWith(['Designer', 'Analyst']))
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+    read.fetchMock.mockImplementation((url: string) =>
+      answer(200, profileWith(url === '/api/profile' ? ['Analyst'] : ['Designer', 'Writer'])),
+    )
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+    expect(await part('Target titles').findByText(SAVED)).toBeInTheDocument()
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await part('Target titles').findByText('Analyst')).toBeInTheDocument()
+    expect(shownTitles()).toEqual(['Analyst'])
+    expect(saveLine('Target titles')).toHaveTextContent(/^$/)
+  })
+
+  it('says nothing when a read brings back what the part last saved, while it holds newer edits', async () => {
+    const read = reads(profileWith(['Designer']))
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+    read.fetchMock.mockImplementation((url: string) =>
+      answer(200, url === '/api/profile' ? { ...profileWith(['Designer', 'Writer']), deal_breakers: DEAL_BREAKERS } : profileWith(['Designer', 'Writer'])),
+    )
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+    expect(await part('Target titles').findByText(SAVED)).toBeInTheDocument()
+    await addTitle(user, 'Editor')
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await part('Deal-breakers').findByText('Gambling')).toBeInTheDocument()
+    expect(saveLine('Target titles')).toHaveTextContent(/^$/)
+    expect(shownTitles()).toEqual(['Designer', 'Writer', 'Editor'])
+  })
+
+  it('keeps what its own save stored when the interviewer saves while it is out', async () => {
+    const save = heldReply()
+    let profileReads = 0
+    const fetchMock = stubProfileService(
+      () => {
+        profileReads += 1
+        return answer(200, profileWith(profileReads === 1 ? ['Designer'] : ['Designer', 'Analyst']))
+      },
+      { '/profile/target-titles': save.reply },
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+
+    rerender(<ProfilePanel saves={1} />)
+    await vi.waitFor(() => {
+      expect(profileReads).toBe(2)
+    })
+    // Every step of the read's answer has run.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+    expect(saveLine('Target titles')).toHaveTextContent(SAVING)
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    await act(async () => {
+      save.finish(new Response(JSON.stringify(profileWith(['Designer', 'Writer'])), { status: 200 }))
+      await Promise.resolve()
+    })
+
+    expect(await part('Target titles').findByText(SAVED)).toBe(saveLine('Target titles'))
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    expect(sentTo(fetchMock, '/profile/target-titles')).toHaveLength(1)
+  })
+
+  it('drops an older read for a newer one', async () => {
+    const first = heldReply()
+    const second = heldReply()
+    let count = 0
+    const fetchMock = stubProfileService((init) => {
+      count += 1
+      return count === 1 ? answer(200, profileWith(['Designer'])) : count === 2 ? first.reply(init) : second.reply(init)
+    })
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+
+    rerender(<ProfilePanel saves={1} />)
+    await vi.waitFor(() => {
+      expect(count).toBe(2)
+    })
+    rerender(<ProfilePanel saves={2} />)
+    await vi.waitFor(() => {
+      expect(count).toBe(3)
+    })
+
+    const profileCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/profile')
+    expect(profileCalls[1]?.[1]?.signal?.aborted).toBe(true)
+    expect(profileCalls[2]?.[1]?.signal?.aborted).toBe(false)
+    await act(async () => {
+      second.finish(new Response(JSON.stringify(profileWith(['Analyst'])), { status: 200 }))
+      await Promise.resolve()
+    })
+    expect(await part('Target titles').findByText('Analyst')).toBeInTheDocument()
+  })
+
+  it('says when it could not read the latest saves, changing nothing else, until a read succeeds', async () => {
+    let count = 0
+    stubProfileService(() => {
+      count += 1
+      return count === 2
+        ? Promise.resolve(new Response('down', { status: 503 }))
+        : answer(200, profileWith(count === 1 ? ['Designer'] : ['Designer', 'Analyst']))
+    })
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    const [panelStatus] = screen.getAllByRole('status')
+    expect(panelStatus).toHaveTextContent(/^$/)
+
+    rerender(<ProfilePanel saves={1} />)
+
+    expect(await screen.findByText(NOT_REFRESHED)).toBe(panelStatus)
+    expect(shownTitles()).toEqual(['Designer'])
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    rerender(<ProfilePanel saves={2} />)
+    expect(await part('Target titles').findByText('Analyst')).toBeInTheDocument()
+    expect(panelStatus).toHaveTextContent(/^$/)
   })
 })

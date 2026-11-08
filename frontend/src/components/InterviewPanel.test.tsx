@@ -1096,4 +1096,64 @@ describe('InterviewPanel', () => {
       expect(read.count()).toBe(2)
     })
   })
+
+  describe('when the interviewer saves to the profile', () => {
+    const SAVED_TITLES = { kind: 'saved', section: 'target_titles' } as const
+
+    it('tells the page when a read holds more saved entries than the one before, not for the first read', async () => {
+      vi.useFakeTimers()
+      const onSaved = vi.fn()
+      const read = heldInterviewReply()
+      stubInterviewService({ read: read.reply })
+      render(<InterviewPanel onSaved={onSaved} />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      // The first read already holds one saved entry: the profile's own load is current.
+      await act(() => read.finish(200, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 4) })))
+      expect(onSaved).not.toHaveBeenCalled()
+
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      await act(() => read.finish(200, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 4) })))
+      expect(onSaved).not.toHaveBeenCalled()
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      await act(() =>
+        read.finish(200, interviewWith({ status: 'running', entries: [...CONVERSATION.slice(0, 4), SAVED_TITLES] })),
+      )
+      expect(onSaved).toHaveBeenCalledTimes(1)
+      await act(() => vi.advanceTimersByTimeAsync(2_000))
+      await act(() =>
+        read.finish(200, interviewWith({ status: 'waiting', entries: [...CONVERSATION, SAVED_TITLES] })),
+      )
+
+      expect(onSaved).toHaveBeenCalledTimes(1)
+    })
+
+    it('tells the page of saves made after the conversation was deleted and started again', async () => {
+      const onSaved = vi.fn()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(
+            200,
+            reads === 1
+              ? interviewWith({ status: 'finished', entries: CONVERSATION.slice(0, 4) })
+              : reads === 2
+                ? interviewWith()
+                : interviewWith({ status: 'waiting', entries: [...CONVERSATION.slice(0, 1), SAVED_TITLES] }),
+          )
+        },
+        remove: () => Promise.resolve(new Response(null, { status: 204 })),
+      })
+      const user = userEvent.setup()
+      const { rerender } = render(<InterviewPanel onSaved={onSaved} changes={0} />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+      await user.click(screen.getByRole('button', { name: 'Delete it' }))
+      expect(await screen.findByText(INTRODUCTION)).toBeVisible()
+
+      rerender(<InterviewPanel onSaved={onSaved} changes={1} />)
+
+      expect(await screen.findByText('Saved to your profile: Target titles')).toBeVisible()
+      expect(onSaved).toHaveBeenCalledTimes(1)
+    })
+  })
 })
