@@ -138,6 +138,19 @@ describe('InterviewPanel', () => {
       expect(screen.getByText(INTRODUCTION)).toBeVisible()
     })
 
+    it('aborts its first read when the panel goes', async () => {
+      const read = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: read.reply })
+      render(<InterviewPanel />)
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(1)
+      })
+
+      cleanup()
+
+      expect(callsTo(fetchMock, 'read')[0]?.signal?.aborted).toBe(true)
+    })
+
     it('says the interview could not load when the service does not answer', async () => {
       stubInterviewService({ read: () => interviewAnswer(500) })
 
@@ -220,6 +233,21 @@ describe('InterviewPanel', () => {
       expect(screen.queryByRole('button', { name: 'Start the interview' })).toBeNull()
       expect(screen.queryByText(INTRODUCTION)).toBeNull()
       expect(within(panel()).getByText('0 of 60 model calls used')).toBeVisible()
+    })
+
+    it('aborts a start out when the panel goes', async () => {
+      const user = userEvent.setup()
+      const start = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: always(interviewWith()), start: start.reply })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Start the interview' }))
+      await vi.waitFor(() => {
+        expect(start.count()).toBe(1)
+      })
+
+      cleanup()
+
+      expect(callsTo(fetchMock, 'start')[0]?.signal?.aborted).toBe(true)
     })
 
     it('shows the backend sentence when the start is refused, and reads the interview it describes', async () => {
@@ -730,6 +758,23 @@ describe('InterviewPanel', () => {
       expect(vi.getTimerCount()).toBe(0)
     })
 
+    it('says nothing of a reply when it first reads a waiting interview, or reads it for a change', async () => {
+      const fetchMock = stubInterviewService({
+        read: always(interviewWith({ status: 'waiting', question: QUESTION, entries: CONVERSATION })),
+      })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      expect(await screen.findByLabelText('Your answer')).toBeVisible()
+      expect(status()).toHaveTextContent('')
+
+      rerender(<InterviewPanel changes={1} />)
+
+      await vi.waitFor(() => {
+        expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      })
+      await act(() => Promise.resolve())
+      expect(status()).toHaveTextContent('')
+    })
+
     it('reads nothing while the page is hidden, and at once when it shows again', async () => {
       const { read } = await mountRunning()
 
@@ -822,6 +867,8 @@ describe('InterviewPanel', () => {
       expect(tryAgain()).toHaveAttribute('aria-disabled', 'true')
       expect(tryAgain()).toHaveFocus()
       fireEvent.click(tryAgain())
+      // Long enough for a second retry to have its token and be sent.
+      await act(() => vi.advanceTimersByTimeAsync(0))
       expect(retry.count()).toBe(1)
       const [init] = callsTo(fetchMock, 'retry')
       expect(new Headers(init?.headers).get('Authorization')).toBe(`Bearer ${SESSION_TOKEN}`)
@@ -1010,6 +1057,25 @@ describe('InterviewPanel', () => {
       expect(status()).toHaveTextContent('')
       expect(within(panel()).queryByRole('list', { name: 'Conversation' })).toBeNull()
       expect(within(panel()).queryByText(/model calls used/)).toBeNull()
+    })
+
+    it('says the interview could not load when the read after the delete fails, focus on the heading', async () => {
+      const user = userEvent.setup()
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return reads === 1 ? interviewAnswer(200, FINISHED_INTERVIEW) : interviewAnswer(500)
+        },
+        remove: () => interviewAnswer(204),
+      })
+      render(<InterviewPanel />)
+      await user.click(await screen.findByRole('button', { name: 'Delete the conversation' }))
+
+      await user.click(deleteIt())
+
+      expect(await screen.findByText(NOT_LOADED)).toBe(alertLine())
+      expect(heading()).toHaveFocus()
     })
 
     it('puts focus on the heading after the delete when a start still needs something', async () => {

@@ -86,8 +86,11 @@ describe('fetchInterview', () => {
   it.each([
     ['a status it does not know', { ...WAITING, status: 'paused' }],
     ['a failure code it does not know', { ...WAITING, failure: 'lost-claim' }],
+    ['no failure code, not even null', { ...WAITING, failure: undefined }],
     ['a missing item it does not know', { ...WAITING, missing: ['payment'] }],
+    ['a missing item named after a property every object inherits', { ...WAITING, missing: ['constructor'] }],
     ['a question that is not text', { ...WAITING, question: 7 }],
+    ['no question, not even null', { ...WAITING, question: undefined }],
     ['an entry of a kind it does not know', { ...WAITING, entries: [{ kind: 'aside', text: 'Hi' }] }],
     ['a line without its text', { ...WAITING, entries: [{ kind: 'interviewer' }] }],
     ['a saved section it does not know', { ...WAITING, entries: [{ kind: 'saved', section: 'hobbies' }] }],

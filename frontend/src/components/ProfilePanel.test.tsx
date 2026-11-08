@@ -7,6 +7,7 @@ import { ProfilePanel } from './ProfilePanel.tsx'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import {
   answer,
+  fullProfile,
   heldReply,
   profileWith,
   sentTo,
@@ -690,6 +691,40 @@ describe('ProfilePanel, after the interviewer saves', () => {
     expect(await dealBreakers.findByText('Gambling')).toBeInTheDocument()
     expect(dealBreakers.queryByText('Not answered yet.')).not.toBeInTheDocument()
     expect(saveLine('Deal-breakers')).toHaveTextContent(/^$/)
+  })
+
+  function listed(heading: string, list: string): string[] {
+    return within(part(heading).getByRole('list', { name: list }))
+      .getAllByRole('listitem')
+      .map((item) => item.firstChild?.textContent ?? '')
+  }
+
+  // Each part, the section it shows, and what it shows of fullProfile's.
+  const EACH_PART: { heading: string; section: keyof ProfileBody; shows: () => void }[] = [
+    { heading: 'Target titles', section: 'target_titles', shows: () => expect(shownTitles()).toEqual(['Data Analyst']) },
+    { heading: 'Nearby titles', section: 'title_range', shows: () => expect(listed('Nearby titles', 'Your nearby titles')).toEqual(['Data Scientist']) },
+    { heading: 'Places', section: 'places', shows: () => expect(listed('Places', 'Your offices')).toEqual(['Boston, 3 days a week']) },
+    { heading: 'Pay', section: 'pay', shows: () => expect(part('Pay').getByRole('textbox', { name: 'Lowest base pay you would take, in US dollars a year' })).toHaveValue('90,000') },
+    { heading: 'Skills', section: 'skills', shows: () => expect(listed('Skills', 'Your skills')).toEqual(['Python, 5 years']) },
+    { heading: 'Gaps and trade-offs', section: 'gaps', shows: () => expect(listed('Gaps and trade-offs', 'Gaps you would apply with')).toEqual(['No degree']) },
+    { heading: 'Deal-breakers', section: 'deal_breakers', shows: () => expect(listed('Deal-breakers', 'Industries you will not work in')).toEqual(['Gambling']) },
+    { heading: 'Companies', section: 'companies', shows: () => expect(listed('Companies', 'Companies you watch')).toEqual(['Example Corp']) },
+    { heading: 'Pace', section: 'pace', shows: () => expect(part('Pace').getByRole('textbox', { name: 'Leads a day' })).toHaveValue('10') },
+    { heading: 'Your own rules', section: 'own_rules', shows: () => expect(listed('Your own rules', 'Your rules')).toEqual(['No on-call rota']) },
+  ]
+
+  it('names every part once in the list of parts that take a later read', () => {
+    expect(EACH_PART.map(({ heading }) => heading)).toEqual(SAVED_SECTIONS.map((section) => SECTION_HEADINGS[section]))
+  })
+
+  it.each(EACH_PART)('shows in $heading the section a later read brings', async ({ section, shows }) => {
+    reads(profileWith([]), { ...profileWith([]), [section]: fullProfile()[section] })
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+
+    rerender(<ProfilePanel saves={1} />)
+
+    await vi.waitFor(shows)
   })
 
   it("keeps a part's unsaved edits over the interviewer's save, says so, and saves the person's version", async () => {
