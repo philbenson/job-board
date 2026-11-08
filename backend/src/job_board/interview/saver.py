@@ -1,9 +1,11 @@
 """Where the interview graph keeps its steps: LangGraph's PostgreSQL saver, on a pool of its own.
 
-Invariant: a saved step is read back only into the types the graph's state
-and its pending writes hold. The serializer is strict: a saved value naming
-any other type is left as its raw fields and never constructed, and pickle is
-off, so a row in these tables cannot make loading it run code.
+Invariant: a row in these tables cannot make loading it run code. Pickle is
+off and the serializer is strict: a saved value naming a type is built only
+when the type is in ``STATE_TYPES`` or on LangGraph's own list of safe types
+(dates, UUIDs, and its message and command types among them), which no
+setting here narrows; any other type is left as its raw fields, never
+constructed, and LangGraph logs a warning once for each such type.
 
 The tables are the migrations'; nothing here creates or alters them (see
 ``tests/test_checkpoint_tables.py``).
@@ -19,8 +21,9 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy import make_url
 
 # The messages, and the question an interview waits on: every type a saved
-# step names. A step holding any other type fails the tests, rather than
-# coming back as a bare dictionary of its fields.
+# step names. Each is on LangGraph's safe list today; naming them here keeps
+# them loading should a release drop one from it. A step naming any other
+# type fails the tests.
 STATE_TYPES = (AIMessage, HumanMessage, ToolMessage, Interrupt)
 # None kept open: a connection is made when a step first saves, so the service
 # starts, and answers its health check, while the database is down.
