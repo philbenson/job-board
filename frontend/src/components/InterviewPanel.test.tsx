@@ -998,4 +998,102 @@ describe('InterviewPanel', () => {
       expect(lines()).toHaveLength(CONVERSATION.length)
     })
   })
+
+  describe('when the page says the key or the resume changed', () => {
+    it('reads again for each change, and not for a render that changes nothing', async () => {
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return interviewAnswer(200, interviewWith({ missing: reads === 1 ? ['working-key'] : [] }))
+        },
+      })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      expect(await screen.findByText(NEEDS_KEY)).toBeVisible()
+
+      rerender(<InterviewPanel changes={0} />)
+      expect(callsTo(fetchMock, 'read')).toHaveLength(1)
+      rerender(<InterviewPanel changes={1} />)
+
+      expect(await screen.findByText(INTRODUCTION)).toBeVisible()
+      expect(screen.queryByText(NEEDS_KEY)).toBeNull()
+      expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+    })
+
+    it('drops the first read for the newer one when a change comes while it is out', async () => {
+      const read = heldInterviewReply()
+      const fetchMock = stubInterviewService({ read: read.reply })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(1)
+      })
+
+      rerender(<InterviewPanel changes={1} />)
+
+      await vi.waitFor(() => {
+        expect(read.count()).toBe(2)
+      })
+      const [first, second] = callsTo(fetchMock, 'read')
+      expect(first?.signal?.aborted).toBe(true)
+      expect(second?.signal?.aborted).toBe(false)
+      await act(() => read.finish(200, interviewWith()))
+      expect(screen.getByText(INTRODUCTION)).toBeVisible()
+    })
+
+    it('shows the interview once a change reads it, after a first read that failed', async () => {
+      let reads = 0
+      stubInterviewService({
+        read: () => {
+          reads += 1
+          return reads === 1 ? interviewAnswer(500) : interviewAnswer(200, interviewWith())
+        },
+      })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      expect(await screen.findByText(NOT_LOADED)).toBe(alertLine())
+
+      rerender(<InterviewPanel changes={1} />)
+
+      expect(await screen.findByText(INTRODUCTION)).toBeVisible()
+      expect(alertLine()).toHaveTextContent('')
+    })
+
+    it('keeps what is shown when the read for a change fails', async () => {
+      let reads = 0
+      const fetchMock = stubInterviewService({
+        read: () => {
+          reads += 1
+          return reads === 1 ? interviewAnswer(200, interviewWith({ missing: ['working-key'] })) : interviewAnswer(500)
+        },
+      })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      expect(await screen.findByText(NEEDS_KEY)).toBeVisible()
+
+      rerender(<InterviewPanel changes={1} />)
+
+      await vi.waitFor(() => {
+        expect(callsTo(fetchMock, 'read')).toHaveLength(2)
+      })
+      await act(() => Promise.resolve())
+      expect(screen.getByText(NEEDS_KEY)).toBeVisible()
+      expect(alertLine()).toHaveTextContent('')
+    })
+
+    it('leaves a running turn to its poll, reading nothing more for a change', async () => {
+      vi.useFakeTimers()
+      const read = heldInterviewReply()
+      stubInterviewService({ read: read.reply })
+      const { rerender } = render(<InterviewPanel changes={0} />)
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      await act(() =>
+        read.finish(200, interviewWith({ status: 'running', entries: CONVERSATION.slice(0, 3) })),
+      )
+
+      rerender(<InterviewPanel changes={1} />)
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+
+      expect(read.count()).toBe(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(read.count()).toBe(2)
+    })
+  })
 })

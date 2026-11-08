@@ -542,4 +542,74 @@ describe('ResumePanel', () => {
     const textReads = fetchMock.mock.calls.filter(([url]) => url === '/api/resume/text')
     expect(textReads).toHaveLength(2)
   })
+
+  it('tells the page after an upload, a replacement and a removal, and not when one fails', async () => {
+    const onChange = vi.fn()
+    let uploads = 0
+    let removals = 0
+    service(() => answer(200, NONE), {
+      upload: () => {
+        uploads += 1
+        return uploads === 1
+          ? Promise.resolve(new Response('{"detail": "down"}', { status: 500 }))
+          : answer(200, recorded(4096, uploads === 2 ? EARLIER : LATER))
+      },
+      remove: () => {
+        removals += 1
+        return Promise.resolve(
+          removals === 1
+            ? new Response('{"detail": "down"}', { status: 500 })
+            : new Response(null, { status: 204 }),
+        )
+      },
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel onChange={onChange} />)
+    await loaded()
+
+    await user.upload(chooser(), pdf(4096))
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+    expect(await screen.findByText(NOT_UPLOADED)).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Upload' }))
+    expect(await screen.findByText(`4 KB, uploaded ${shownTime(EARLIER)}`)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    await user.upload(chooser(), pdf(4096))
+    await user.click(screen.getByRole('button', { name: 'Replace' }))
+    expect(await screen.findByText(`4 KB, uploaded ${shownTime(LATER)}`)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(2)
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(await screen.findByText(NOT_REMOVED)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(await screen.findByText(REMOVED)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it("tells the page when its text check saves the resume's text", async () => {
+    const onChange = vi.fn()
+    const unchecked: ResumeTextBody = { uploaded_at: LATER, state: 'found', text: TEXT_READ, checked_at: null }
+    service(() => answer(200, held(2064, LATER)), {
+      text: (init) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify(
+              init?.method === 'PUT' ? { ...unchecked, checked_at: '2026-11-07T21:00:00Z' } : unchecked,
+            ),
+            { status: 200 },
+          ),
+        ),
+    })
+    const user = userEvent.setup()
+    render(<ResumePanel onChange={onChange} />)
+    const check = await screen.findByRole('region', { name: 'Resume text' })
+    await screen.findByDisplayValue(TEXT_READ)
+
+    await user.click(within(check).getByRole('button', { name: 'Save' }))
+
+    expect(await within(check).findByText('Saved.')).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
 })

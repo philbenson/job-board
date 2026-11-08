@@ -541,6 +541,57 @@ describe('ModelKeyPanel', () => {
     expect(screen.getByText(SAVED_LINE)).toBeInTheDocument()
   })
 
+  it('tells the page once a key is saved, and not when a save is refused or fails', async () => {
+    const onChange = vi.fn()
+    let puts = 0
+    service({
+      get: () => answer(404, NONE),
+      put: () => {
+        puts += 1
+        return puts === 1
+          ? answer(422, { detail: 'Anthropic did not accept that key.', reason: 'rejected' })
+          : puts === 2
+            ? answerText(500, '{"detail": "down"}')
+            : answer(200, NEWLY_SAVED)
+      },
+    })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel onChange={onChange} />)
+    await user.type(await screen.findByLabelText('Anthropic API key'), KEY)
+
+    await user.click(button('Save'))
+    expect(await screen.findByText('Anthropic did not accept that key.')).toBeInTheDocument()
+    await user.click(button('Save'))
+    expect(await screen.findByText(SAVE_FAILED)).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(button('Save'))
+
+    expect(await screen.findByText(NEWLY_SAVED_LINE)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the page once a key is removed, and not when a removal fails', async () => {
+    const onChange = vi.fn()
+    let deletes = 0
+    service({
+      get: () => answer(200, SAVED),
+      delete: () => {
+        deletes += 1
+        return deletes === 1 ? answerText(500, '{"detail": "down"}') : noContent()
+      },
+    })
+    const user = userEvent.setup()
+    render(<ModelKeyPanel onChange={onChange} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Remove' }))
+    expect(await screen.findByText(REMOVE_FAILED)).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(button('Remove'))
+
+    expect(await screen.findByText(NONE_SAVED)).toBeInTheDocument()
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
   it('reaches the input and Save by Tab when no key is saved', async () => {
     service({ get: () => answer(404, NONE) })
     const user = userEvent.setup()

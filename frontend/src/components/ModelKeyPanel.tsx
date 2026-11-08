@@ -52,13 +52,15 @@ const FAILURE_SENTENCES: Record<NonNullable<SavedModelKeyBody['failure']>, strin
  * read from the input only when it is sent and is never kept in the browser:
  * not in state and not in storage. After a save the form leaves the page,
  * taking the key with it; removing the saved key empties a form that stays.
+ * `onChange` hears of each key saved or removed, which can change what the
+ * interview is missing.
  *
  * The status and alert lines stay on the page, empty when there is nothing to
  * say, so a screen reader hears each change of their words. While a request
  * runs the buttons are held with aria-disabled rather than disabled, which
  * would drop keyboard focus to the page, and their handlers do nothing.
  */
-export function ModelKeyPanel() {
+export function ModelKeyPanel({ onChange }: { onChange?: () => void }) {
   const { getToken } = useAuth()
   const [saved, setSaved] = useState<Saved>('loading')
   const [replacing, setReplacing] = useState(false)
@@ -156,6 +158,7 @@ export function ModelKeyPanel() {
     setSaved(outcome.saved)
     setReplacing(false)
     focusNext.current = 'replace'
+    onChange?.()
   }
 
   const remove = async (): Promise<void> => {
@@ -190,6 +193,7 @@ export function ModelKeyPanel() {
     setSaved('none')
     setReplacing(false)
     focusNext.current = 'input'
+    onChange?.()
   }
 
   const openReplace = (): void => {

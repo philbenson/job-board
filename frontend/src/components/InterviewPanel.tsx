@@ -79,7 +79,9 @@ type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
  * Reads the interview on mount, and while a turn runs reads it again two
  * seconds after each read answers, one read at a time, none while the page is
  * hidden and one at once when it shows again, a newer read aborting the one
- * in flight, as the leads panel does.
+ * in flight, as the leads panel does. `changes` counts the page's changes to
+ * the key and the resume: each new count reads the interview once more,
+ * unless a turn's poll is reading it already.
  *
  * The status and alert lines stay on the page, empty when there is nothing to
  * say, so a screen reader hears each change of their words. While a request
@@ -87,7 +89,7 @@ type FocusTarget = 'heading' | 'heading if lost' | 'start' | 'delete' | 'keep'
  * would drop keyboard focus to the page, and their handlers do nothing. A
  * control that leaves the page with focus on it hands focus to the heading.
  */
-export function InterviewPanel() {
+export function InterviewPanel({ changes = 0 }: { changes?: number }) {
   const { getToken } = useAuth()
   const [shown, setShown] = useState<Shown>({ kind: 'loading' })
   const [busy, setBusy] = useState<Busy | null>(null)
@@ -155,9 +157,14 @@ export function InterviewPanel() {
     )
   }, [])
 
-  useEffect(() => {
+  // Reads the interview outside the poll: first on mount, then whenever what
+  // is shown is out of date. A read that fails leaves the interview shown, as
+  // the alert line already says why; only a first read failing says it could
+  // not load.
+  const readAgain = useCallback((): void => {
+    readOnce.current?.abort()
     const controller = new AbortController()
-    lifetime.current = controller
+    readOnce.current = controller
     void withToken(
       getToken,
       INTERVIEW_TIMEOUT_MS,
@@ -165,22 +172,28 @@ export function InterviewPanel() {
       fetchInterview,
       'unavailable',
     ).then((read) => {
-      // An aborted read belongs to an effect that has been cleaned up; see
-      // ServiceStatus for why its answer must not be shown.
+      // An aborted read was replaced by a newer one, or belongs to a panel
+      // that has gone; see ServiceStatus for why its answer must not be shown.
       if (read === 'aborted') {
         return
       }
       if (read === 'unavailable') {
-        setShown({ kind: 'unreadable' })
+        setShown((was) => (was.kind === 'loading' ? { kind: 'unreadable' } : was))
       } else {
         show(read.interview, false)
       }
     })
+  }, [getToken, show])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    lifetime.current = controller
+    readAgain()
     return () => {
       controller.abort()
       readOnce.current?.abort()
     }
-  }, [getToken, show])
+  }, [readAgain])
 
   const running = shown.kind === 'interview' && shown.interview.status === 'running'
 
@@ -244,24 +257,19 @@ export function InterviewPanel() {
     }
   }, [running, getToken, show])
 
-  // Reads the interview again outside the poll, when what is shown is out of
-  // date. A read that fails leaves it shown: the alert line already says why.
-  const readAgain = useCallback((): void => {
-    readOnce.current?.abort()
-    const controller = new AbortController()
-    readOnce.current = controller
-    void withToken(
-      getToken,
-      INTERVIEW_TIMEOUT_MS,
-      controller.signal,
-      fetchInterview,
-      'unavailable',
-    ).then((read) => {
-      if (read !== 'aborted' && read !== 'unavailable') {
-        show(read.interview, false)
-      }
-    })
-  }, [getToken, show])
+  // The page counts changes to the key and the resume, each of which can
+  // change what the interview is missing. A running turn's poll is already
+  // reading, and its last read is current.
+  const seenChanges = useRef(changes)
+  useEffect(() => {
+    if (changes === seenChanges.current) {
+      return
+    }
+    seenChanges.current = changes
+    if (!running) {
+      readAgain()
+    }
+  }, [changes, running, readAgain])
 
   async function start(): Promise<void> {
     const signal = lifetime.current?.signal

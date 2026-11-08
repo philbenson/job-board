@@ -36,7 +36,8 @@ const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
 /**
  * The text read from the signed-in person's resume, for them to check,
  * correct or type in, and save. Reads it once on mount; the resume panel
- * keys it on the upload time, so a new file mounts a new one.
+ * keys it on the upload time, so a new file mounts a new one. `onChange`
+ * hears of each text saved, which can change what the interview is missing.
  *
  * Invariant: the save names the upload by the exact time string the read
  * gave, so a check is never kept for a file it was not read from. One
@@ -46,7 +47,7 @@ const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
  * the resume panel's buttons are, so focus stays on it; while a save is out
  * the box is held too, so what it shows after the answer is what was saved.
  */
-export function ResumeTextCheck() {
+export function ResumeTextCheck({ onChange }: { onChange?: () => void }) {
   const { getToken } = useAuth()
   const [held, setHeld] = useState<ResumeText | null>(null)
   const [text, setText] = useState('')
@@ -135,6 +136,7 @@ export function ResumeTextCheck() {
     setHeld(saved.resumeText)
     setText(saved.resumeText.text ?? '')
     setSaid(SAVED)
+    onChange?.()
   }
 
   return (

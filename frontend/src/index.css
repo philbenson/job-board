@@ -37,3 +37,19 @@ h1 {
 .said {
   white-space: pre-wrap;
 }
+
+/* The interview and the profile it fills. Narrower than 64rem they stack at
+   the page's measure, the conversation first; wider, they sit side by side,
+   the area widening past the measure, centred on the page, up to two columns
+   of nearly 40rem each. Every other panel keeps the measure. */
+@media (min-width: 64rem) {
+  .interview-area {
+    --area-width: min(80rem, 100vw - 3rem);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+    width: var(--area-width);
+    margin-inline: calc((100% - var(--area-width)) / 2);
+  }
+}
