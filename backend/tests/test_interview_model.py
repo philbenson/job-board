@@ -2,6 +2,7 @@
 
 import json
 import secrets
+from functools import cached_property
 from typing import Any
 
 import anthropic
@@ -98,6 +99,14 @@ def test_the_model_gives_up_connecting_after_five_seconds_and_reading_after_its_
     assert isinstance(model, ChatAnthropic)
     expected = anthropic.Timeout(TIMEOUT_SECONDS, connect=5.0)
     assert [model._async_client.timeout, model._client.timeout] == [expected, expected]
+
+
+def test_langchain_still_sends_through_the_two_clients_the_interviewer_replaces() -> None:
+    # The interviewer's model replaces LangChain's own two client properties.
+    # Were an upgrade to rename them, the replacements would be clients nothing
+    # sends through, and the test above would still pass on them.
+    for name in ("_client", "_async_client"):
+        assert isinstance(vars(ChatAnthropic).get(name), cached_property), name
 
 
 def test_the_model_waits_out_its_timeout_and_shows_the_key_in_none_of_its_forms() -> None:
