@@ -36,6 +36,8 @@ h1 {
 /* What was said in the interview, shown with its own line breaks. */
 .said {
   white-space: pre-wrap;
+  /* A long link or other unbroken run breaks where it must, not past its column. */
+  overflow-wrap: anywhere;
 }
 
 /* The interview and the profile it fills. Narrower than 64rem they stack at
