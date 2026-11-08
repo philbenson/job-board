@@ -11,7 +11,7 @@ import { ProfilePart } from './ProfilePart.tsx'
 import { composed, lengthOf, repeatKey } from './profileText.ts'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Companies = StoredSection<'/profile/companies'>
 type Application = Companies['applied'][number]
@@ -27,14 +27,14 @@ function sameJob({ company, title }: Application): string {
 }
 
 /** Companies to watch, and the jobs already applied to. */
-export function CompaniesPart({ stored, version }: { stored: Companies | null; version: number }) {
+export function CompaniesPart({ stored, reads }: { stored: Companies | null; reads: ProfileReads }) {
   const [watch, setWatch] = useState(stored?.watch ?? [])
   const [applied, setApplied] = useState(stored?.applied ?? [])
   const part = useProfilePart(
     '/profile/companies',
     stored,
     'Could not save your companies; your changes are still here',
-    version,
+    reads,
     show,
   )
 

@@ -7,7 +7,7 @@ import { MAX_INDUSTRIES, MAX_INDUSTRY_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type DealBreakers = StoredSection<'/profile/deal-breakers'>
 
@@ -16,10 +16,10 @@ const NO_AGENCIES = 'No recruiting agencies'
 /** Industries and company sizes ruled out, and whether agencies are. */
 export function DealBreakersPart({
   stored,
-  version,
+  reads,
 }: {
   stored: DealBreakers | null
-  version: number
+  reads: ProfileReads
 }) {
   const [industries, setIndustries] = useState(stored?.industries ?? [])
   const [sizes, setSizes] = useState<CompanySize[]>(stored?.company_sizes ?? [])
@@ -28,7 +28,7 @@ export function DealBreakersPart({
     '/profile/deal-breakers',
     stored,
     'Could not save your deal-breakers; your changes are still here',
-    version,
+    reads,
     show,
   )
 

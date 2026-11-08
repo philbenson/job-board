@@ -19,6 +19,13 @@ export const EXCHANGE_TIMEOUT_MS = 5_000
 export const KEPT_YOURS =
   "The interviewer saved this section too. Save keeps your version; reloading the page shows the interviewer's."
 
+/**
+ * The profile panel's reads after its first: `version` numbers the read the
+ * stored sections came from, counted when it was sent, and `newestSent` the
+ * newest read sent so far.
+ */
+export type ProfileReads = { version: number; newestSent: () => number }
+
 /** What the line under Save says; nothing until a save has been tried. */
 type SaveShown =
   | { kind: 'idle' }
@@ -52,8 +59,8 @@ export type ProfilePart<Route extends SectionRoute> = {
 /**
  * The save of one section, kept apart from every other part's: its own
  * request, aborted when the part goes, and its own lines. `stored` is the
- * section as the profile panel last read it, and `version` counts the
- * panel's reads after its first, which happen when the interviewer saves.
+ * section as the profile panel last read it, and `reads` numbers the panel's
+ * reads after its first, which happen when the interviewer saves.
  * `take` shows a stored section in the part's editors: the one a save
  * answers, or one a later read brings, which it takes while rendering, so a
  * part declares the state `take` sets before it calls this hook.
@@ -61,15 +68,17 @@ export type ProfilePart<Route extends SectionRoute> = {
  * Invariant: what the part shows after "Saved" is what the database holds
  * for its section, and at most one of its saves is in flight. So the part
  * is held while a save is out: nothing can change what the answer will
- * replace, and Save cannot send a second body. A later read never replaces
- * what the person has typed: a part with unsaved edits keeps them and says
- * the interviewer saved the section too.
+ * replace, and Save cannot send a second body. No later read shows a section
+ * older than the part's own last save: a read sent before that save answered
+ * may have been served before it committed, so the part takes only reads
+ * sent after. Nor does a read replace what the person has typed: a part with
+ * unsaved edits keeps them and says the interviewer saved the section too.
  */
 export function useProfilePart<Route extends SectionRoute>(
   route: Route,
   stored: StoredSection<Route> | null,
   notSaved: string,
-  version: number,
+  reads: ProfileReads,
   take: (section: StoredSection<Route>) => void,
 ): ProfilePart<Route> {
   const { getToken } = useAuth()
@@ -82,17 +91,20 @@ export function useProfilePart<Route extends SectionRoute>(
   // The section as the part last heard it stored, by any read or save, so a
   // read that brings it unchanged changes nothing.
   const [known, setKnown] = useState(stored)
-  const [seenVersion, setSeenVersion] = useState(version)
+  const [seenVersion, setSeenVersion] = useState(reads.version)
+  // The newest read sent when the part's own save last answered; 0, the
+  // first load, before any save.
+  const [savedAfter, setSavedAfter] = useState(0)
   const held = save.kind === 'saving'
 
   // A newer read of the profile, taken in render as a prop change is, so the
   // part never shows the old section beside the new version.
-  if (version !== seenVersion) {
-    setSeenVersion(version)
+  if (reads.version !== seenVersion) {
+    setSeenVersion(reads.version)
     // A save out answers with what it stored, which the part then shows. So
     // the read is dropped here, and a section the interviewer saved just
     // after that save landed is not shown until the next read or a reload.
-    if (!held && stored !== null && !sameSection(stored, known)) {
+    if (!held && reads.version > savedAfter && stored !== null && !sameSection(stored, known)) {
       setKnown(stored)
       setAnswered(true)
       if (unsaved) {
@@ -152,6 +164,7 @@ export function useProfilePart<Route extends SectionRoute>(
         })
       } else {
         setKnown(saved.section)
+        setSavedAfter(reads.newestSent())
         take(saved.section)
         setUnsaved(false)
         setAnswered(true)

@@ -4,22 +4,22 @@ import { MAX_RULE_LENGTH, MAX_RULES } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 /** Rules of the person's own, in their words, for each posting. */
 export function OwnRulesPart({
   stored,
-  version,
+  reads,
 }: {
   stored: StoredSection<'/profile/own-rules'> | null
-  version: number
+  reads: ProfileReads
 }) {
   const [rules, setRules] = useState(stored?.rules ?? [])
   const part = useProfilePart(
     '/profile/own-rules',
     stored,
     'Could not save your own rules; your changes are still here',
-    version,
+    reads,
     (section) => {
       setRules(section.rules)
     },

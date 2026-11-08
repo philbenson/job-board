@@ -5,7 +5,7 @@ import { ChoiceField, WholeNumberField } from './ProfileFields.tsx'
 import { ProfilePart } from './ProfilePart.tsx'
 import { wholeNumberFrom } from './profileText.ts'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Pace = StoredSection<'/profile/pace'>
 
@@ -18,14 +18,14 @@ function briefChoice(score: number | null): string {
 }
 
 /** How many postings a day, and the lowest score that gets a brief. */
-export function PacePart({ stored, version }: { stored: Pace | null; version: number }) {
+export function PacePart({ stored, reads }: { stored: Pace | null; reads: ProfileReads }) {
   const [leads, setLeads] = useState(stored === null ? '' : String(stored.leads_per_day))
   const [brief, setBrief] = useState(briefChoice(stored?.brief_from_score ?? null))
   const part = useProfilePart(
     '/profile/pace',
     stored,
     'Could not save your pace; your changes are still here',
-    version,
+    reads,
     show,
   )
 

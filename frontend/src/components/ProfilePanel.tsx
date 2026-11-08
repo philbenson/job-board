@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { fetchProfile, type ProfileBody, type ProfileRead } from '../api/profile.ts'
 import { withToken } from '../api/withToken.ts'
 import { CompaniesPart } from './CompaniesPart.tsx'
@@ -12,7 +12,7 @@ import { PayPart } from './PayPart.tsx'
 import { PlacesPart } from './PlacesPart.tsx'
 import { SkillsPart } from './SkillsPart.tsx'
 import { TargetTitlesPart } from './TargetTitlesPart.tsx'
-import { EXCHANGE_TIMEOUT_MS } from './useProfilePart.ts'
+import { EXCHANGE_TIMEOUT_MS, type ProfileReads } from './useProfilePart.ts'
 
 type Loading =
   | { kind: 'loading' }
@@ -28,14 +28,20 @@ const NOT_REFRESHED = "Could not load the interviewer's latest saves. Reload the
  *
  * `saves` counts the interviewer's saves the page has heard of: each new
  * count reads the profile again, a newer read aborting an older, and hands
- * every part its section as now stored with a new version, for the part to
- * take or, while it holds unsaved edits or a save, to leave.
+ * every part its section as now stored with the read's number, counted when
+ * it was sent, for the part to take or, while it holds unsaved edits or a
+ * save, or when the read was sent before its last save answered, to leave.
  */
 export function ProfilePanel({ saves = 0 }: { saves?: number }) {
   const { getToken } = useAuth()
   const [loading, setLoading] = useState<Loading>({ kind: 'loading' })
-  // Counts the reads after the first that answered.
+  // Numbers each read after the first as it is sent, the first load being 0.
+  const sent = useRef(0)
+  // The number of the newest read that answered; a newer read aborts an
+  // older, so it only grows.
   const [version, setVersion] = useState(0)
+  const newestSent = useCallback(() => sent.current, [])
+  const reads: ProfileReads = useMemo(() => ({ version, newestSent }), [version, newestSent])
   // Whether the newest read after the first failed.
   const [missed, setMissed] = useState(false)
   const headingId = useId()
@@ -71,6 +77,8 @@ export function ProfilePanel({ saves = 0 }: { saves?: number }) {
       return
     }
     seenSaves.current = saves
+    sent.current += 1
+    const number = sent.current
     reading.current?.abort()
     const controller = new AbortController()
     reading.current = controller
@@ -92,7 +100,7 @@ export function ProfilePanel({ saves = 0 }: { saves?: number }) {
       }
       setMissed(false)
       setLoading(read)
-      setVersion((count) => count + 1)
+      setVersion(number)
     })
   }, [saves, getToken])
 
@@ -111,16 +119,16 @@ export function ProfilePanel({ saves = 0 }: { saves?: number }) {
       {loading.kind === 'loaded' && (
         <>
           <p>Scoring reads every section except pace, which nothing reads yet.</p>
-          <TargetTitlesPart stored={loading.profile.target_titles} version={version} />
-          <NearbyTitlesPart stored={loading.profile.title_range} version={version} />
-          <PlacesPart stored={loading.profile.places} version={version} />
-          <PayPart stored={loading.profile.pay} version={version} />
-          <SkillsPart stored={loading.profile.skills} version={version} />
-          <GapsPart stored={loading.profile.gaps} version={version} />
-          <DealBreakersPart stored={loading.profile.deal_breakers} version={version} />
-          <CompaniesPart stored={loading.profile.companies} version={version} />
-          <PacePart stored={loading.profile.pace} version={version} />
-          <OwnRulesPart stored={loading.profile.own_rules} version={version} />
+          <TargetTitlesPart stored={loading.profile.target_titles} reads={reads} />
+          <NearbyTitlesPart stored={loading.profile.title_range} reads={reads} />
+          <PlacesPart stored={loading.profile.places} reads={reads} />
+          <PayPart stored={loading.profile.pay} reads={reads} />
+          <SkillsPart stored={loading.profile.skills} reads={reads} />
+          <GapsPart stored={loading.profile.gaps} reads={reads} />
+          <DealBreakersPart stored={loading.profile.deal_breakers} reads={reads} />
+          <CompaniesPart stored={loading.profile.companies} reads={reads} />
+          <PacePart stored={loading.profile.pace} reads={reads} />
+          <OwnRulesPart stored={loading.profile.own_rules} reads={reads} />
         </>
       )}
     </section>

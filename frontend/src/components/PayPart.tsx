@@ -4,7 +4,7 @@ import { WholeNumberField } from './ProfileFields.tsx'
 import { ProfilePart } from './ProfilePart.tsx'
 import { grouped, wholeNumberFrom } from './profileText.ts'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Pay = StoredSection<'/profile/pay'>
 
@@ -12,14 +12,14 @@ const FLOOR = 'Lowest base pay you would take, in US dollars a year'
 const ASK = 'Base pay you would ask for, in US dollars a year'
 
 /** The lowest annual base pay the person would take, and what they ask. */
-export function PayPart({ stored, version }: { stored: Pay | null; version: number }) {
+export function PayPart({ stored, reads }: { stored: Pay | null; reads: ProfileReads }) {
   const [floor, setFloor] = useState(stored === null ? '' : grouped(stored.floor_usd))
   const [ask, setAsk] = useState(stored === null ? '' : grouped(stored.ask_usd))
   const part = useProfilePart(
     '/profile/pay',
     stored,
     'Could not save your pay; your changes are still here',
-    version,
+    reads,
     show,
   )
 

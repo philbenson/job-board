@@ -799,6 +799,97 @@ describe('ProfilePanel, after the interviewer saves', () => {
     expect(sentTo(fetchMock, '/profile/target-titles')).toHaveLength(1)
   })
 
+  it('keeps its own save over a read sent while the save was out that answers after it, and takes the next read', async () => {
+    const save = heldReply()
+    const late = heldReply()
+    let profileReads = 0
+    stubProfileService(
+      (init) => {
+        profileReads += 1
+        if (profileReads === 1) {
+          return answer(200, profileWith(['Designer']))
+        }
+        return profileReads === 2 ? late.reply(init) : answer(200, profileWith(['Designer', 'Writer', 'Analyst']))
+      },
+      { '/profile/target-titles': save.reply },
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+    rerender(<ProfilePanel saves={1} />)
+    await vi.waitFor(() => {
+      expect(profileReads).toBe(2)
+    })
+    await act(async () => {
+      save.finish(new Response(JSON.stringify(profileWith(['Designer', 'Writer'])), { status: 200 }))
+      await Promise.resolve()
+    })
+    expect(await part('Target titles').findByText(SAVED)).toBe(saveLine('Target titles'))
+
+    // The read was served before the save committed.
+    await act(async () => {
+      late.finish(new Response(JSON.stringify(profileWith(['Designer'])), { status: 200 }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+    expect(saveLine('Target titles')).toHaveTextContent(SAVED)
+    rerender(<ProfilePanel saves={2} />)
+    await vi.waitFor(() => {
+      expect(shownTitles()).toEqual(['Designer', 'Writer', 'Analyst'])
+    })
+  })
+
+  it('takes the next read after its save when a read sent while the save was out was dropped for a newer one', async () => {
+    const save = heldReply()
+    const dropped = heldReply()
+    const late = heldReply()
+    let profileReads = 0
+    stubProfileService(
+      (init) => {
+        profileReads += 1
+        if (profileReads === 1) {
+          return answer(200, profileWith(['Designer']))
+        }
+        if (profileReads === 2) {
+          return dropped.reply(init)
+        }
+        return profileReads === 3 ? late.reply(init) : answer(200, profileWith(['Designer', 'Writer', 'Analyst']))
+      },
+      { '/profile/target-titles': save.reply },
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(<ProfilePanel saves={0} />)
+    await loaded()
+    await addTitle(user, 'Writer')
+    await user.click(part('Target titles').getByRole('button', { name: 'Save target titles' }))
+    rerender(<ProfilePanel saves={1} />)
+    await vi.waitFor(() => {
+      expect(profileReads).toBe(2)
+    })
+    rerender(<ProfilePanel saves={2} />)
+    await vi.waitFor(() => {
+      expect(profileReads).toBe(3)
+    })
+    await act(async () => {
+      save.finish(new Response(JSON.stringify(profileWith(['Designer', 'Writer'])), { status: 200 }))
+      await Promise.resolve()
+    })
+    expect(await part('Target titles').findByText(SAVED)).toBe(saveLine('Target titles'))
+    await act(async () => {
+      late.finish(new Response(JSON.stringify(profileWith(['Designer'])), { status: 200 }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(shownTitles()).toEqual(['Designer', 'Writer'])
+
+    rerender(<ProfilePanel saves={3} />)
+    await vi.waitFor(() => {
+      expect(shownTitles()).toEqual(['Designer', 'Writer', 'Analyst'])
+    })
+  })
+
   it('drops an older read for a newer one', async () => {
     const first = heldReply()
     const second = heldReply()

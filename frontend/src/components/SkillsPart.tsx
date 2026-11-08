@@ -5,7 +5,7 @@ import { MAX_SKILL_LENGTH, MAX_SKILLS } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { lengthOf, repeatKey, wholeNumberFrom } from './profileText.ts'
 import { SECTION_HEADINGS } from './sectionHeadings.ts'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Skill = StoredSection<'/profile/skills'>['skills'][number]
 
@@ -18,17 +18,17 @@ function skillShown({ name, years }: Skill): string {
 /** Each skill the person has, with the whole years they have used it. */
 export function SkillsPart({
   stored,
-  version,
+  reads,
 }: {
   stored: StoredSection<'/profile/skills'> | null
-  version: number
+  reads: ProfileReads
 }) {
   const [skills, setSkills] = useState(stored?.skills ?? [])
   const part = useProfilePart(
     '/profile/skills',
     stored,
     'Could not save your skills; your changes are still here',
-    version,
+    reads,
     (section) => {
       setSkills(section.skills)
     },
