@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.app import create_app
 from job_board.database import get_session
+from job_board.logging_setup import LOGGER_NAME
 from job_board.model_key.check import CheckOutcome, get_key_checker
 from job_board.model_key.check_limits import CHECKS_PER_HOUR, CheckLimits
 from job_board.model_key.sealing import open_sealed, seal
@@ -463,7 +464,8 @@ async def test_the_key_never_comes_back_or_reaches_the_logs(
 ) -> None:
     key = fake_key()
     answers: list[httpx.Response] = []
-    with caplog.at_level(logging.DEBUG):
+    # The service sets its own loggers to info, which would drop their debug lines unread.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         for outcome in ("accepted", "rejected", "not-permitted", "unavailable"):
             service.checker.outcome = outcome
             answers.append(

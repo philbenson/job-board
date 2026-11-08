@@ -1063,6 +1063,8 @@ async def test_a_failure_anthropic_gave_is_logged_by_its_code_and_never_its_mess
     service: Service, ready: Someone, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
+    # The service sets its own loggers to info, which would drop their debug lines unread.
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     said = f"overloaded while reading {RESUME_SENTINEL} and {REPLY_SENTINEL}"
     service.script(status_error(500, said))
     await start(service, ready)

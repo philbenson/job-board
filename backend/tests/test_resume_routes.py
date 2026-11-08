@@ -27,6 +27,7 @@ from settings_for_tests import make_settings
 from starlette.types import Message
 
 from job_board.app import create_app
+from job_board.logging_setup import LOGGER_NAME
 
 LARGEST = 5 * 1024 * 1024
 CHUNK = 64 * 1024
@@ -442,10 +443,15 @@ async def test_a_store_that_does_not_answer_changes_nothing_and_is_logged_withou
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     endpoint = f"http://127.0.0.1:{closed_port}"
+    # Building the service sets its own loggers to info, after which the store opens
+    # with the keys in hand: the resume modules' logger is lowered first, which
+    # the build leaves alone, and the whole service's once it is up.
+    caplog.set_level(logging.DEBUG, logger=f"{LOGGER_NAME}.resumes")
     with caplog.at_level(logging.DEBUG):
         async with service_for(
             migrated_database_url, **storage_settings(endpoint, "resumes")
         ) as service:
+            caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
             await service.client.get("/resume", headers=someone.headers)  # adds the person
             run(
                 migrated_database_url,
