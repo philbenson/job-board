@@ -12,6 +12,7 @@ from settings_for_tests import ISSUER, ORIGIN, make_settings
 from sqlalchemy import create_engine, text
 
 from job_board.app import create_app
+from job_board.logging_setup import LOGGER_NAME
 
 REFUSED_BODY = b'{"detail":"sign-in required"}'
 ANOTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -125,18 +126,25 @@ async def test_refuses_alike_whatever_the_reason_and_logs_only_the_reason(
     reason: str,
     closed_port: int,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The database is unreachable: a refusal never waits on it.
     unreachable = f"postgresql://job_board:s3cret@127.0.0.1:{closed_port}/job_board"
     sent = headers()
-    with caplog.at_level(logging.INFO, logger="job_board"):
+    # Building the service would set its own loggers to info, dropping their debug lines unread.
+    monkeypatch.setattr("job_board.app.configure_logging", lambda: None)
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         async with client_for(unreachable) as client:
             response = await client.get("/me", headers=sent)
 
     assert response.status_code == 401
     assert response.content == REFUSED_BODY
     assert response.headers["WWW-Authenticate"] == "Bearer"
-    assert [record.getMessage() for record in caplog.records] == [
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith(LOGGER_NAME) and record.levelno >= logging.INFO
+    ] == [
         "resume storage is not set up: the resume routes answer 503",  # logged at start
         f"sign-in refused: {reason}",
     ]

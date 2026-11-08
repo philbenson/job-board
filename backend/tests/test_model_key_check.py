@@ -9,6 +9,7 @@ import anthropic
 import httpx2
 import pytest
 
+from job_board.logging_setup import LOGGER_NAME
 from job_board.model_key import check
 from job_board.model_key.check import CHECK_MODEL, CheckOutcome, check_with_anthropic
 
@@ -117,7 +118,8 @@ async def test_maps_each_answer_to_its_outcome(
     key = fake_key()
     recorder = Recorder(answer)
 
-    with caplog.at_level(logging.DEBUG):
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         assert await run_check(key, recorder) == outcome
 
     assert len(recorder.requests) == attempts  # one retry, and only where it can help
@@ -130,10 +132,11 @@ async def test_warns_the_operator_when_the_model_is_not_found(
 ) -> None:
     recorder = Recorder(lambda: error(404, "not_found_error"))
 
-    with caplog.at_level(logging.WARNING):
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         assert await run_check(fake_key(), recorder) == "not-permitted"
 
-    (record,) = caplog.records
+    (record,) = [record for record in caplog.records if record.levelno >= logging.WARNING]
     assert record.levelno == logging.WARNING
     assert "404" in record.getMessage()
     assert "NotFoundError" in record.getMessage()
@@ -158,7 +161,8 @@ async def test_is_unavailable_when_anthropic_cannot_be_reached(
         attempts += 1
         raise failure
 
-    with caplog.at_level(logging.DEBUG):
+    # A service built earlier in the run sets its own loggers to info, dropping their debug lines.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         assert await run_check(key, fail) == "unavailable"
 
     assert attempts == 2

@@ -18,6 +18,7 @@ from resume_service import (
 from settings_for_tests import make_settings
 
 from job_board.app import create_app
+from job_board.logging_setup import LOGGER_NAME
 
 NO_RESUME = {"detail": "No resume uploaded"}
 REPLACED = {"detail": "Your resume was replaced since this text was read"}
@@ -278,7 +279,8 @@ async def test_the_longest_save_fits_the_body_cap_in_four_byte_characters(
 async def test_the_text_is_in_no_log_line_across_an_upload_and_a_save(
     service: Service, someone: Someone, caplog: pytest.LogCaptureFixture
 ) -> None:
-    with caplog.at_level(logging.DEBUG):
+    # The service sets its own loggers to info, which would drop their debug lines unread.
+    with caplog.at_level(logging.DEBUG), caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
         read = await uploaded(service, someone)
         await save(service, someone, {"text": CHECKED, "uploaded_at": read["uploaded_at"]})
         await save(service, someone, {"text": "x" * 15_001, "uploaded_at": read["uploaded_at"]})

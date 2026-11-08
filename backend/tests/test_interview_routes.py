@@ -49,6 +49,7 @@ from job_board.interview.routes import (
 )
 from job_board.interview.runs import SHUTDOWN_GRACE_SECONDS, InterviewRuns
 from job_board.interview.tools import FINISH
+from job_board.logging_setup import LOGGER_NAME
 from job_board.model_key.sealing import seal
 
 SERVICE_KEY = base64.urlsafe_b64decode(MODEL_KEY_ENCRYPTION_KEY)
@@ -57,6 +58,8 @@ KEY = f"sk-ant-api03-{secrets.token_urlsafe(48)}"
 RESUME_SENTINEL = "resume-sentinel-5f0c"
 ANSWER_SENTINEL = "answer-sentinel-9b2e"
 REPLY_SENTINEL = "reply-sentinel-3d7a"
+PROFILE_SENTINEL = "profile-sentinel-7c41"  # in the profile as stored before the start
+SAVED_SENTINEL = "saved-sentinel-e86b"  # in the profile as the interviewer's tool saves it
 RESUME = f"Staff engineer at Example Co since 2019, writing Python and Go. {RESUME_SENTINEL}"
 FIRST_QUESTION = "Your resume shows staff work in Python and Go. Which titles are you after?"
 NEXT_QUESTION = "Saved. Where will you work?"
@@ -646,6 +649,32 @@ async def test_a_refused_key_fails_the_run_marks_the_key_and_a_retry_goes_on_fro
     assert retried_request == failing  # asked again from the step saved before the failure
 
 
+async def test_a_key_saved_again_while_the_run_waited_on_the_model_is_not_marked(
+    service: Service, ready: Someone
+) -> None:
+    refused = Hold(status_error(401))
+    service.script(refused)
+    await start(service, ready)
+    await refused.reached.wait()
+    # The person saves a new key while the model is refusing the one the run opened.
+    new_key = f"sk-ant-api03-{secrets.token_urlsafe(48)}"
+    person = ready.person_id()
+    run(
+        ready.database_url,
+        "UPDATE model_keys SET sealed_key = :sealed, last_four = :last_four, checked_at = now() "
+        "WHERE person_id = :person",
+        person=person,
+        sealed=seal(new_key, person, "anthropic", service_key=SERVICE_KEY),
+        last_four=new_key[-4:],
+    )
+    refused.released.set()
+    await service.settled()
+
+    failed = await read(service, ready)
+    assert (failed["status"], failed["failure"], failed["missing"]) == ("failed", "rejected", [])
+    assert key_failure(ready) is None
+
+
 async def test_an_answer_whose_run_failed_on_arrival_takes_a_retry_and_no_second_answer(
     service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -998,28 +1027,44 @@ async def test_a_delete_is_refused_while_running_and_otherwise_takes_the_intervi
 # What the service keeps to itself
 
 
-async def test_no_log_line_quotes_the_resume_an_answer_or_a_reply(
+async def test_no_log_line_quotes_the_resume_an_answer_the_profile_or_a_reply(
     service: Service, ready: Someone, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
+    # The service sets its own loggers to info, which would drop their debug lines unread.
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    stored_rule = f"No advertising. {PROFILE_SENTINEL}"
+    saved_rules = {"rules": [stored_rule, f"No agencies. {SAVED_SENTINEL}"]}
+    headers = ready.headers
+    stored = await service.client.put(
+        "/profile/own-rules", json={"rules": [stored_rule]}, headers=headers
+    )
+    assert stored.status_code == 200
     service.script(AIMessage(f"Which titles? {REPLY_SENTINEL}"))
     await start(service, ready)
     await service.settled()
-    service.script(RuntimeError(f"stopped on {REPLY_SENTINEL} after {ANSWER_SENTINEL}"))
+    service.script(
+        calling(("save_own_rules", saved_rules)),
+        RuntimeError(f"stopped on {REPLY_SENTINEL} after {ANSWER_SENTINEL}"),
+    )
     await answer(service, ready, f"Staff engineer. {ANSWER_SENTINEL}")
     await service.settled()
 
     assert (await read(service, ready))["failure"] == "unexpected"
+    profile = await service.client.get("/profile", headers=headers)
+    assert profile.json()["own_rules"] == saved_rules  # the tool's save ran before the failure
     logged = caplog.text
     assert "RuntimeError" in logged  # the failure is logged, by its type's name
-    for sentinel in (RESUME_SENTINEL, ANSWER_SENTINEL, REPLY_SENTINEL):
-        assert sentinel not in logged
+    sentinels = (RESUME_SENTINEL, ANSWER_SENTINEL, PROFILE_SENTINEL, SAVED_SENTINEL, REPLY_SENTINEL)
+    assert [sentinel for sentinel in sentinels if sentinel in logged] == []
 
 
 async def test_a_failure_anthropic_gave_is_logged_by_its_code_and_never_its_message(
     service: Service, ready: Someone, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
+    # The service sets its own loggers to info, which would drop their debug lines unread.
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     said = f"overloaded while reading {RESUME_SENTINEL} and {REPLY_SENTINEL}"
     service.script(status_error(500, said))
     await start(service, ready)

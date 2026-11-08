@@ -27,6 +27,7 @@ from settings_for_tests import make_settings
 from starlette.types import Message
 
 from job_board.app import create_app
+from job_board.logging_setup import LOGGER_NAME
 
 LARGEST = 5 * 1024 * 1024
 CHUNK = 64 * 1024
@@ -440,8 +441,13 @@ async def test_a_store_that_does_not_answer_changes_nothing_and_is_logged_withou
     someone: Someone,
     closed_port: int,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     endpoint = f"http://127.0.0.1:{closed_port}"
+    # The keys are in hand from the build on, and the build would set the service's
+    # loggers to info, dropping their debug lines unread: it is kept from doing so.
+    monkeypatch.setattr("job_board.app.configure_logging", lambda: None)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     with caplog.at_level(logging.DEBUG):
         async with service_for(
             migrated_database_url, **storage_settings(endpoint, "resumes")
