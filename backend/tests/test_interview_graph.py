@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from job_board.database import make_sessionmaker
+from job_board.interview.claims import renew_claim
 from job_board.interview.failures import EmptyReply, LostClaim, ModelDeclined, ReplyCutOff
 from job_board.interview.graph import (
     ANSWER_MODEL_CALLS,
@@ -639,6 +640,33 @@ async def test_a_tool_step_run_again_after_its_claim_was_taken_over_saves_nothin
             {"other": str(uuid.uuid4()), "person": interview.who.person_id},
         )
 
+    with pytest.raises(LostClaim):
+        await interview.graph.ainvoke(None, interview.who.config, context=interview.context)
+    assert await document_of(engine, interview.who.person_id) is None
+    assert interview.model.requests == []
+
+
+async def test_a_tool_step_whose_interview_was_removed_under_a_stale_claim_saves_nothing(
+    interview: Run, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shown = await profile_json(interview.sessionmaker, interview.who.person_id)
+    opened = start_input(RESUME, shown)
+    saving = [*opened["messages"], calling(("save_pace", PACE))]
+    await interview.graph.aupdate_state(
+        interview.who.config, {**opened, "messages": saving}, as_node="interviewer"
+    )
+
+    async def removed_first(*arguments: Any) -> bool:
+        # The person removed the interview while its quiet run's claim was
+        # stale, and its saved steps with it; the run, waking, still holds them.
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DELETE FROM interviews WHERE person_id = :person"),
+                {"person": interview.who.person_id},
+            )
+        return await renew_claim(*arguments)
+
+    monkeypatch.setattr("job_board.interview.graph.renew_claim", removed_first)
     with pytest.raises(LostClaim):
         await interview.graph.ainvoke(None, interview.who.config, context=interview.context)
     assert await document_of(engine, interview.who.person_id) is None
