@@ -4,8 +4,8 @@ The file goes to the resume store under a key made from the person's id, the
 same for every upload, and a row records its size and when it was uploaded.
 Its text is read once the file is in and before the store keeps it, and the
 row keeps what the reading gave, with the person's check cleared, so the text
-beside the row is always the file's own. Reading answers from the row alone;
-the file is never served back from here.
+beside the row is the text of the file the row describes. Reading answers from
+the row alone; the file is never served back from here.
 
 Invariant: no database transaction or connection is held while the file
 arrives, its text is read or the store answers, so a slow upload, reading or
@@ -112,7 +112,8 @@ async def upload_resume(
     store: Annotated[ResumeStore, Depends(resume_store)],
 ) -> Resume:
     """Stores the PDF in the body as the signed-in person's resume, replacing any before it."""
-    await session.commit()  # hold nothing open while the file arrives or the store answers
+    # Hold nothing open while the file arrives, its text is read or the store answers.
+    await session.commit()
     file = await read_pdf(request)
     reader: ResumeTextReader = request.app.state.resume_text_reader
     reading: Reading | None

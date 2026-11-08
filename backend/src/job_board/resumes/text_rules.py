@@ -27,7 +27,7 @@ from typing import Literal
 
 from pydantic_core import PydanticCustomError
 
-from job_board.profile_rules import DIRECTION_CONTROLS, _shows_something, _trimmed
+from job_board.profile_rules import DIRECTION_CONTROLS, shows_something, trimmed
 
 MAX_RESUME_TEXT_LENGTH = 15_000  # twice a dense two-page resume; the table checks the same bound
 # A resume has a handful of pages; the cap bounds what a crafted file of
@@ -75,7 +75,7 @@ def _laid_out(text: str) -> str:
 
 def _after_the_refused(text: str) -> str:
     """Rules 3 to 6, for a text that holds no refused character."""
-    return _trimmed(_laid_out(text))
+    return trimmed(_laid_out(text))
 
 
 def cleaned_page(text: str) -> str:
@@ -94,7 +94,7 @@ def cleaned_page(text: str) -> str:
 
 def cleaned(text: str) -> str:
     """The text as every rule above leaves it, with the refused characters dropped."""
-    return _trimmed(cleaned_page(text))
+    return trimmed(cleaned_page(text))
 
 
 def checked_resume_text(text: str) -> str:
@@ -118,7 +118,7 @@ def checked_resume_text(text: str) -> str:
             "The resume text cannot contain text direction controls",
         )
     shown = _after_the_refused(text)
-    if not any(_shows_something(character) for character in shown):
+    if not any(shows_something(character) for character in shown):
         raise PydanticCustomError("resume_text_blank", "The resume text cannot be blank")
     if len(shown) > MAX_RESUME_TEXT_LENGTH:
         raise PydanticCustomError(
