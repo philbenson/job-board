@@ -106,23 +106,45 @@ class Found:
     failure: InterviewFailure | None  # why the last run stopped short, when it did
     snapshot: StateSnapshot = field(repr=False)
 
+    @property
+    def step(self) -> str | None:
+        """The id of the saved step the snapshot read, None for a thread with none."""
+        step = self.snapshot.config.get("configurable", {}).get("checkpoint_id")
+        return step if isinstance(step, str) else None
+
 
 async def found_interview(
     session: AsyncSession, interview_graph: InterviewGraph, person_id: int
 ) -> Found | None:
-    row = (
+    """The interview's row and its thread's last saved step, or None when there is none.
+
+    The row is read on both sides of the snapshot, so a run that took the claim
+    while the steps were read shows as running rather than its half-made step
+    as the interview's state. A run that both started and ended between the
+    two row reads, a few milliseconds apart, is not seen.
+    """
+    before = (
         await session.execute(
-            select(
-                InterviewRow.thread_id, InterviewRow.failure, live_claim().label("running")
-            ).where(InterviewRow.person_id == person_id)
+            select(InterviewRow.thread_id, live_claim().label("running")).where(
+                InterviewRow.person_id == person_id
+            )
         )
     ).one_or_none()
-    if row is None:
+    if before is None:
         return None
-    snapshot = await interview_graph.aget_state(thread_config(row.thread_id))
+    snapshot = await interview_graph.aget_state(thread_config(before.thread_id))
+    after = (
+        await session.execute(
+            select(InterviewRow.failure, live_claim().label("running")).where(
+                InterviewRow.person_id == person_id
+            )
+        )
+    ).one_or_none()
+    if after is None:  # removed while its steps were read
+        return None
     # The table's check holds the failure to the codes, or none.
-    failure = cast("InterviewFailure | None", row.failure)
-    return Found(row.thread_id, row.running, failure, snapshot)
+    failure = cast("InterviewFailure | None", after.failure)
+    return Found(before.thread_id, before.running or after.running, failure, snapshot)
 
 
 def _waiting_on(snapshot: StateSnapshot) -> str | None:

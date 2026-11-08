@@ -6,6 +6,8 @@ commits it before the run begins; the run releases it.
 
 Invariant: whether an interview may be answered or retried is read from its
 thread's saved steps, so an answer is sent only to a thread paused at ``ask``.
+The claim is taken only while the last saved step is still the one read, so
+an answer goes only to the question its sender saw.
 
 Nothing here logs or answers the resume, an answer or a reply except as the
 conversation's entries, which only the person reads.
@@ -31,7 +33,7 @@ from job_board.interview.answers import (
     readiness,
     status_of,
 )
-from job_board.interview.claims import claim, unclaimed
+from job_board.interview.claims import claim, live_claim, unclaimed
 from job_board.interview.graph import InterviewGraph, InterviewState, profile_json, start_input
 from job_board.interview.model import InterviewModelFactory, anthropic_interviewer
 from job_board.interview.runs import InterviewRuns, RunServices, Turn, run_interview
@@ -45,6 +47,7 @@ ALREADY_STARTED = "Your interview has already started"
 NO_WORKING_KEY = "The interview needs a working Anthropic key saved first"
 NO_CHECKED_TEXT = "The interview needs your resume's text checked first"
 RUNNING = "The interview is taking its turn; wait for it to finish"
+CHANGED = "The interview has changed since it was read; reload it and try again"
 NOT_WAITING = "The interview is not waiting on an answer"
 NOT_FAILED = "The interview has not failed, so there is nothing to retry"
 
@@ -112,10 +115,20 @@ async def _claimed_run(
     runs: InterviewRuns,
     services: RunServices,
     turn: Turn,
+    found: Found,
 ) -> None:
-    """Takes the claim for ``turn`` and starts its run, or refuses while a live run holds it."""
-    if not await claim(session, turn.person_id, turn.run_id):
-        raise _conflict(RUNNING)
+    """Takes the claim for ``turn`` and starts its run.
+
+    It refuses while a live run holds the claim, and when the interview has
+    moved on from the step ``found`` read.
+    """
+    if not await claim(session, turn.person_id, turn.run_id, found.step):
+        held = await session.scalar(
+            select(live_claim()).where(InterviewRow.person_id == turn.person_id)
+        )
+        if held is None:
+            raise _no_interview()
+        raise _conflict(RUNNING if held else CHANGED)
     await session.commit()
     runs.start(run_interview(services, turn))
 
@@ -192,7 +205,8 @@ async def start_interview(
         **NO_INTERVIEW_ANSWER,
         409: {
             "model": Refused,
-            "description": "The interview is not waiting on an answer, or has no working key",
+            "description": "The interview is not waiting on an answer, has changed since it "
+            "was read, or has no working key",
         },
         422: {
             "model": TextRefused,
@@ -216,7 +230,7 @@ async def answer_interview(
         raise _conflict(NO_WORKING_KEY)
     resume: Command[str] = Command(resume=body.text)
     turn = Turn(person.id, _new_run_id(), found.thread_id, ready.sealed_key, resume)
-    await _claimed_run(session, runs, services, turn)
+    await _claimed_run(session, runs, services, turn, found)
     return interview_answer(found, ready.missing, started=True)
 
 
@@ -228,8 +242,8 @@ async def answer_interview(
         **NO_INTERVIEW_ANSWER,
         409: {
             "model": Refused,
-            "description": "The interview has not failed, or a retry still needs a working key "
-            "or the resume's checked text",
+            "description": "The interview has not failed or has changed since it was read, "
+            "or a retry still needs a working key or the resume's checked text",
         },
     },
 )
@@ -255,7 +269,7 @@ async def retry_interview(
         shown = await profile_json(services.sessionmaker, person.id)
         graph_input = start_input(ready.resume_text, shown)
     turn = Turn(person.id, _new_run_id(), found.thread_id, ready.sealed_key, graph_input)
-    await _claimed_run(session, runs, services, turn)
+    await _claimed_run(session, runs, services, turn, found)
     return interview_answer(found, ready.missing, started=True)
 
 

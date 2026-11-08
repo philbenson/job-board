@@ -7,6 +7,7 @@ while the test acts.
 
 import asyncio
 import base64
+import itertools
 import json
 import logging
 import re
@@ -14,7 +15,7 @@ import secrets
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
@@ -29,7 +30,7 @@ from scripted_model import Hold, ScriptedModel, calling, scripted
 from settings_for_tests import MODEL_KEY_ENCRYPTION_KEY, make_settings
 
 from job_board.app import create_app
-from job_board.interview import graph
+from job_board.interview import answers, graph
 from job_board.interview.claims import STALE_AFTER
 from job_board.interview.failures import INTERVIEW_FAILURES
 from job_board.interview.graph import INTERVIEW_MODEL_CALLS
@@ -37,6 +38,7 @@ from job_board.interview.model import TIMEOUT_SECONDS
 from job_board.interview.prompt import LIMIT_REACHED
 from job_board.interview.routes import (
     ALREADY_STARTED,
+    CHANGED,
     NO_CHECKED_TEXT,
     NO_INTERVIEW,
     NO_WORKING_KEY,
@@ -416,6 +418,93 @@ async def test_an_answer_while_the_interview_runs_is_refused(
 
     assert (refused.status_code, refused.json()) == (409, {"detail": RUNNING})
     assert len(service.model.requests) == 1
+
+
+@dataclass
+class HeldRoute:
+    """The first request of a route, held after it read the interview and before its claim."""
+
+    reached: asyncio.Event = field(default_factory=asyncio.Event)
+    released: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+def held_after_the_read(monkeypatch: pytest.MonkeyPatch) -> HeldRoute:
+    # Readiness is read between the interview and the claim, by the answer and
+    # the retry alike.
+    held, reading = HeldRoute(), answers.readiness
+    calls = itertools.count()
+
+    async def readiness(session: Any, person_id: int) -> Any:
+        if next(calls) == 0:
+            held.reached.set()
+            await held.released.wait()
+        return await reading(session, person_id)
+
+    monkeypatch.setattr("job_board.interview.routes.readiness", readiness)
+    return held
+
+
+async def test_an_answer_read_before_another_turn_ran_is_refused_as_changed(
+    service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await waiting_on_the_first_question(service, ready)
+    held = held_after_the_read(monkeypatch)
+    late = asyncio.create_task(answer(service, ready, "Principal, for the first question."))
+    await held.reached.wait()
+    service.script(AIMessage(NEXT_QUESTION))
+    assert (await answer(service, ready, ANSWER)).status_code == 202
+    await service.settled()
+    held.released.set()
+
+    refused = await late
+    assert (refused.status_code, refused.json()) == (409, {"detail": CHANGED})
+    await service.settled()
+    interview = await read(service, ready)
+    assert (interview["status"], interview["question"]) == ("waiting", NEXT_QUESTION)
+    assert len(service.model.requests) == 2
+
+
+async def test_a_retry_read_before_another_retry_ran_is_refused_as_changed(
+    service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service.script(status_error(500))
+    await start(service, ready)
+    await service.settled()
+    held = held_after_the_read(monkeypatch)
+    late = asyncio.create_task(retry(service, ready))
+    await held.reached.wait()
+    service.script(AIMessage(FIRST_QUESTION))
+    assert (await retry(service, ready)).status_code == 202
+    await service.settled()
+    held.released.set()
+
+    refused = await late
+    assert (refused.status_code, refused.json()) == (409, {"detail": CHANGED})
+    await service.settled()
+    interview = await read(service, ready)
+    assert (interview["status"], interview["question"]) == ("waiting", FIRST_QUESTION)
+    assert len(service.model.requests) == 2
+
+
+async def test_a_read_shows_running_when_a_run_took_the_claim_while_its_steps_were_read(
+    service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await waiting_on_the_first_question(service, ready)
+    interview_graph = service.app.state.interview_graph
+    reading = interview_graph.aget_state
+
+    async def claimed_while_read(config: Any, **options: Any) -> Any:
+        run(
+            ready.database_url,
+            "UPDATE interviews SET run_id = :run, running_since = now() WHERE person_id = :p",
+            run=str(uuid.uuid4()),
+            p=ready.person_id(),
+        )
+        return await reading(config, **options)
+
+    monkeypatch.setattr(interview_graph, "aget_state", claimed_while_read)
+    interview = await read(service, ready)
+    assert (interview["status"], interview["question"]) == ("running", None)
 
 
 async def test_an_answer_with_no_interview_is_not_found(service: Service, ready: Someone) -> None:

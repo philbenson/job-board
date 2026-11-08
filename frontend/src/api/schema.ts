@@ -1100,7 +1100,7 @@ export interface operations {
                     "application/json": components["schemas"]["Refused"];
                 };
             };
-            /** @description The interview is not waiting on an answer, or has no working key */
+            /** @description The interview is not waiting on an answer, has changed since it was read, or has no working key */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1156,7 +1156,7 @@ export interface operations {
                     "application/json": components["schemas"]["Refused"];
                 };
             };
-            /** @description The interview has not failed, or a retry still needs a working key or the resume's checked text */
+            /** @description The interview has not failed or has changed since it was read, or a retry still needs a working key or the resume's checked text */
             409: {
                 headers: {
                     [name: string]: unknown;
