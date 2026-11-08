@@ -32,3 +32,8 @@ h1 {
   margin: 0 0 0.5rem;
   font-size: 2rem;
 }
+
+/* What was said in the interview, shown with its own line breaks. */
+.said {
+  white-space: pre-wrap;
+}
