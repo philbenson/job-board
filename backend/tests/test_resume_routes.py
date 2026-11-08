@@ -441,17 +441,17 @@ async def test_a_store_that_does_not_answer_changes_nothing_and_is_logged_withou
     someone: Someone,
     closed_port: int,
     caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     endpoint = f"http://127.0.0.1:{closed_port}"
-    # Building the service sets its own loggers to info, after which the store opens
-    # with the keys in hand: the resume modules' logger is lowered first, which
-    # the build leaves alone, and the whole service's once it is up.
-    caplog.set_level(logging.DEBUG, logger=f"{LOGGER_NAME}.resumes")
+    # The keys are in hand from the build on, and the build would set the service's
+    # loggers to info, dropping their debug lines unread: it is kept from doing so.
+    monkeypatch.setattr("job_board.app.configure_logging", lambda: None)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     with caplog.at_level(logging.DEBUG):
         async with service_for(
             migrated_database_url, **storage_settings(endpoint, "resumes")
         ) as service:
-            caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
             await service.client.get("/resume", headers=someone.headers)  # adds the person
             run(
                 migrated_database_url,
