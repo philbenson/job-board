@@ -1,7 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ResumeBody, StorageRefusalBody, UploadedBody } from '../api/resume.ts'
+import type {
+  ResumeBody,
+  StorageRefusalBody,
+  UploadedBody,
+  UploadRefusalBody,
+} from '../api/resume.ts'
 import type { ResumeTextBody } from '../api/resumeText.ts'
 import { ResumePanel } from './ResumePanel.tsx'
 
@@ -31,6 +36,7 @@ const CHOOSE_FIRST = 'Choose a PDF first'
 const NOT_SET_UP = 'Resume storage is not set up on this service yet'
 const STORAGE_DOWN = 'Could not reach resume storage; try again later'
 const NOT_UPLOADED = 'Could not upload your resume'
+const READING_BUSY = 'The service is busy reading resumes. Try again in a minute.'
 const NOT_REMOVED = 'Could not remove your resume'
 const NOT_READ = 'Could not read that file; choose it again'
 
@@ -66,11 +72,14 @@ const STORAGE_NOT_SET_UP = {
 const DID_NOT_ANSWER = {
   detail: 'Resume storage did not answer; try again later',
 } satisfies StorageRefusalBody
+const BUSY = {
+  detail: 'Resume reading is busy; try again in a minute',
+} satisfies UploadRefusalBody
 
 // A body the contract allows, typed so it changes when the backend's does.
 function answer(
   status: number,
-  body: ResumeBody | UploadedBody | StorageRefusalBody,
+  body: ResumeBody | UploadedBody | StorageRefusalBody | UploadRefusalBody,
 ): Promise<Response> {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
@@ -373,6 +382,7 @@ describe('ResumePanel', () => {
   it.each([
     ['storage is not set up', () => answer(503, STORAGE_NOT_SET_UP), NOT_SET_UP],
     ['the store did not answer', () => answer(503, DID_NOT_ANSWER), STORAGE_DOWN],
+    ['reading is busy', () => answer(503, BUSY), READING_BUSY],
     ['the service answered something else', () => answer(503, { detail: 'down' }), NOT_UPLOADED],
     ['the request failed', () => Promise.reject(new TypeError('Failed to fetch')), NOT_UPLOADED],
   ])('says so when an upload fails because %s, keeping what was there', async (_case, reply, said) => {
@@ -454,7 +464,7 @@ describe('ResumePanel', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toHaveAttribute('aria-disabled', 'false')
   })
 
-  it('gives up on an upload after two and a quarter minutes, the session token included', async () => {
+  it('gives up on an upload after two and a half minutes, the session token included', async () => {
     vi.useFakeTimers()
     service(() => answer(200, NONE))
     render(<ResumePanel />)
@@ -464,7 +474,7 @@ describe('ResumePanel', () => {
 
     fireEvent.change(chooser(), { target: { files: [pdf(2064)] } })
     fireEvent.click(screen.getByRole('button', { name: 'Upload' }))
-    await act(() => vi.advanceTimersByTimeAsync(134_999))
+    await act(() => vi.advanceTimersByTimeAsync(149_999))
     expect(status()).toHaveTextContent(UPLOADING)
     await act(() => vi.advanceTimersByTimeAsync(1))
 

@@ -1559,7 +1559,7 @@ export interface operations {
                     "application/json": components["schemas"]["Refused"];
                 };
             };
-            /** @description Resume storage is not set up, or did not answer */
+            /** @description Resume storage is not set up, or did not answer, or reading is busy */
             503: {
                 headers: {
                     [name: string]: unknown;

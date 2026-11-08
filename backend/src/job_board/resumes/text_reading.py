@@ -4,9 +4,14 @@ A PDF is a program of sorts: a hostile one can inflate a stream to gigabytes,
 nest objects until a parser runs out of stack, or loop. So the service never
 parses one itself. It starts ``job_board.resumes.text_child`` with nothing in
 its environment, hands it the file and limits on processor time and memory,
-waits at most ``wall_seconds``, and kills it past that. One reading runs at a
-time, so a burst of uploads queues rather than multiplying the memory taken.
-The wait for a turn is outside the wall clock: it bounds the reading alone.
+waits at most ``wall_seconds``, and kills it past that.
+
+One reading runs at a time, so a burst of uploads queues rather than
+multiplying the memory taken, and the queue is bounded too: a few uploads
+wait for a turn, each for a while, one person has one upload in it, and past
+any of these the reading is refused as busy. So a burst holds at most a few
+files in memory, and an upload's wait has an end. The wait for a turn is
+outside the wall clock: that bounds the reading alone.
 
 The child's answer is checked as though anyone had written it: it must be one
 JSON object of exactly the state and the text, no longer than the longest
@@ -20,7 +25,7 @@ import json
 import logging
 import signal
 import sys
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 
 from job_board.resumes.text_rules import FEWEST_LETTERS, MAX_RESUME_TEXT_LENGTH, Reading, cleaned
@@ -34,6 +39,17 @@ FAILED = Reading("failed", None)
 # punctuation around them.
 LONGEST_ANSWER_BYTES = 64 + 4 * MAX_RESUME_TEXT_LENGTH
 CHUNK_BYTES = 64 * 1024
+# Uploads that may wait beside the one being read. Each holds its file, up to
+# 5 MB, while it waits, so this bounds what a burst holds; two lets a few
+# people uploading at once each get a turn.
+WAITING_READINGS = 2
+# How long an upload waits for its turn: a reading at its longest, so one
+# waiting behind it still gets one.
+TURN_WAIT_SECONDS = 15
+
+
+class ReadingBusy(Exception):
+    """The reading was refused: too many wait, the person has one already, or no turn came."""
 
 
 def _answer_of(answer: bytes) -> Reading | None:
@@ -80,6 +96,11 @@ async def _bounded(stdout: asyncio.StreamReader) -> bytes | None:
     return bytes(answer)
 
 
+def _busy(bound: str) -> ReadingBusy:
+    logger.warning("resume text reading refused as busy: %s", bound)
+    return ReadingBusy(bound)
+
+
 def _ending(code: int) -> str:
     if code >= 0:
         return f"exited with code {code}"
@@ -91,17 +112,43 @@ def _ending(code: int) -> str:
 
 @dataclass
 class ResumeTextReader:
-    """Reads resumes' text one at a time, each in a child process under these limits."""
+    """Reads resumes' text one at a time, each in a child process under these limits.
+
+    Invariant: an upload counts in ``_holding`` and its person in ``_people``
+    from the moment it is let wait until it is read, refused for no turn,
+    timed out or cancelled, and on every one of those paths it is freed.
+    """
 
     command: Sequence[str] = (sys.executable, "-I", "-m", "job_board.resumes.text_child")
     wall_seconds: float = 15  # a long resume reads in under a second
     cpu_seconds: int = 10
     address_space_bytes: int = 256 * 1024 * 1024  # pypdf reading a 5 MB file needs far less
+    waiting_readings: int = WAITING_READINGS
+    turn_wait_seconds: float = TURN_WAIT_SECONDS
     one_at_a_time: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
+    _holding: int = field(default=0, init=False)  # the upload being read and those waiting
+    _people: set[Hashable] = field(default_factory=set, init=False)
 
-    async def read(self, file: bytes | bytearray) -> Reading:
-        """The file's text and what reading it gave; ``failed`` for anything that went wrong."""
-        async with self.one_at_a_time:
+    async def read(self, file: bytes | bytearray, person: Hashable | None = None) -> Reading:
+        """The file's text and what reading it gave; ``failed`` for anything that went wrong.
+
+        ``person`` is whose upload it is, of whom one upload may be read or
+        waiting at once; None for a reading that is no one's upload. Raises
+        ``ReadingBusy``, logged with the bound that refused it, past the wait.
+        """
+        if person is not None and person in self._people:
+            raise _busy("that person's upload is already being read or waiting")
+        if self._holding > self.waiting_readings:
+            raise _busy(f"{self.waiting_readings} uploads already wait for a turn")
+        self._holding += 1
+        if person is not None:
+            self._people.add(person)
+        try:
+            try:
+                async with asyncio.timeout(self.turn_wait_seconds):
+                    await self.one_at_a_time.acquire()
+            except TimeoutError:
+                raise _busy(f"no turn came within {self.turn_wait_seconds} seconds") from None
             try:
                 async with asyncio.timeout(self.wall_seconds):
                     return await self._read(file)
@@ -110,6 +157,11 @@ class ResumeTextReader:
                     "resume text reading did not finish within %s seconds", self.wall_seconds
                 )
                 return FAILED
+            finally:
+                self.one_at_a_time.release()
+        finally:
+            self._holding -= 1
+            self._people.discard(person)
 
     async def _read(self, file: bytes | bytearray) -> Reading:
         limits = (self.cpu_seconds, self.address_space_bytes, MAX_RESUME_BYTES)

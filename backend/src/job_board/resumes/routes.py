@@ -30,11 +30,13 @@ from job_board.database import get_session
 from job_board.models import Person, ResumeRow
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person
 from job_board.resumes.store import ResumeStore, StoreDidNotAnswer
-from job_board.resumes.text_reading import ResumeTextReader
+from job_board.resumes.text_reading import ReadingBusy, ResumeTextReader
+from job_board.resumes.text_rules import Reading
 from job_board.resumes.upload import read_pdf
 
 NOT_SET_UP = "Resume storage is not set up"
 DID_NOT_ANSWER = "Resume storage did not answer; try again later"
+READING_BUSY = "Resume reading is busy; try again in a minute"
 
 STORAGE_ANSWERS: dict[int | str, dict[str, Any]] = {
     503: {"model": Refused, "description": "Resume storage is not set up, or did not answer"},
@@ -90,7 +92,10 @@ async def read_resume(
         411: {"model": Refused, "description": "No declared length"},
         413: {"model": Refused, "description": "Over 5 MB, or longer than declared"},
         415: {"model": Refused, "description": "Not sent as a PDF, or not a PDF"},
-        **STORAGE_ANSWERS,
+        503: {
+            "model": Refused,
+            "description": "Resume storage is not set up, or did not answer, or reading is busy",
+        },
     },
     # The body is read by the route itself, so it is described here.
     openapi_extra={
@@ -110,7 +115,18 @@ async def upload_resume(
     await session.commit()  # hold nothing open while the file arrives or the store answers
     file = await read_pdf(request)
     reader: ResumeTextReader = request.app.state.resume_text_reader
-    reading = await reader.read(file)
+    reading: Reading | None
+    try:
+        reading = await reader.read(file, person.id)
+    except ReadingBusy:
+        reading = None
+    if reading is None:
+        # Refused before anything is stored. The refusal, which holds the
+        # reading's frame and so the file, is let go as its except clause
+        # ends; dropping the file here too lets it go now, not once the
+        # answer is sent.
+        del file
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=READING_BUSY)
     key = object_key(person)
     try:
         await store.put(key, file)

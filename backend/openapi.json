@@ -931,7 +931,7 @@
             }
           },
           "503": {
-            "description": "Resume storage is not set up, or did not answer",
+            "description": "Resume storage is not set up, or did not answer, or reading is busy",
             "content": {
               "application/json": {
                 "schema": {

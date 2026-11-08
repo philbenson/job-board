@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 from collections.abc import AsyncIterator, Iterator
@@ -7,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from held_reader import FILLER, HeldReader
 from local_s3 import LocalBucket
+from pdf_files import pdf, resume_lines
 from resume_service import (
     A_PDF,
     A_PDF_TEXT,
@@ -36,6 +39,7 @@ SEND_THE_LENGTH = {"detail": "Send the file's length"}
 TOO_LARGE = {"detail": "A resume can be at most 5 MB"}
 LONGER_THAN_DECLARED = {"detail": "The file is longer than its declared length"}
 ENDED_EARLY = {"detail": "The file ended before its declared length"}
+READING_BUSY = {"detail": "Resume reading is busy; try again in a minute"}
 
 
 @pytest.fixture
@@ -169,6 +173,38 @@ async def test_a_second_upload_reads_its_own_text_and_clears_the_check(
 
     assert replaced.status_code == 200
     assert tuple(someone.text_row()) == ("failed", None, None)
+
+
+async def test_an_upload_refused_as_busy_changes_neither_the_store_nor_the_row(
+    service: Service, someone: Someone, s3_bucket: LocalBucket, caplog: pytest.LogCaptureFixture
+) -> None:
+    reader = HeldReader()
+    service.app.state.resume_text_reader = reader
+    reader.let_go.set()
+    await service.client.put("/resume", headers=pdf_headers(someone), content=A_PDF)
+    before = (someone.rows(), tuple(someone.text_row()), s3_bucket.read(someone.key()))
+    reader.let_go.clear()
+    being_read = pdf(resume_lines()[:4])
+    first = asyncio.create_task(
+        service.client.put("/resume", headers=pdf_headers(someone), content=being_read)
+    )
+    await reader.reading_begins(2)
+
+    with caplog.at_level(logging.WARNING):
+        refused = await service.client.put(
+            "/resume", headers=pdf_headers(someone), content=pdf(resume_lines()[4:])
+        )
+
+    assert (refused.status_code, refused.json()) == (503, READING_BUSY)
+    assert (someone.rows(), tuple(someone.text_row()), s3_bucket.read(someone.key())) == before
+    ours = [record.getMessage() for record in caplog.records if record.name.startswith("job_board")]
+    assert ours == [
+        "resume text reading refused as busy: that person's upload is already being read or waiting"
+    ]
+    reader.let_go.set()
+    assert (await first).status_code == 200
+    assert s3_bucket.read(someone.key()) == (being_read, "application/pdf")
+    assert tuple(someone.text_row()) == ("found", FILLER, None)
 
 
 async def test_takes_the_media_type_whatever_its_case_and_parameters(
@@ -343,9 +379,9 @@ class WatchedReader:
     reader: Any
     store: WatchedStore
 
-    async def read(self, file: bytes | bytearray) -> Any:
+    async def read(self, file: bytes | bytearray, person: Any) -> Any:
         self.store.look("read")
-        return await self.reader.read(file)
+        return await self.reader.read(file, person)
 
 
 @dataclass
@@ -571,6 +607,9 @@ def test_the_description_declares_each_answer_and_the_file_as_the_body() -> None
     assert set(route) == {"get", "put", "delete"}
     assert set(route["get"]["responses"]) == {"200", "401", "503"}
     assert set(route["put"]["responses"]) == {"200", "400", "401", "411", "413", "415", "503"}
+    assert route["put"]["responses"]["503"]["description"] == (
+        "Resume storage is not set up, or did not answer, or reading is busy"
+    )
     assert set(route["delete"]["responses"]) == {"204", "401", "503"}
     assert route["put"]["requestBody"] == {
         "required": True,

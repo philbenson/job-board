@@ -27,6 +27,7 @@ const MEGABYTE = 1024 * 1024
 
 const NOT_SET_UP = 'Resume storage is not set up on this service yet'
 const STORAGE_DOWN = 'Could not reach resume storage; try again later'
+const READING_BUSY = 'The service is busy reading resumes. Try again in a minute.'
 
 type Loading =
   | { kind: 'loading' }
@@ -264,11 +265,20 @@ function statusLine(shown: Shown): string {
   }
 }
 
-function failure(outcome: 'not set up' | 'storage down' | 'unavailable', otherwise: string): string {
-  if (outcome === 'not set up') {
-    return NOT_SET_UP
+function failure(
+  outcome: 'not set up' | 'storage down' | 'busy' | 'unavailable',
+  otherwise: string,
+): string {
+  switch (outcome) {
+    case 'not set up':
+      return NOT_SET_UP
+    case 'storage down':
+      return STORAGE_DOWN
+    case 'busy':
+      return READING_BUSY
+    case 'unavailable':
+      return otherwise
   }
-  return outcome === 'storage down' ? STORAGE_DOWN : otherwise
 }
 
 async function startsAsAPdf(file: File): Promise<boolean> {

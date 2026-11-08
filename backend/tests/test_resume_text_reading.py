@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from held_reader import FILLER, HeldReader
 from pdf_files import (
     bomb_page,
     costly_page,
@@ -21,7 +22,7 @@ from pdf_files import (
 from pypdf import PdfReader
 
 from job_board.resumes.text_child import text_of
-from job_board.resumes.text_reading import LONGEST_ANSWER_BYTES, ResumeTextReader
+from job_board.resumes.text_reading import LONGEST_ANSWER_BYTES, ReadingBusy, ResumeTextReader
 from job_board.resumes.text_rules import (
     MAX_RESUME_PAGES,
     MAX_RESUME_TEXT_LENGTH,
@@ -33,8 +34,6 @@ from job_board.resumes.upload import MAX_RESUME_BYTES
 
 FAILED = Reading("failed", None)
 OURS = "job_board.resumes.text_reading"
-# A line of a resume with enough letters, 52, to count as text read.
-FILLER = "Moved the whole ordering system onto a queue of small services"
 # The modules the reading's process must never load: what it holds is the
 # file and the limits, and nothing that can reach the database or the secrets.
 NEVER_IMPORTED = ("fastapi", "starlette", "sqlalchemy", "pydantic", "pydantic_settings")
@@ -415,6 +414,106 @@ async def test_two_readings_at_once_run_one_after_the_other(tmp_path: Path) -> N
     steps = [line.split() for line in turns.read_text().splitlines()]
     assert [step for step, _ in steps] == ["start", "end", "start", "end"]
     assert steps[0][1] == steps[1][1] and steps[2][1] == steps[3][1]
+
+
+async def waiting(reader: HeldReader, *people: str) -> list[asyncio.Task[Reading]]:
+    """A reading begun for the first of ``people``, and one waiting for each of the rest."""
+    first = asyncio.create_task(reader.read(A_FILE, people[0]))
+    await reader.reading_begins(reader.begun + 1)
+    rest = [asyncio.create_task(reader.read(A_FILE, person)) for person in people[1:]]
+    await asyncio.sleep(0.05)  # each takes its place in the wait
+    return [first, *rest]
+
+
+A_FILE = pdf(resume_lines())
+
+
+async def test_an_upload_past_the_ones_waiting_is_refused_at_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reader = HeldReader()
+    readings = await waiting(reader, "first", "second", "third")
+
+    with caplog.at_level(logging.WARNING, logger=OURS), pytest.raises(ReadingBusy):
+        async with asyncio.timeout(1):
+            await reader.read(A_FILE, "fourth")
+
+    assert logged(caplog) == [
+        "resume text reading refused as busy: 2 uploads already wait for a turn"
+    ]
+    reader.let_go.set()
+    assert await asyncio.gather(*readings) == [Reading("found", FILLER)] * 3
+
+
+async def test_a_second_upload_by_one_person_is_refused_while_theirs_is_read_or_waits(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reader = HeldReader()
+    readings = await waiting(reader, "first", "second")
+
+    with caplog.at_level(logging.WARNING, logger=OURS):
+        for person in ("first", "second"):
+            with pytest.raises(ReadingBusy):
+                await reader.read(A_FILE, person)
+
+    assert (
+        logged(caplog)
+        == [
+            "resume text reading refused as busy: that person's upload is already being read"
+            " or waiting"
+        ]
+        * 2
+    )
+    reader.let_go.set()
+    assert await asyncio.gather(*readings) == [Reading("found", FILLER)] * 2
+
+
+async def test_an_upload_given_no_turn_within_the_wait_is_refused(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reader = HeldReader(turn_wait_seconds=0.2)
+    (reading,) = await waiting(reader, "first")
+
+    with caplog.at_level(logging.WARNING, logger=OURS), pytest.raises(ReadingBusy):
+        async with asyncio.timeout(5):
+            await reader.read(A_FILE, "second")
+
+    assert logged(caplog) == [
+        "resume text reading refused as busy: no turn came within 0.2 seconds"
+    ]
+    reader.let_go.set()
+    assert await reading == Reading("found", FILLER)
+
+
+async def test_the_wait_for_a_turn_is_not_counted_in_the_readings_wall_clock() -> None:
+    reader = HeldReader(wall_seconds=0.5, takes=0.3)
+    reader.let_go.set()
+
+    # The second waits 0.3 s for its turn and reads for 0.3 s more: past the
+    # wall clock in all, within it for the reading alone.
+    readings = [reader.read(A_FILE, person) for person in ("first", "second")]
+
+    assert await asyncio.gather(*readings) == [Reading("found", FILLER)] * 2
+
+
+async def test_after_refusals_and_cancels_every_place_is_free_again() -> None:
+    reader = HeldReader(turn_wait_seconds=0.2)
+    readings = await waiting(reader, "first", "second", "third")
+    for person in ("first", "fourth"):  # one person twice, and one past the wait
+        with pytest.raises(ReadingBusy):
+            await reader.read(A_FILE, person)
+    # The two waiting are given no turn; the one being read is cancelled.
+    for refused in readings[1:]:
+        with pytest.raises(ReadingBusy):
+            await refused
+    readings[0].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await readings[0]
+
+    # The same people, and as many, are read again, one at a time.
+    reader.let_go.set()
+    again = [reader.read(A_FILE, person) for person in ("first", "second", "third")]
+    assert await asyncio.gather(*again) == [Reading("found", FILLER)] * 3
 
 
 async def test_the_reading_sees_no_environment(monkeypatch: pytest.MonkeyPatch) -> None:
