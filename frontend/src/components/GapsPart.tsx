@@ -2,20 +2,23 @@ import { useState } from 'react'
 import type { StoredSection } from '../api/profile.ts'
 import { MAX_GAP_LENGTH, MAX_GAPS } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Gaps = StoredSection<'/profile/gaps'>
 
 /** What the person lacks but would apply anyway, and what they would give up. */
-export function GapsPart({ stored }: { stored: Gaps | null }) {
+export function GapsPart({ stored, reads }: { stored: Gaps | null; reads: ProfileReads }) {
+  const [applyWith, setApplyWith] = useState(stored?.apply_with ?? [])
+  const [tradeOffs, setTradeOffs] = useState(stored?.trade_offs ?? [])
   const part = useProfilePart(
     '/profile/gaps',
     stored,
     'Could not save your gaps and trade-offs; your changes are still here',
+    reads,
+    show,
   )
-  const [applyWith, setApplyWith] = useState(stored?.apply_with ?? [])
-  const [tradeOffs, setTradeOffs] = useState(stored?.trade_offs ?? [])
 
   function show(section: Gaps): void {
     setApplyWith(section.apply_with)
@@ -24,11 +27,11 @@ export function GapsPart({ stored }: { stored: Gaps | null }) {
 
   return (
     <ProfilePart
-      heading="Gaps and trade-offs"
+      heading={SECTION_HEADINGS.gaps}
       part={part}
       onSave={() => {
         const body = { apply_with: applyWith, trade_offs: tradeOffs }
-        part.send(body, body, show)
+        part.send(body, body)
       }}
     >
       <TextListEditor

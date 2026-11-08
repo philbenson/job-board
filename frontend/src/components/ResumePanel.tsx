@@ -46,13 +46,15 @@ type Shown =
  * The signed-in person's resume: loads it once on mount, shows its size and
  * when it was uploaded, and uploads a chosen PDF or removes the one held.
  * Below a resume held, the text read from it, for the person to check.
+ * `onChange` hears of each upload, removal and saved text, which can change
+ * what the interview is missing.
  *
  * Invariant: at most one of the panel's own requests is out at a time, and
  * what is shown after one answers is what the backend recorded. While one is
  * out the buttons are held with aria-disabled and guarded handlers rather than
  * disabled, which would drop keyboard focus to the page, as ProfilePanel does.
  */
-export function ResumePanel() {
+export function ResumePanel({ onChange }: { onChange?: () => void }) {
   const { getToken } = useAuth()
   const [loading, setLoading] = useState<Loading>({ kind: 'loading' })
   const [chosen, setChosen] = useState<File | null>(null)
@@ -159,6 +161,7 @@ export function ResumePanel() {
       chooser.current.value = ''
     }
     say('Resume uploaded')
+    onChange?.()
   }
 
   async function remove(): Promise<void> {
@@ -182,6 +185,7 @@ export function ResumePanel() {
     }
     setLoading({ kind: 'loaded', resume: null })
     say('Resume removed')
+    onChange?.()
     // The Remove button goes with the resume, and would take focus with it.
     chooser.current?.focus()
   }
@@ -244,7 +248,7 @@ export function ResumePanel() {
           <p role="status">{statusLine(shown)}</p>
           {/* Keyed on the upload, so a new file is read and checked afresh. */}
           {loading.resume !== null && (
-            <ResumeTextCheck key={loading.resume.uploadedAt.getTime()} />
+            <ResumeTextCheck key={loading.resume.uploadedAt.getTime()} onChange={onChange} />
           )}
         </>
       )}

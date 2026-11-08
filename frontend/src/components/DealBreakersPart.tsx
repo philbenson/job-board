@@ -5,23 +5,32 @@ import { SIZE_CHOICES } from './profileChoices.ts'
 import { YesNoField } from './ProfileFields.tsx'
 import { MAX_INDUSTRIES, MAX_INDUSTRY_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type DealBreakers = StoredSection<'/profile/deal-breakers'>
 
 const NO_AGENCIES = 'No recruiting agencies'
 
 /** Industries and company sizes ruled out, and whether agencies are. */
-export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
+export function DealBreakersPart({
+  stored,
+  reads,
+}: {
+  stored: DealBreakers | null
+  reads: ProfileReads
+}) {
+  const [industries, setIndustries] = useState(stored?.industries ?? [])
+  const [sizes, setSizes] = useState<CompanySize[]>(stored?.company_sizes ?? [])
+  const [noAgencies, setNoAgencies] = useState(stored?.no_agencies ?? false)
   const part = useProfilePart(
     '/profile/deal-breakers',
     stored,
     'Could not save your deal-breakers; your changes are still here',
+    reads,
+    show,
   )
-  const [industries, setIndustries] = useState(stored?.industries ?? [])
-  const [sizes, setSizes] = useState<CompanySize[]>(stored?.company_sizes ?? [])
-  const [noAgencies, setNoAgencies] = useState(stored?.no_agencies ?? false)
 
   function show(section: DealBreakers): void {
     setIndustries(section.industries)
@@ -31,7 +40,7 @@ export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
 
   return (
     <ProfilePart
-      heading="Deal-breakers"
+      heading={SECTION_HEADINGS.deal_breakers}
       part={part}
       onSave={() => {
         part.send(
@@ -41,7 +50,6 @@ export function DealBreakersPart({ stored }: { stored: DealBreakers | null }) {
             company_sizes: sizes.map((size) => COMPANY_SIZE_NAMES[size]),
             no_agencies: NO_AGENCIES,
           },
-          show,
         )
       }}
     >

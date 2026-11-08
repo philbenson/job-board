@@ -1,24 +1,27 @@
 import { useState } from 'react'
 import { MAX_TARGET_TITLES, MAX_TITLE_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 /** The job titles the person is looking for, which scoring reads. */
-export function TargetTitlesPart({ stored }: { stored: string[] }) {
+export function TargetTitlesPart({ stored, reads }: { stored: string[]; reads: ProfileReads }) {
+  const [titles, setTitles] = useState(stored)
   const part = useProfilePart(
     '/profile/target-titles',
     stored,
     'Could not save your target titles; your changes are still here',
+    reads,
+    setTitles,
   )
-  const [titles, setTitles] = useState(stored)
 
   return (
     <ProfilePart
-      heading="Target titles"
+      heading={SECTION_HEADINGS.target_titles}
       part={part}
       onSave={() => {
-        part.send({ titles }, { titles }, setTitles)
+        part.send({ titles }, { titles })
       }}
     >
       <TextListEditor

@@ -3,22 +3,31 @@ import type { StoredSection } from '../api/profile.ts'
 import { YesNoField } from './ProfileFields.tsx'
 import { MAX_NEARBY_TITLES, MAX_TITLE_LENGTH } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type TitleRange = StoredSection<'/profile/title-range'>
 
 const LOWER_LEVEL = 'A lower level than my target titles is fine'
 
 /** Titles close to the target titles, and whether one level down is fine. */
-export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
+export function NearbyTitlesPart({
+  stored,
+  reads,
+}: {
+  stored: TitleRange | null
+  reads: ProfileReads
+}) {
+  const [titles, setTitles] = useState(stored?.nearby_titles ?? [])
+  const [lowerOk, setLowerOk] = useState(stored?.lower_level_ok ?? false)
   const part = useProfilePart(
     '/profile/title-range',
     stored,
     'Could not save your nearby titles; your changes are still here',
+    reads,
+    show,
   )
-  const [titles, setTitles] = useState(stored?.nearby_titles ?? [])
-  const [lowerOk, setLowerOk] = useState(stored?.lower_level_ok ?? false)
 
   function show(section: TitleRange): void {
     setTitles(section.nearby_titles)
@@ -27,13 +36,12 @@ export function NearbyTitlesPart({ stored }: { stored: TitleRange | null }) {
 
   return (
     <ProfilePart
-      heading="Nearby titles"
+      heading={SECTION_HEADINGS.title_range}
       part={part}
       onSave={() => {
         part.send(
           { nearby_titles: titles, lower_level_ok: lowerOk },
           { nearby_titles: titles, lower_level_ok: LOWER_LEVEL },
-          show,
         )
       }}
     >

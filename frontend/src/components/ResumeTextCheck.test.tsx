@@ -376,6 +376,35 @@ describe('ResumeTextCheck', () => {
     expect(box()).toHaveValue(TEXT)
   })
 
+  it('tells the page once the text is saved, and not when a save is refused or fails', async () => {
+    const onChange = vi.fn()
+    let saves = 0
+    service(
+      () => answer(200, read()),
+      () => {
+        saves += 1
+        return saves === 1
+          ? answer(409, { detail: 'Your resume was replaced since this text was read' })
+          : saves === 2
+            ? Promise.reject(new TypeError('Failed to fetch'))
+            : answer(200, read({ checked_at: CHECKED_AT }))
+      },
+    )
+    const user = userEvent.setup()
+    render(<ResumeTextCheck onChange={onChange} />)
+    await within(check()).findByText(FOUND_LINE)
+
+    await user.click(save())
+    expect(await within(check()).findByText(REPLACED_LINE)).toBe(alertLine())
+    await user.click(save())
+    expect(await within(check()).findByText(NOT_SAVED)).toBe(alertLine())
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(save())
+
+    expect(await within(check()).findByText(SAVED)).toBe(status())
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['storage is not set up', () => answer(503, { detail: 'Resume storage is not set up' }), NOT_SET_UP],
     [

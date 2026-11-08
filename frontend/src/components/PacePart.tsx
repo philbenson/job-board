@@ -4,7 +4,8 @@ import { BRIEF_CHOICES } from './profileChoices.ts'
 import { ChoiceField, WholeNumberField } from './ProfileFields.tsx'
 import { ProfilePart } from './ProfilePart.tsx'
 import { wholeNumberFrom } from './profileText.ts'
-import { useProfilePart } from './useProfilePart.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Pace = StoredSection<'/profile/pace'>
 
@@ -17,14 +18,16 @@ function briefChoice(score: number | null): string {
 }
 
 /** How many postings a day, and the lowest score that gets a brief. */
-export function PacePart({ stored }: { stored: Pace | null }) {
+export function PacePart({ stored, reads }: { stored: Pace | null; reads: ProfileReads }) {
+  const [leads, setLeads] = useState(stored === null ? '' : String(stored.leads_per_day))
+  const [brief, setBrief] = useState(briefChoice(stored?.brief_from_score ?? null))
   const part = useProfilePart(
     '/profile/pace',
     stored,
     'Could not save your pace; your changes are still here',
+    reads,
+    show,
   )
-  const [leads, setLeads] = useState(stored === null ? '' : String(stored.leads_per_day))
-  const [brief, setBrief] = useState(briefChoice(stored?.brief_from_score ?? null))
 
   function show(section: Pace): void {
     setLeads(String(section.leads_per_day))
@@ -47,12 +50,11 @@ export function PacePart({ stored }: { stored: Pace | null }) {
     part.send(
       { leads_per_day: leadsPerDay, brief_from_score: brief === '' ? null : Number(brief) },
       { leads_per_day: LEADS, brief_from_score: BRIEF },
-      show,
     )
   }
 
   return (
-    <ProfilePart heading="Pace" part={part} onSave={sendAll}>
+    <ProfilePart heading={SECTION_HEADINGS.pace} part={part} onSave={sendAll}>
       <WholeNumberField
         label={LEADS}
         value={leads}

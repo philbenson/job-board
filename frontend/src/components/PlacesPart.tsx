@@ -12,8 +12,9 @@ import {
 } from './profileLimits.ts'
 import { ProfilePart } from './ProfilePart.tsx'
 import { lengthOf, repeatKey } from './profileText.ts'
+import { SECTION_HEADINGS } from './sectionHeadings.ts'
 import { TextListEditor } from './TextListEditor.tsx'
-import { useProfilePart } from './useProfilePart.ts'
+import { type ProfileReads, useProfilePart } from './useProfilePart.ts'
 
 type Places = StoredSection<'/profile/places'>
 type Office = Places['offices'][number]
@@ -28,18 +29,20 @@ function officeShown({ city, days_a_week: days }: Office): string {
 }
 
 /** Remote, offices by city, the states worked from, and moving. */
-export function PlacesPart({ stored }: { stored: Places | null }) {
-  const part = useProfilePart(
-    '/profile/places',
-    stored,
-    'Could not save your places; your changes are still here',
-  )
+export function PlacesPart({ stored, reads }: { stored: Places | null; reads: ProfileReads }) {
   const [remoteOk, setRemoteOk] = useState(stored?.remote_ok ?? false)
   const [offices, setOffices] = useState(stored?.offices ?? [])
   const [states, setStates] = useState<StateCode[]>(stored?.states ?? [])
   const [willRelocate, setWillRelocate] = useState(stored?.will_relocate ?? false)
   const [relocateFor, setRelocateFor] = useState(stored?.relocate_for ?? [])
   const conditionId = useId()
+  const part = useProfilePart(
+    '/profile/places',
+    stored,
+    'Could not save your places; your changes are still here',
+    reads,
+    show,
+  )
 
   function show(section: Places): void {
     setRemoteOk(section.remote_ok)
@@ -51,7 +54,7 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
 
   return (
     <ProfilePart
-      heading="Places"
+      heading={SECTION_HEADINGS.places}
       part={part}
       onSave={() => {
         part.send(
@@ -69,7 +72,6 @@ export function PlacesPart({ stored }: { stored: Places | null }) {
             will_relocate: RELOCATE,
             relocate_for: relocateFor,
           },
-          show,
         )
       }}
     >
