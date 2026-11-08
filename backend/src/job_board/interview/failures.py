@@ -33,3 +33,21 @@ def failure_is_known(column: str) -> str:
     """The check constraint's condition: the column holds one of the codes or nothing."""
     codes = ", ".join(f"'{code}'" for code in INTERVIEW_FAILURES)
     return f"{column} IN ({codes})"
+
+
+class ReplyCutOff(Exception):
+    """The model's reply stopped at the token limit; nothing of it is kept."""
+
+    code: InterviewFailure = "cut-off"
+
+
+class EmptyReply(Exception):
+    """The model's reply held neither text nor a tool call; nothing of it is kept."""
+
+    code: InterviewFailure = "empty-reply"
+
+
+class LostClaim(Exception):
+    """Another run took over this run's claim when it went stale, so this run must stop."""
+
+    code: InterviewFailure = "lost-claim"
