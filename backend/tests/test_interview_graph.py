@@ -4,13 +4,14 @@ Each test has a person of its own, with an interview row holding a live
 claim, removed after with every step the saver kept of it.
 """
 
+import asyncio
 import itertools
 import json
 import secrets
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_args
 
 import ormsgpack
 import pytest
@@ -22,7 +23,7 @@ from langgraph.checkpoint.serde.event_hooks import register_serde_event_listener
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.types import Command, StateSnapshot
 from profile_requests import Someone, client_for
-from scripted_model import ScriptedModel, calling, scripted
+from scripted_model import Hold, ScriptedModel, calling, scripted
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -44,7 +45,7 @@ from job_board.interview.graph import (
 )
 from job_board.interview.prompt import LIMIT_REACHED, SAY_IT_AGAIN, is_notice, system_message
 from job_board.interview.saver import STATE_TYPES, SaverPool, interview_saver, saver_pool
-from job_board.interview.tools import FINISH, TOOLS
+from job_board.interview.tools import FINISH, SECTION_TOOLS, TOOLS, SectionName
 from job_board.profiles import save_section
 
 RESUME = "Staff engineer at Example Co since 2019, writing Python and Go."
@@ -169,7 +170,7 @@ def interview(
     return Run(graph, someone, scripted(), sessionmaker)
 
 
-def script(run: Run, *replies: AIMessage | BaseException) -> None:
+def script(run: Run, *replies: AIMessage | BaseException | Hold) -> None:
     run.model.script.extend(replies)
 
 
@@ -364,6 +365,7 @@ def test_the_tools_are_one_save_per_section_and_the_finish_and_none_takes_a_pers
         "save_own_rules",
         FINISH,
     ]
+    assert [tool.section for tool in SECTION_TOOLS] == list(get_args(SectionName))
     names = property_names([tool["input_schema"] for tool in TOOLS])
     assert "titles" in names and "days_a_week" in names  # the walk reaches nested fields
     assert [name for name in names if "person" in name or name.endswith("_id")] == []
@@ -513,6 +515,26 @@ async def test_a_run_whose_claim_was_taken_stops_before_calling_the_model(
     with pytest.raises(LostClaim):
         await interview.start()
     assert interview.model.requests == []
+
+
+async def test_a_run_whose_claim_was_taken_while_the_model_answered_keeps_nothing_of_the_reply(
+    interview: Run, engine: AsyncEngine
+) -> None:
+    held = Hold(AIMessage(FIRST_QUESTION))
+    script(interview, held)
+    started = asyncio.create_task(interview.start())
+    await held.reached.wait()
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE interviews SET run_id = :other WHERE person_id = :person"),
+            {"other": str(uuid.uuid4()), "person": interview.who.person_id},
+        )
+    held.released.set()
+
+    with pytest.raises(LostClaim):
+        await started
+    assert [type(message) for message in await interview.messages()] == [HumanMessage]
+    assert await interview.question() is None
 
 
 # What the saver keeps

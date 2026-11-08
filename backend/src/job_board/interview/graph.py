@@ -20,15 +20,17 @@ from typing import Annotated, Literal, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
-from sqlalchemy import func, select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from job_board.interview.claims import renew_claim
 from job_board.interview.failures import EmptyReply, LostClaim, ReplyCutOff
 from job_board.interview.model import CUT_OFF
 from job_board.interview.prompt import (
@@ -40,7 +42,7 @@ from job_board.interview.prompt import (
     system_message,
 )
 from job_board.interview.tools import FINISH, TOOLS, finished, save
-from job_board.models import Interview, ProfileRow
+from job_board.models import ProfileRow
 from job_board.profiles import Profile, stored_profile
 
 # Model calls in one interview: ten sections, a question, a save and a
@@ -79,6 +81,11 @@ async def profile_json(sessionmaker: async_sessionmaker[AsyncSession], person_id
     return (Profile() if document is None else stored_profile(document)).model_dump_json()
 
 
+def thread_config(thread_id: str) -> RunnableConfig:
+    """The configuration naming the interview's thread, the key of its saved steps."""
+    return {"configurable": {"thread_id": thread_id}}
+
+
 def start_input(resume_text: str, shown: str) -> InterviewState:
     """A new interview's state: the opening message, holding the stored profile ``shown``."""
     return {
@@ -92,15 +99,7 @@ def start_input(resume_text: str, shown: str) -> InterviewState:
 
 
 async def _renew_claim(context: Context) -> None:
-    async with context.sessionmaker() as session:
-        renewed = await session.scalar(
-            update(Interview)
-            .where(Interview.person_id == context.person_id, Interview.run_id == context.run_id)
-            .values(running_since=func.now())
-            .returning(Interview.person_id)
-        )
-        await session.commit()
-    if renewed is None:
+    if not await renew_claim(context.sessionmaker, context.person_id, context.run_id):
         raise LostClaim
 
 
@@ -119,6 +118,9 @@ async def _interviewer(state: InterviewState, runtime: Runtime[Context]) -> Inte
         return {"messages": [notice(SAY_IT_AGAIN)]}
     request = [system_message(state["resume_text"]), *state["messages"]]
     reply = await context.model.bind_tools(TOOLS).ainvoke(request)
+    # Renewed again, so a run whose claim was taken while the model answered
+    # keeps nothing of the reply and writes no step over the run that took it.
+    await _renew_claim(context)
     if reply.response_metadata.get("stop_reason") == CUT_OFF:
         raise ReplyCutOff
     if not reply.tool_calls and not reply.text.strip():

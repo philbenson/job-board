@@ -21,6 +21,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/interview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Interview */
+        get: operations["read_interview_interview_get"];
+        put?: never;
+        /**
+         * Start Interview
+         * @description Starts the interview, whose run asks the first question; read it to see the run end.
+         */
+        post: operations["start_interview_interview_post"];
+        /**
+         * Remove Interview
+         * @description Removes the interview and every step saved of it, unless a live run holds it.
+         */
+        delete: operations["remove_interview_interview_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/interview/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Interview
+         * @description Sends the answer to the question the interview waits on; its run asks the next.
+         */
+        post: operations["answer_interview_interview_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/interview/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Interview
+         * @description Runs a failed interview again from its last saved step, asking the model again.
+         */
+        post: operations["retry_interview_interview_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/leads": {
         parameters: {
             query?: never;
@@ -353,6 +418,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerToSend */
+        AnswerToSend: {
+            /** Text */
+            text: string;
+        };
         /**
          * Application
          * @description One job a person has applied to: the company and the title of the role.
@@ -452,6 +522,33 @@ export interface components {
              * @enum {string}
              */
             database: "ok" | "unreachable";
+        };
+        /**
+         * Interview
+         * @description The signed-in person's interview, as the screen shows it.
+         *
+         *     ``missing`` is what a start still needs, empty when nothing is. ``failure``
+         *     is set only when the interview failed, and ``question`` only while it waits
+         *     on an answer.
+         */
+        Interview: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not-started" | "running" | "waiting" | "failed" | "finished" | "stopped";
+            /** Missing */
+            missing: ("working-key" | "checked-resume-text")[];
+            /** Failure */
+            failure: ("timed-out" | "connection-error" | "rejected" | "not-permitted" | "model-not-found" | "no-credit" | "rate-limited" | "server-error" | "refused" | "cut-off" | "empty-reply" | "not-sealed-here" | "unopenable" | "lost-claim" | "interrupted" | "unexpected") | null;
+            /** Question */
+            question: string | null;
+            /** Entries */
+            entries: (components["schemas"]["Said"] | components["schemas"]["Saved"])[];
+            /** Model Calls */
+            model_calls: number;
+            /** Model Call Limit */
+            model_call_limit: number;
         };
         /**
          * Lead
@@ -678,6 +775,35 @@ export interface components {
             /** Checked At */
             checked_at: string | null;
         };
+        /**
+         * Said
+         * @description A line of the conversation: the interviewer's, the person's, or the service's own.
+         */
+        Said: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "interviewer" | "notice" | "person";
+            /** Text */
+            text: string;
+        };
+        /**
+         * Saved
+         * @description A section of the profile the interviewer saved.
+         */
+        Saved: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "saved";
+            /**
+             * Section
+             * @enum {string}
+             */
+            section: "target_titles" | "title_range" | "places" | "pay" | "skills" | "gaps" | "deal_breakers" | "companies" | "pace" | "own_rules";
+        };
         /** SavedModelKey */
         SavedModelKey: {
             /**
@@ -818,6 +944,225 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    read_interview_interview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interview"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    start_interview_interview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interview"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description The interview has already started, or a start still needs a working key or the resume's checked text */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    remove_interview_interview_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description No interview started */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description The interview is taking its turn; wait for it to finish */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+        };
+    };
+    answer_interview_interview_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerToSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interview"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description No interview started */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description The interview is not waiting on an answer, or has no working key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description The answer breaks one of its rules, or the body is of another shape */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextRefused"];
+                };
+            };
+        };
+    };
+    retry_interview_interview_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Interview"];
+                };
+            };
+            /** @description No valid session token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description No interview started */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
+                };
+            };
+            /** @description The interview has not failed, or a retry still needs a working key or the resume's checked text */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Refused"];
                 };
             };
         };

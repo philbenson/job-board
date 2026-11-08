@@ -22,7 +22,9 @@ from sqlalchemy import make_url
 # step names. A step holding any other type fails the tests, rather than
 # coming back as a bare dictionary of its fields.
 STATE_TYPES = (AIMessage, HumanMessage, ToolMessage, Interrupt)
-POOL_MIN_SIZE = 1  # one connection kept open for the next step to save
+# None kept open: a connection is made when a step first saves, so the service
+# starts, and answers its health check, while the database is down.
+POOL_MIN_SIZE = 0
 # A step holds a connection only while it saves, so a few serve every
 # interview this process runs at once.
 POOL_MAX_SIZE = 4

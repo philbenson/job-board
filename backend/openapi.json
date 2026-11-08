@@ -33,6 +33,254 @@
         }
       }
     },
+    "/interview": {
+      "get": {
+        "summary": "Read Interview",
+        "operationId": "read_interview_interview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Interview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Start Interview",
+        "description": "Starts the interview, whose run asks the first question; read it to see the run end.",
+        "operationId": "start_interview_interview_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Interview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The interview has already started, or a start still needs a working key or the resume's checked text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Remove Interview",
+        "description": "Removes the interview and every step saved of it, unless a live run holds it.",
+        "operationId": "remove_interview_interview_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No interview started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The interview is taking its turn; wait for it to finish",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/interview/answer": {
+      "post": {
+        "summary": "Answer Interview",
+        "description": "Sends the answer to the question the interview waits on; its run asks the next.",
+        "operationId": "answer_interview_interview_answer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerToSend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Interview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No interview started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The interview is not waiting on an answer, or has no working key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The answer breaks one of its rules, or the body is of another shape",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextRefused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/interview/retry": {
+      "post": {
+        "summary": "Retry Interview",
+        "description": "Runs a failed interview again from its last saved step, asking the model again.",
+        "operationId": "retry_interview_interview_retry_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Interview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid session token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No interview started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The interview has not failed, or a retry still needs a working key or the resume's checked text",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refused"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/leads": {
       "get": {
         "summary": "Read Leads",
@@ -1121,6 +1369,20 @@
   },
   "components": {
     "schemas": {
+      "AnswerToSend": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "AnswerToSend"
+      },
       "Application": {
         "properties": {
           "company": {
@@ -1308,6 +1570,116 @@
           "database"
         ],
         "title": "Health"
+      },
+      "Interview": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not-started",
+              "running",
+              "waiting",
+              "failed",
+              "finished",
+              "stopped"
+            ],
+            "title": "Status"
+          },
+          "missing": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "working-key",
+                "checked-resume-text"
+              ]
+            },
+            "type": "array",
+            "title": "Missing"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "timed-out",
+                  "connection-error",
+                  "rejected",
+                  "not-permitted",
+                  "model-not-found",
+                  "no-credit",
+                  "rate-limited",
+                  "server-error",
+                  "refused",
+                  "cut-off",
+                  "empty-reply",
+                  "not-sealed-here",
+                  "unopenable",
+                  "lost-claim",
+                  "interrupted",
+                  "unexpected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "entries": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Said"
+                },
+                {
+                  "$ref": "#/components/schemas/Saved"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "interviewer": "#/components/schemas/Said",
+                  "notice": "#/components/schemas/Said",
+                  "person": "#/components/schemas/Said",
+                  "saved": "#/components/schemas/Saved"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "model_calls": {
+            "type": "integer",
+            "title": "Model Calls"
+          },
+          "model_call_limit": {
+            "type": "integer",
+            "title": "Model Call Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "missing",
+          "failure",
+          "question",
+          "entries",
+          "model_calls",
+          "model_call_limit"
+        ],
+        "title": "Interview",
+        "description": "The signed-in person's interview, as the screen shows it.\n\n``missing`` is what a start still needs, empty when nothing is. ``failure``\nis set only when the interview failed, and ``question`` only while it waits\non an answer."
       },
       "Lead": {
         "properties": {
@@ -1922,6 +2294,62 @@
         ],
         "title": "ResumeText",
         "description": "What reading the resume's text gave, and the person's check of it.\n\n``state`` is null for a resume uploaded before its text was read."
+      },
+      "Said": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "interviewer",
+              "person",
+              "notice"
+            ],
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "Said",
+        "description": "A line of the conversation: the interviewer's, the person's, or the service's own."
+      },
+      "Saved": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "saved",
+            "title": "Kind"
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "target_titles",
+              "title_range",
+              "places",
+              "pay",
+              "skills",
+              "gaps",
+              "deal_breakers",
+              "companies",
+              "pace",
+              "own_rules"
+            ],
+            "title": "Section"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "section"
+        ],
+        "title": "Saved",
+        "description": "A section of the profile the interviewer saved."
       },
       "SavedModelKey": {
         "properties": {

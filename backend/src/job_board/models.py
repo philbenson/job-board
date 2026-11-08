@@ -232,13 +232,13 @@ class Score(Base):
     scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Interview(Base):
+class InterviewRow(Base):
     """A person's onboarding interview: its thread in the saver's tables, and the run holding it.
 
     Invariant: at most one per person, and one run at a time. A run holds the
     interview by its claim, ``run_id`` and ``running_since``, both set or both
-    null, renewed at each step; a claim gone stale may be taken over. Deleting
-    the row, or the person, deletes every step the saver kept of it.
+    null, renewed around each model call; a claim gone stale may be taken over.
+    Deleting the row, or the person, deletes every step the saver kept of it.
     """
 
     __tablename__ = "interviews"

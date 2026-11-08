@@ -13,7 +13,7 @@ every request carries the same tool list.
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.messages import ToolCall, ToolMessage
 from pydantic import BaseModel, ValidationError
@@ -35,10 +35,24 @@ from job_board.profiles import save_section
 
 FINISH = "finish_interview"
 
+# The Profile fields a tool saves: one for each section.
+SectionName = Literal[
+    "target_titles",
+    "title_range",
+    "places",
+    "pay",
+    "skills",
+    "gaps",
+    "deal_breakers",
+    "companies",
+    "pace",
+    "own_rules",
+]
+
 
 @dataclass(frozen=True)
 class SectionTool:
-    section: str  # the Profile field it replaces
+    section: SectionName  # the Profile field it replaces
     body: type[BaseModel]  # the request model of that section's route
     subject: str  # what the section holds, for the tool's description
     # The one field of the body stored as the whole section, for the target
@@ -130,6 +144,12 @@ def _problems(refusal: ValidationError) -> str:
         for problem in problems
     )
     return "Refused, and nothing saved: " + "; ".join(named)
+
+
+def saved_section(answer: ToolMessage) -> SectionName | None:
+    """The section a save's answer says was stored, or None for a refusal or the end."""
+    tool = _BY_NAME.get(answer.name or "")
+    return tool.section if tool is not None and answer.status == "success" else None
 
 
 def finished(call: ToolCall) -> ToolMessage:
