@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_board.database import get_session
+from job_board.interview.answer_text import checked_answer
 from job_board.interview.answers import (
     Found,
     Interview,
@@ -36,7 +37,6 @@ from job_board.interview.model import InterviewModelFactory, anthropic_interview
 from job_board.interview.runs import InterviewRuns, RunServices, Turn, run_interview
 from job_board.models import InterviewRow, Person
 from job_board.people import SIGN_IN_REQUIRED, Refused, current_person, get_settings
-from job_board.profile_rules import checked_text
 from job_board.resumes.text_routes import TextRefused
 from job_board.settings import Settings
 
@@ -48,10 +48,6 @@ RUNNING = "The interview is taking its turn; wait for it to finish"
 NOT_WAITING = "The interview is not waiting on an answer"
 NOT_FAILED = "The interview has not failed, so there is nothing to retry"
 
-# Room for an answer that covers several sections at once, and a bound on what
-# one answer adds to every later request of the interview.
-MAX_ANSWER_LENGTH = 4000
-
 NO_INTERVIEW_ANSWER: dict[int | str, dict[str, Any]] = {
     404: {"model": Refused, "description": NO_INTERVIEW},
 }
@@ -62,7 +58,7 @@ router = APIRouter()
 class AnswerToSend(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: Annotated[str, AfterValidator(checked_text("an answer", MAX_ANSWER_LENGTH))]
+    text: Annotated[str, AfterValidator(checked_answer)]
 
 
 def interview_model_factory() -> InterviewModelFactory:

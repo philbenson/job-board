@@ -49,19 +49,21 @@ class Reading:
     text: str | None
 
 
-def _line_breaks(text: str) -> str:
+def unified_line_breaks(text: str) -> str:
+    """Rule 1: the text with ``\\r\\n``, then a lone ``\\r``, made ``\\n``."""
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _is_control(character: str) -> bool:
+def is_refused_control(character: str) -> bool:
+    """True for a control a text of several lines refuses: any but the line break and the tab."""
     # Category Cc is the C0 and C1 controls and DEL. Line breaks and tabs lay
-    # out a resume; the rest break how a line shows.
+    # out a text; the rest break how a line shows.
     return unicodedata.category(character) == "Cc" and character not in "\n\t"
 
 
 def _is_refused(character: str) -> bool:
     return (
-        _is_control(character)
+        is_refused_control(character)
         or unicodedata.category(character) == "Cs"
         or character in DIRECTION_CONTROLS
     )
@@ -88,7 +90,9 @@ def cleaned_page(text: str) -> str:
     meet and trims the ends, so it is never longer than the pages and the
     line breaks between them.
     """
-    kept = "".join(character for character in _line_breaks(text) if not _is_refused(character))
+    kept = "".join(
+        character for character in unified_line_breaks(text) if not _is_refused(character)
+    )
     return _laid_out(kept)
 
 
@@ -102,12 +106,12 @@ def checked_resume_text(text: str) -> str:
 
     Each refusal names its rule alone and quotes nothing of the text.
     """
-    text = _line_breaks(text)
+    text = unified_line_breaks(text)
     # Half of a surrogate pair is no character at all: JSON can spell one,
     # but no text encoding holds it, and the database would refuse the text.
     if any(unicodedata.category(character) == "Cs" for character in text):
         raise PydanticCustomError("resume_text_invalid_text", "The resume text must be valid text")
-    if any(_is_control(character) for character in text):
+    if any(is_refused_control(character) for character in text):
         raise PydanticCustomError(
             "resume_text_control_character",
             "The resume text cannot contain control characters other than line breaks and tabs",
