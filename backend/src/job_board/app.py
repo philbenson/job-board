@@ -53,7 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.resume_store = store
         pool = saver_pool(resolved.database_url.get_secret_value())
         await pool.open()
-        app.state.interview_graph = build_interview_graph(interview_saver(pool))
+        saver = interview_saver(pool)
+        app.state.interview_saver = saver
+        app.state.interview_graph = build_interview_graph(saver)
         try:
             yield
         finally:

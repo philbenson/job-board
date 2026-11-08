@@ -87,6 +87,7 @@ def run_services(
 ) -> RunServices:
     return RunServices(
         graph=graph,
+        saver=request.app.state.interview_saver,
         sessionmaker=request.app.state.sessionmaker,
         service_key=settings.model_key_encryption_key.get_secret_value(),
         model_factory=model_factory,

@@ -30,7 +30,7 @@ from scripted_model import Hold, ScriptedModel, calling, scripted
 from settings_for_tests import MODEL_KEY_ENCRYPTION_KEY, make_settings
 
 from job_board.app import create_app
-from job_board.interview import answers, graph
+from job_board.interview import answers, graph, runs
 from job_board.interview.claims import STALE_AFTER
 from job_board.interview.failures import INTERVIEW_FAILURES
 from job_board.interview.graph import INTERVIEW_MODEL_CALLS
@@ -223,6 +223,15 @@ def saver_rows(database_url: str, thread_id: str) -> int:
         run(database_url, f"SELECT count(*) FROM {table} WHERE thread_id = :t", t=thread_id)[0][0]
         for table in SAVER_TABLES
     )
+
+
+def steps_kept(who: Someone) -> int:
+    thread_id = interview_row(who).thread_id
+    rows = run(
+        who.database_url, "SELECT count(*) FROM checkpoints WHERE thread_id = :t", t=thread_id
+    )
+    count: int = rows[0][0]
+    return count
 
 
 def status_error(status: int) -> anthropic.APIStatusError:
@@ -681,6 +690,7 @@ async def test_a_failed_run_records_why_leaves_the_key_and_can_be_retried(
     assert (failed["status"], failed["failure"], failed["entries"]) == ("failed", failure, [])
     assert key_failure(ready) is None
     assert interview_row(ready).run_id is None
+    assert steps_kept(ready) == 1  # a failed run prunes as a finished one does
 
     assert (await retry(service, ready)).status_code == 202
     await service.settled()
@@ -722,6 +732,86 @@ async def test_a_key_that_will_not_open_fails_the_start_and_a_retry_starts_it_af
     interview = await read(service, someone)
     assert (interview["status"], interview["question"]) == ("waiting", FIRST_QUESTION)
     assert interview["entries"] == [said("interviewer", FIRST_QUESTION)]
+
+
+# The steps each run keeps
+
+
+async def test_each_run_keeps_only_its_last_step_and_the_next_run_goes_on_from_it(
+    service: Service, ready: Someone
+) -> None:
+    await waiting_on_the_first_question(service, ready)
+    assert steps_kept(ready) == 1
+
+    service.script(status_error(500))
+    await answer(service, ready, ANSWER)
+    await service.settled()
+    assert steps_kept(ready) == 1
+
+    service.script(AIMessage(NEXT_QUESTION))
+    assert (await retry(service, ready)).status_code == 202  # goes on from the last step
+    await service.settled()
+    assert steps_kept(ready) == 1
+
+    service.script(AIMessage("Noted. Anything else?"))
+    assert (await answer(service, ready, "Remote, from Lisbon.")).status_code == 202
+    await service.settled()
+    assert steps_kept(ready) == 1
+    interview = await read(service, ready)
+    assert interview["entries"] == [
+        said("interviewer", FIRST_QUESTION),
+        said("person", ANSWER),
+        said("interviewer", NEXT_QUESTION),
+        said("person", "Remote, from Lisbon."),  # resumed the pause
+        said("interviewer", "Noted. Anything else?"),
+    ]
+    assert len(service.model.requests) == 4
+
+
+async def test_a_run_whose_steps_will_not_prune_ends_as_it_would_have_and_says_so(
+    service: Service,
+    ready: Someone,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def will_not_prune(thread_ids: Any, *, strategy: str) -> None:
+        raise RuntimeError(f"no pruning {RESUME_SENTINEL}")
+
+    monkeypatch.setattr(service.app.state.interview_saver, "aprune", will_not_prune)
+    await waiting_on_the_first_question(service, ready)
+
+    interview = await read(service, ready)
+    assert (interview["status"], interview["question"]) == ("waiting", FIRST_QUESTION)
+    assert interview_row(ready).run_id is None
+    [warning] = [record for record in caplog.records if "prune" in record.getMessage()]
+    assert warning.getMessage() == (
+        f"person {ready.person_id()}: could not prune the interview's steps: RuntimeError"
+    )
+
+
+async def test_a_run_whose_claim_was_taken_over_as_it_ended_prunes_nothing(
+    service: Service, ready: Someone, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran = runs._run
+    taking_over = str(uuid.uuid4())
+
+    async def taken_over_as_it_ends(*arguments: Any) -> Any:
+        outcome = await ran(*arguments)
+        run(
+            ready.database_url,
+            "UPDATE interviews SET run_id = :run, running_since = now() WHERE person_id = :p",
+            run=taking_over,
+            p=ready.person_id(),
+        )
+        return outcome
+
+    monkeypatch.setattr(runs, "_run", taken_over_as_it_ends)
+    service.script(AIMessage(FIRST_QUESTION))
+    await start(service, ready)
+    await service.settled()
+
+    assert steps_kept(ready) > 1  # left for the run that took the claim to prune
+    assert interview_row(ready).run_id == taking_over
 
 
 def make_stale(who: Someone) -> None:
@@ -785,6 +875,7 @@ async def test_shutdown_with_a_run_in_flight_releases_its_claim_and_records_it_i
 
     row = interview_row(ready)
     assert (row.run_id, row.running_since, row.failure) == (None, None, "interrupted")
+    assert steps_kept(ready) > 1  # a run cut off by shutdown spends no time pruning
     async with interview_service(migrated_database_url) as service:
         interrupted = await read(service, ready)
         assert (interrupted["status"], interrupted["failure"]) == ("failed", "interrupted")
@@ -792,6 +883,28 @@ async def test_shutdown_with_a_run_in_flight_releases_its_claim_and_records_it_i
         assert (await retry(service, ready)).status_code == 202
         await service.settled()
         assert (await read(service, ready))["question"] == FIRST_QUESTION
+
+
+async def test_shutdown_during_a_prune_still_releases_the_claim_and_keeps_the_outcome(
+    migrated_database_url: str, ready: Someone, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pruning = asyncio.Event()
+
+    async def never_prunes(thread_ids: Any, *, strategy: str) -> None:
+        pruning.set()
+        await asyncio.Event().wait()
+
+    async with interview_service(migrated_database_url, grace_seconds=0.01) as service:
+        monkeypatch.setattr(service.app.state.interview_saver, "aprune", never_prunes)
+        service.script(AIMessage(FIRST_QUESTION))
+        await start(service, ready)
+        await pruning.wait()
+
+    row = interview_row(ready)
+    assert (row.run_id, row.running_since, row.failure) == (None, None, None)
+    async with interview_service(migrated_database_url) as service:
+        interview = await read(service, ready)
+        assert (interview["status"], interview["question"]) == ("waiting", FIRST_QUESTION)
 
 
 def test_a_claim_goes_stale_only_after_the_longest_model_call_and_a_tool_step() -> None:
