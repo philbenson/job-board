@@ -26,7 +26,7 @@ const NONE_FOUND_LINE =
   'No text could be read from your resume; it may be a scanned image. Type or paste its text here and save it.'
 const FAILED_LINE = "Your resume's text could not be read. Type or paste its text here and save it."
 const NO_STATE_LINE =
-  'This resume was uploaded before its text was read. Upload it again to read its text.'
+  'This resume was uploaded before its text was read. Upload it again to read its text, or type or paste it here and save it.'
 const SAVING = "Saving your resume's text…"
 const SAVED = 'Saved.'
 const REPLACED_LINE =
@@ -179,6 +179,26 @@ describe('ResumeTextCheck', () => {
     expect(
       await screen.findByText(`You checked this text on ${shownTime(CHECKED_AT)}.`),
     ).toBeInTheDocument()
+  })
+
+  // Once saved, the text is the person's, so what reading the file gave no
+  // longer says anything about it.
+  it.each([
+    ['found', TEXT],
+    ['cut', TEXT],
+    ['none_found', 'Typed by the person'],
+    ['failed', 'Typed by the person'],
+    [null, 'Typed by the person'],
+  ] as const)('shows no reading line for the state %s once the text was checked', async (state, text) => {
+    service(() => answer(200, read({ state, text, checked_at: CHECKED_AT })))
+
+    render(<ResumeTextCheck />)
+
+    expect(
+      await screen.findByText(`You checked this text on ${shownTime(CHECKED_AT)}.`),
+    ).toBeInTheDocument()
+    expect(box()).toHaveValue(text)
+    expect(status()).toHaveTextContent(/^$/)
   })
 
   it('shows markup in the text as the box holds it, never as markup', async () => {

@@ -22,7 +22,7 @@ const SAVED = 'Saved.'
 const REPLACED =
   'Your resume was replaced since this text was read. Reload the page to check the new text.'
 
-/** What the status line says once the text is read, by how reading the file went. */
+/** What the status line says once an unchecked text is read, by how reading the file went. */
 const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
   found:
     'Here is the text read from your resume. Check it, put anything out of order back in order, and save it.',
@@ -30,7 +30,7 @@ const READ_LINES: Record<NonNullable<ReadState> | 'none', string> = {
   none_found:
     'No text could be read from your resume; it may be a scanned image. Type or paste its text here and save it.',
   failed: "Your resume's text could not be read. Type or paste its text here and save it.",
-  none: 'This resume was uploaded before its text was read. Upload it again to read its text.',
+  none: 'This resume was uploaded before its text was read. Upload it again to read its text, or type or paste it here and save it.',
 }
 
 /**
@@ -80,7 +80,11 @@ export function ResumeTextCheck() {
       }
       setHeld(read.resumeText)
       setText(read.resumeText.text ?? '')
-      setSaid(READ_LINES[read.resumeText.state ?? 'none'])
+      // A checked text is the person's own, so what reading the file gave
+      // says nothing about it; the line saying when they checked it stays.
+      if (read.resumeText.checkedAt == null) {
+        setSaid(READ_LINES[read.resumeText.state ?? 'none'])
+      }
     })
     return () => {
       controller.abort()
